@@ -11,8 +11,8 @@ The journey preserves the source order and includes:
 - all four forced-choice Personality pairings
 - all five Experience categories, including complete nested work and ministry lists
 - Availability reflection, S.T.A.R.T., and a post-profile Ministry–Gift Table leading to current serving opportunities
-- private save/resume through `localStorage`
-- a complete shareable profile with copy, email/share, print/PDF, and Serving Opportunities actions
+- browser-based save/resume through `localStorage`
+- a complete shareable profile with top-three ministry suggestions, copy, self-email/share, print/PDF, advisor, and Serving Opportunities actions
 
 ## Local development
 

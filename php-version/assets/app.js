@@ -90,10 +90,6 @@ function icon(name, size = 18) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || ""}</svg>`;
 }
 
-function sourcePage(page) {
-  return Array.isArray(page) ? page.join("-") : page;
-}
-
 function teachingCard(section) {
   const scripture = section.scripture ? `
     <blockquote>${icon("book", 19)}<p>“${escapeHtml(section.scripture.text)}”<cite>${escapeHtml(section.scripture.reference)}</cite></p></blockquote>` : "";
@@ -102,7 +98,7 @@ function teachingCard(section) {
   return `<article class="teaching-card">
     <header class="teaching-header">
       ${section.letter ? `<span class="section-letter">${escapeHtml(section.letter)}</span>` : ""}
-      <div><p class="eyebrow">Source page ${sourcePage(section.page)}</p><h1>${escapeHtml(section.title)}</h1><p>${escapeHtml(section.eyebrow || "")}</p></div>
+      <div><h1>${escapeHtml(section.title)}</h1><p>${escapeHtml(section.eyebrow || "")}</p></div>
     </header>
     ${scripture}<div class="teaching-copy">${paragraphs}</div>${bullets}
   </article>`;
@@ -112,7 +108,8 @@ function welcome() {
   return `<div class="welcome-layout">
     <div class="welcome-brand">
       <div class="shape-orbit" role="img" aria-label="S.H.A.P.E.: Spiritual Gifts, Heart, Abilities, Personality, and Experiences">${icon("compass", 42)}<span aria-hidden="true">S</span><span aria-hidden="true">H</span><span aria-hidden="true">A</span><span aria-hidden="true">P</span><span aria-hidden="true">E</span></div>
-      <p>FELLOWSHIP DUBAI</p><h2>Know Jesus<br>Grow to be like Jesus<br>Go tell the nations about Jesus</h2>
+      <img class="welcome-logo" src="assets/fellowship-logo.jpeg" alt="Fellowship Dubai" width="284" height="221">
+      <p>OUR VISION</p><h2>Know Jesus<br>Grow to be like Jesus<br>Go tell the nations about Jesus</h2>
     </div>
     <div>${teachingCard(welcomeSection)}
       <fieldset class="profile-fields"><legend>Your profile details</legend><p>These optional details will appear on your completed profile if you choose to download or share it.</p>
@@ -129,11 +126,11 @@ function profileInput(id, label, type, autocomplete) {
 }
 
 function contents() {
-  return `<article class="contents-card"><p class="eyebrow">Source page 2 · Your journey map</p><h1>Table of Contents</h1><p>We will move through the source in order, with teaching before each reflection.</p><ol>${tableOfContents.map(([title, page]) => `<li><span>${escapeHtml(title)}</span><b>${escapeHtml(page)}</b></li>`).join("")}</ol></article>`;
+  return `<article class="contents-card"><p class="eyebrow">Your journey map</p><h1>Table of Contents</h1><ol>${tableOfContents.map(([title, page]) => `<li><span>${escapeHtml(title)}</span><b>${escapeHtml(page)}</b></li>`).join("")}</ol></article>`;
 }
 
 function giftAssessment() {
-  return `<div class="gift-assessment"><header class="assessment-heading"><p class="eyebrow">Source pages 5-7</p><h1>Unwrapping My Gifts</h1><p>For every gift, choose the response that best describes you. Your profile will group all gifts as likely, possible, or unlikely.</p></header><div class="gift-list">${gifts.map((gift) => `
+  return `<div class="gift-assessment"><header class="assessment-heading"><h1>Unwrapping My Gifts</h1><p>For every gift, choose the response that best describes you. Your profile will group all gifts as likely, possible, or unlikely.</p></header><div class="gift-list">${gifts.map((gift) => `
     <fieldset class="gift-full-row"><legend><span><strong>${escapeHtml(gift.label)}</strong><small>${escapeHtml(gift.reference)}${gift.alternateName ? ` · Also called ${escapeHtml(gift.alternateName)}` : ""}</small></span><p>${escapeHtml(gift.description)}</p></legend>
       <div class="gift-response-grid">${giftResponseOptions.map((response) => `<button type="button" data-action="gift" data-gift="${gift.id}" data-value="${response.id}" aria-pressed="${answers.gifts[gift.id] === response.id}" class="${answers.gifts[gift.id] === response.id ? "selected" : ""}">${escapeHtml(response.label)}</button>`).join("")}</div>
     </fieldset>`).join("")}</div></div>`;
@@ -169,20 +166,19 @@ function otherInputs(fields) {
 }
 
 function personalityAssessment() {
-  return `<div><header class="assessment-heading"><p class="eyebrow">Source page 15</p><h1>Plugging In My Personality</h1><p>Instructions: Circle one or the other. There is no right or wrong temperament.</p></header><div class="personality-list">${personalityPairs.map((pair) => `<fieldset class="personality-pair"><legend>${escapeHtml(pair.prompt)}</legend>${[pair.left, pair.right].map((choice) => {
+  return `<div><header class="assessment-heading"><h1>Plugging In My Personality</h1><p>Instructions: Select one or the other. There is no right or wrong temperament.</p></header><div class="personality-list">${personalityPairs.map((pair) => `<fieldset class="personality-pair"><legend>${escapeHtml(pair.prompt)}</legend>${[pair.left, pair.right].map((choice) => {
     const selected = answers.personality[pair.id] === choice.id;
     return `<button type="button" data-action="personality" data-pair="${pair.id}" data-value="${choice.id}" aria-pressed="${selected}" class="${selected ? "selected" : ""}"><span class="radio-dot"></span><strong>${escapeHtml(choice.label)}</strong><small>${escapeHtml(choice.description)}</small></button>`;
   }).join("")}</fieldset>`).join("")}</div></div>`;
 }
 
 function availability() {
-  const hours = availabilitySection.questions[2];
-  const timing = availabilitySection.questions[3];
+  const hours = availabilitySection.questions[1];
+  const timing = availabilitySection.questions[2];
   const selectedHours = answers.selections.hours?.[0];
   return `<div class="field-stack">${teachingCard(availabilitySection)}
     <fieldset class="reflection-fields">
       <label><span>${escapeHtml(availabilitySection.questions[0].prompt)}</span><textarea data-text="service-priority" placeholder="Reflect briefly…">${escapeHtml(answers.text["service-priority"] || "")}</textarea></label>
-      <label><span>${escapeHtml(availabilitySection.questions[1].prompt)}</span><textarea data-text="season-time" placeholder="Describe what is realistic…">${escapeHtml(answers.text["season-time"] || "")}</textarea></label>
     </fieldset>
     <fieldset class="single-field"><legend>${escapeHtml(hours.prompt)}</legend><div>${hours.options.map((option) => {
       const selected = selectedHours === option.id;
@@ -193,7 +189,7 @@ function availability() {
 }
 
 function startCard() {
-  return `<article class="start-card"><p class="eyebrow">Source page 23</p><h1>5 Ways to S.T.A.R.T. to Deepen Your S.H.A.P.E.</h1><div>${startWays.map((way) => `<section><span>${way.letter}</span><div><h2>${escapeHtml(way.title)}</h2><p>${escapeHtml(way.text)}</p>${way.bullets ? `<ul>${way.bullets.map((book) => `<li>${escapeHtml(book)}</li>`).join("")}</ul>` : ""}</div></section>`).join("")}</div><a href="https://fellowshipdubai.com/" target="_blank" rel="noreferrer">Visit fellowshipdubai.com for next steps and resources.</a></article>`;
+  return `<article class="start-card"><h1>5 Ways to S.T.A.R.T. to Deepen Your S.H.A.P.E.</h1><div>${startWays.map((way) => `<section><span>${way.letter}</span><div><h2>${escapeHtml(way.title)}</h2><p>${escapeHtml(way.text)}</p>${way.bullets ? `<ul>${way.bullets.map((book) => `<li>${escapeHtml(book)}</li>`).join("")}</ul>` : ""}</div></section>`).join("")}</div></article>`;
 }
 
 function profileList(label, values) {
@@ -208,24 +204,33 @@ function profileSection(letter, title, body) {
   return `<article class="profile-section"><header><span>${letter}</span><h2>${escapeHtml(title)}</h2></header><div class="profile-section-body">${body}</div></article>`;
 }
 
+function ministryRecommendations(profile) {
+  const cards = profile.recommendedMinistries.map((item, index) => `<li><span>${index + 1}</span><div><h3>${escapeHtml(item.ministry)}</h3><p>${item.matchedGifts.length ? `Strong alignment with ${escapeHtml(item.matchedGifts.join(", "))}.` : "A flexible place to explore your S.H.A.P.E. with a ministry leader."}</p></div></li>`).join("");
+  return `<article class="recommendations-section"><header><p class="eyebrow">Personalized starting points</p><h2>Your top 3 ministry matches</h2><p>These suggestions are based on your likely and possible spiritual gifts. Use them as conversation starters, not a final assignment.</p></header><ol class="ministry-recommendations">${cards}</ol></article>`;
+}
+
 function ministryTable() {
   const rows = ministryGiftTable.map((row) => `<tr><th scope="row">${escapeHtml(row.ministry)}</th><td>${escapeHtml(row.gifts.join(", "))}</td></tr>`).join("");
   const mobile = ministryGiftTable.map((row) => `<section><h3>${escapeHtml(row.ministry)}</h3><p>${escapeHtml(row.gifts.join(", "))}</p></section>`).join("");
-  return `<article class="ministry-table-section"><header class="ministry-table-heading"><div class="ministry-table-icon">${icon("compass", 26)}</div><div><p class="eyebrow">How to start serving</p><h2>Explore ministries where your gifts may contribute.</h2><p>This table is a reflective guide, not a prescription. Prayerfully consider where your gifts may align, while giving priority to personal conviction and the Holy Spirit’s leading.</p></div></header><div class="ministry-table-desktop"><table><caption class="sr-only">Fellowship Dubai ministry and spiritual gift guide</caption><thead><tr><th scope="col">Ministry</th><th scope="col">Spiritual gifts that strengthen it</th></tr></thead><tbody>${rows}</tbody></table></div><div class="ministry-table-mobile">${mobile}</div><div class="ministry-table-action"><div><strong>Ready to take a next step?</strong><p>View the current opportunities and tell Fellowship Dubai where you would like to serve.</p></div><a href="${SERVING_FORM}" target="_blank" rel="noopener noreferrer">View Serving Opportunities ${icon("arrowRight")}</a></div></article>`;
+  return `<article class="ministry-table-section"><header class="ministry-table-heading"><div class="ministry-table-icon">${icon("compass", 26)}</div><div><p class="eyebrow">Ministry guide</p><h2>Explore more places where your gifts may contribute.</h2><p>This table is a reflective guide, not a prescription. Prayerfully consider where your gifts may align, while giving priority to personal conviction and the Holy Spirit’s leading.</p></div></header><div class="ministry-table-desktop"><table><caption class="sr-only">Fellowship Dubai ministry and spiritual gift guide</caption><thead><tr><th scope="col">Ministry</th><th scope="col">Spiritual gifts that strengthen it</th></tr></thead><tbody>${rows}</tbody></table></div><div class="ministry-table-mobile">${mobile}</div></article>`;
+}
+
+function nextSteps(mailto) {
+  return `<article class="results-handoff no-print"><section class="save-reminder"><div><p class="eyebrow">Before you continue</p><h2>Save your results</h2><p>Serving forms open outside this tool. Save a PDF or email a copy to yourself before you leave so your profile is easy to return to.</p></div><div><button type="button" data-action="print">${icon("printer", 17)}Save / Download PDF</button><a href="${escapeHtml(mailto)}">${icon("mail", 17)}Email My Results</a></div></section><section class="next-step-panel"><header><p class="eyebrow">Ready to take the next step?</p><h2>Choose how you would like to continue</h2></header><div class="next-step-grid"><a href="${SERVING_FORM}" target="_blank" rel="noopener noreferrer"><strong>Explore Serving Opportunities</strong><span>View current opportunities and tell Fellowship Dubai where you would like to serve. ${icon("arrowRight", 17)}</span></a><a href="${SERVING_FORM}" target="_blank" rel="noopener noreferrer"><strong>Talk to a S.H.A.P.E. Advisor</strong><span>Open the form and select the SERVE Team to ask for personal guidance. ${icon("arrowRight", 17)}</span></a></div><div class="embedded-form"><div><h3>Serving opportunities form</h3><p>You can complete the form here or open it in a new tab.</p></div><iframe src="${SERVING_FORM}" title="Fellowship Dubai serving opportunities form" loading="lazy"></iframe><a href="${SERVING_FORM}" target="_blank" rel="noopener noreferrer">Open the serving form in a new tab ${icon("external", 16)}</a></div></section></article>`;
 }
 
 function profilePage() {
   const profile = buildProfile(answers);
   const text = `${profileToText(answers, profile)}\n\nCURRENT SERVING OPPORTUNITIES\n${SERVING_FORM}`;
-  const mailto = `mailto:?subject=${encodeURIComponent(`${answers.profile.name || "My"} S.H.A.P.E. Profile`)}&body=${encodeURIComponent(text)}`;
+  const mailto = `mailto:${encodeURIComponent(answers.profile.email || "")}?subject=${encodeURIComponent(`${answers.profile.name || "My"} S.H.A.P.E. Profile`)}&body=${encodeURIComponent(text)}`;
   return `<section class="profile-page"><header class="profile-hero"><p class="eyebrow">Fellowship Dubai · Complete profile</p><h1>${answers.profile.name ? `${escapeHtml(answers.profile.name)}’s` : "My"} S.H.A.P.E. Profile</h1><p>A clear starting point for prayer, reflection, and exploring current serving opportunities.</p><div class="profile-contact"><span>${escapeHtml(answers.profile.email || "Email not provided")}</span><span>${escapeHtml(answers.profile.phone || "Phone not provided")}</span></div><div class="profile-actions no-print"><button type="button" data-action="copy">${icon("clipboard", 17)}${copied ? "Copied" : "Copy My Profile"}</button><button type="button" data-action="print">${icon("printer", 17)}Download / Print PDF</button><a href="${escapeHtml(mailto)}">${icon("mail", 17)}Email / Share My Profile</a><a href="${SERVING_FORM}" target="_blank" rel="noopener noreferrer">Begin Serving ${icon("external", 16)}</a></div></header>
     ${profileSection("S", "Spiritual Gifts", giftGroup("Likely gifts", profile.spiritualGifts.likely) + giftGroup("Possible gifts", profile.spiritualGifts.possible) + giftGroup("Unlikely gifts", profile.spiritualGifts.unlikely, true))}
     ${profileSection("H", "Heart / Passion", profileList("Roles I enjoy", profile.heart.roles) + profileList("People I care about", profile.heart.people) + profileList("Causes I feel led to champion", profile.heart.causes))}
     ${profileSection("A", "Abilities", profileList("Abilities I can use", profile.abilities))}
     ${profileSection("P", "Personality", profileList("My personality pattern", profile.personality))}
     ${profileSection("E", "Experiences", `<div class="profile-experience-grid">${Object.entries(profile.experiences).map(([label, values]) => profileList(label, values)).join("")}</div>`)}
-    ${profileSection("+", "Availability", `<dl class="availability-summary"><div><dt>Are you making service a priority?</dt><dd>${escapeHtml(profile.availability.priority)}</dd></div><div><dt>Current season and time</dt><dd>${escapeHtml(profile.availability.season)}</dd></div><div><dt>Time per week</dt><dd>${escapeHtml(profile.availability.hours)}</dd></div><div><dt>Best times</dt><dd>${escapeHtml(profile.availability.timing.join(", ") || "Not specified")}</dd></div></dl>`)}
-    ${ministryTable()}<div class="profile-footer no-print"><button class="back-button" type="button" data-action="restart">${icon("refresh", 17)}Start a new profile</button></div></section>`;
+    ${profileSection("+", "Availability", `<dl class="availability-summary"><div><dt>Are you making service a priority?</dt><dd>${escapeHtml(profile.availability.priority)}</dd></div><div><dt>Time per week</dt><dd>${escapeHtml(profile.availability.hours)}</dd></div><div><dt>Best times</dt><dd>${escapeHtml(profile.availability.timing.join(", ") || "Not specified")}</dd></div></dl>`)}
+    ${ministryRecommendations(profile)}${ministryTable()}${nextSteps(mailto)}<div class="profile-footer no-print"><button class="back-button" type="button" data-action="restart">${icon("refresh", 17)}Start a new profile</button></div></section>`;
 }
 
 function stage() {
@@ -236,16 +241,16 @@ function stage() {
   if (id === "gifts-teaching") return teachingCard(spiritualGiftsSection);
   if (id === "gifts-assessment") return giftAssessment();
   if (id === "heart-teaching") return teachingCard(heartSection);
-  if (id === "heart-roles") return multiSelect({ label: heartQuestions[0].prompt, help: `${heartQuestions[0].help} Source page 9.`, options: heartQuestions[0].options, questionId: "heart-roles", otherLabel: heartQuestions[0].otherLabel });
-  if (id === "heart-people-causes") return `<div class="field-stack">${multiSelect({ label: heartQuestions[1].prompt, help: `${heartQuestions[1].help} Source page 10.`, options: heartQuestions[1].options, questionId: "heart-people", otherLabel: heartQuestions[1].otherLabel })}${multiSelect({ label: heartQuestions[2].prompt, help: heartQuestions[2].help, options: heartQuestions[2].options, questionId: "heart-causes", otherLabel: heartQuestions[2].otherLabel, searchable: true })}</div>`;
+  if (id === "heart-roles") return multiSelect({ label: heartQuestions[0].prompt, help: heartQuestions[0].help, options: heartQuestions[0].options, questionId: "heart-roles", otherLabel: heartQuestions[0].otherLabel });
+  if (id === "heart-people-causes") return `<div class="field-stack">${multiSelect({ label: heartQuestions[1].prompt, help: heartQuestions[1].help, options: heartQuestions[1].options, questionId: "heart-people", otherLabel: heartQuestions[1].otherLabel })}${multiSelect({ label: heartQuestions[2].prompt, help: heartQuestions[2].help, options: heartQuestions[2].options, questionId: "heart-causes", otherLabel: heartQuestions[2].otherLabel, searchable: true })}</div>`;
   if (id === "abilities-teaching") return teachingCard(abilitiesSection);
-  if (id === "abilities-assessment") return `<div class="field-stack">${multiSelect({ label: "Circle the following Abilities that apply to your life!", help: "Select every ability that best describes you. Source pages 12-13.", options: abilities, questionId: "abilities", searchable: true })}${otherInputs([["ability-languages-other", "Other language"], ["ability-hobbies-other", "Other hobby-related ability"], ["ability-technical-other", "Other technical ability"], ["abilities-other", "Other ability"]])}</div>`;
+  if (id === "abilities-assessment") return `<div class="field-stack">${multiSelect({ label: "Select the following Abilities that apply to your life!", help: "Select every ability that best describes you.", options: abilities, questionId: "abilities", searchable: true })}${otherInputs([["ability-languages-other", "Other language"], ["ability-hobbies-other", "Other hobby-related ability"], ["ability-technical-other", "Other technical ability"], ["abilities-other", "Other ability"]])}</div>`;
   if (id === "personality-teaching") return teachingCard(personalitySection);
   if (id === "personality-assessment") return personalityAssessment();
   if (id === "experiences-teaching") return teachingCard(experiencesSection);
-  if (id === "experiences-personal") return `<div class="field-stack"><div class="pastoral-note">${icon("lock", 20)}<p><strong>Your story belongs to you.</strong> Only share what you are comfortable sharing. These responses remain on this device unless you choose to share your completed profile.</p></div>${experienceQuestions.slice(0, 3).map((question) => multiSelect({ label: question.prompt, help: question.help, options: question.options, questionId: question.id, otherLabel: question.otherLabel, searchable: question.id === "painful-experiences" })).join("")}</div>`;
-  if (id === "experiences-work") return `<div class="field-stack">${multiSelect({ label: experienceQuestions[3].prompt, help: "Select all the work areas that apply. Expand each category to choose its complete source sub-list. Source pages 17-19.", options: workExperiences, questionId: "work-experiences", otherLabel: "Other work experience", searchable: true })}${otherInputs(WORK_OTHER_GROUPS.map((groupId) => [`work-other-${groupId}`, `Other ${workExperiences.find((item) => item.id === groupId)?.label || "work"} experience`]))}</div>`;
-  if (id === "experiences-ministry") return `<div class="field-stack">${experienceQuestions.slice(4).map((question) => multiSelect({ label: question.prompt, help: `Circle 1 to 3 of your ministry experiences. Source pages ${sourcePage(question.page)}.`, options: question.options, questionId: question.id, otherLabel: question.otherLabel, searchable: true, maxSelections: question.maxSelections })).join("")}</div>`;
+  if (id === "experiences-personal") return `<div class="field-stack"><div class="pastoral-note"><p><strong>Your story belongs to you.</strong> Only share what you are comfortable sharing. Your answers are saved in this browser and may appear in the profile you download, copy, email, print, or share.</p></div>${experienceQuestions.slice(0, 3).map((question) => multiSelect({ label: question.prompt, help: question.help, options: question.options, questionId: question.id, otherLabel: question.otherLabel, searchable: question.id === "painful-experiences" })).join("")}</div>`;
+  if (id === "experiences-work") return `<div class="field-stack">${multiSelect({ label: experienceQuestions[3].prompt, help: "Select all the work areas that apply. Expand each category to choose the complete list.", options: workExperiences, questionId: "work-experiences", otherLabel: "Other work experience", searchable: true })}${otherInputs(WORK_OTHER_GROUPS.map((groupId) => [`work-other-${groupId}`, `Other ${workExperiences.find((item) => item.id === groupId)?.label || "work"} experience`]))}</div>`;
+  if (id === "experiences-ministry") return `<div class="field-stack">${experienceQuestions.slice(4).map((question) => multiSelect({ label: question.prompt, help: "Select 1 to 3 of your ministry experiences.", options: question.options, questionId: question.id, otherLabel: question.otherLabel, searchable: true, maxSelections: question.maxSelections })).join("")}</div>`;
   if (id === "availability") return availability();
   if (id === "start") return startCard();
   return profilePage();
@@ -262,12 +267,11 @@ function render({ focusSearch = "" } = {}) {
   const current = journeySteps[step];
   const isProfile = current.id === "profile";
   const progress = Math.round((step / (journeySteps.length - 1)) * 100);
-  const source = current.pages.length ? `page${current.pages.length > 1 ? "s" : ""} ${current.pages.join(", ")}` : "profile";
   const validation = validationMessage();
   root.innerHTML = `<main class="app-shell"><div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
-    ${isProfile ? "" : `<header class="progress-header no-print"><div class="journey-progress"><button class="fd-mark" type="button" data-action="home" aria-label="Return to welcome"><img src="assets/fellowship-logo.jpeg" alt="" width="284" height="221"></button><div class="progress-copy"><div class="progress-label"><span>${escapeHtml(current.title)}</span><span>${progress}%</span></div><div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><small>Source ${source} · Step ${step + 1} of ${journeySteps.length}</small></div><span class="purpose-mini">KNOW · GROW · GO</span></div></header>`}
+    ${isProfile ? "" : `<header class="progress-header no-print"><div class="journey-progress"><button class="fd-mark" type="button" data-action="home" aria-label="Return to welcome"><img src="assets/fellowship-logo.jpeg" alt="" width="284" height="221"></button><div class="progress-copy"><div class="progress-label"><span>${escapeHtml(current.title)}</span><span>${progress}%</span></div><div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><small>Step ${step + 1} of ${journeySteps.length}</small></div><span class="purpose-mini">KNOW · GROW · GO</span></div></header>`}
     <div class="journey-wrap ${isProfile ? "profile-wrap" : ""}"><section class="journey-stage animate-in">${stage()}</section>
-      ${isProfile ? "" : `<footer class="journey-actions no-print"><button class="back-button" type="button" data-action="back" ${step === 0 ? "disabled" : ""}>${icon("arrowLeft")}Back</button><div>${validation ? `<p class="validation-message">${validation}</p>` : ""}<button class="primary-button" type="button" data-action="next" ${validation ? "disabled" : ""}>${step === journeySteps.length - 2 ? "Build My Profile" : "Continue"}${icon("arrowRight")}</button></div></footer><p class="autosave-note no-print">${icon("check", 14)} Progress is saved privately on this device. <button type="button" data-action="restart">${icon("refresh", 13)}Start over</button></p>`}
+      ${isProfile ? "" : `<footer class="journey-actions no-print"><button class="back-button" type="button" data-action="back" ${step === 0 ? "disabled" : ""}>${icon("arrowLeft")}Back</button><div>${validation ? `<p class="validation-message">${validation}</p>` : ""}<button class="primary-button" type="button" data-action="next" ${validation ? "disabled" : ""}>${step === journeySteps.length - 2 ? "Build My Profile" : "Continue"}${icon("arrowRight")}</button></div></footer><p class="autosave-note no-print">${icon("check", 14)} Progress is saved in this browser. <button type="button" data-action="restart">${icon("refresh", 13)}Start over</button></p>`}
     </div></main>`;
   if (focusSearch) {
     const input = root.querySelector(`[data-search="${CSS.escape(focusSearch)}"]`);

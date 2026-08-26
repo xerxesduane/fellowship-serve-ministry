@@ -6,7 +6,7 @@ export function TeachingCard({ section }: { section: Section }) {
     <article className="teaching-card">
       <header className="teaching-header">
         {section.letter && <span className="section-letter">{section.letter}</span>}
-        <div><p className="eyebrow">Source page {Array.isArray(section.page) ? section.page.join("-") : section.page}</p><h1>{section.title}</h1><p>{section.eyebrow}</p></div>
+        <div><h1>{section.title}</h1><p>{section.eyebrow}</p></div>
       </header>
       {section.scripture && <blockquote><BookOpen size={19} /><p>“{section.scripture.text}”<cite>{section.scripture.reference}</cite></p></blockquote>}
       <div className="teaching-copy">{section.paragraphs?.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>

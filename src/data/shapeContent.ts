@@ -32,8 +32,9 @@ export type ProfileSummary = {
   abilities: string[];
   personality: string[];
   experiences: Record<string, string[]>;
-  availability: { priority: string; season: string; hours: string; timing: string[] };
+  availability: { priority: string; hours: string; timing: string[] };
   recommendedNextStep: string;
+  recommendedMinistries: { ministry: string; matchedGifts: string[] }[];
 };
 
 const o = (id: string, label: string, description?: string): Option => ({ id, label, ...(description ? { description } : {}) });
@@ -48,12 +49,12 @@ export const tableOfContents = [
 ] as const;
 
 export const welcomeSection: Section = {
-  id: "welcome", title: "You Were SHAPED for Serving God", shortTitle: "Welcome", page: 1, eyebrow: "Discovering my S.H.A.P.E. for ministry",
+  id: "welcome", title: "SERVE – S.H.A.P.E. Discovery Tool", shortTitle: "Welcome", page: 1, eyebrow: "Discovering my S.H.A.P.E. for ministry",
   paragraphs: [
     "We are excited that you have taken the time to discover more about how God has SHAPED you for ministry. We desire that you find a place of service at Fellowship Dubai that fits the unique way God has created and designed you. Your SHAPE - Spiritual Gifts, Heart, Abilities, Personality, and Experience - influences your ministry, and our prayer is that through this journey you will discover more about how you were SHAPED for serving God.",
     "God did not design church ministry for a select few with seminary degrees. Every member of the church is a minister. This guided discovery is designed to help you understand your S.H.A.P.E. and how God may use you in ministry at Fellowship Dubai.",
-    "At the end, download your S.H.A.P.E. Profile and use it as you prayerfully explore current opportunities to serve the Lord and His people.",
     "As you begin, pray and expect God to grant you wisdom, discernment, and understanding. Remember that there are no wrong answers because this is your unique S.H.A.P.E. We are thrilled to help you find a fulfilling place to serve where you can use your gifts.",
+    "At the end, download your S.H.A.P.E. Profile and use it as you prayerfully explore current opportunities to serve the Lord and His people.",
   ],
 };
 
@@ -156,9 +157,9 @@ export const abilities: Option[] = [
   o("evaluating", "Evaluating ability", "To analyze data and draw conclusions"), o("planning", "Planning ability", "To strategize, design and organize programs and events"),
   o("managing", "Managing ability", "To supervise people to accomplish a task or event and coordinate the details"), o("counseling", "Counseling/Encouraging ability", "To listen, encourage and guide with sensitivity"),
   o("athletic", "Athletic ability", "To coach or participate in a sport"), o("teaching", "Teaching ability", "To explain, train, demonstrate, tutor"),
-  o("writing", "Writing ability", "To write articles, letters, books"), { id: "linguistic", label: "Linguistic ability", description: "To speak and write in one or more languages", children: languageOptions },
+  o("writing", "Writing ability", "To write articles, letters, books"), { id: "linguistic", label: "Linguistic ability", description: "To speak, read, write, or translate in one or more languages", children: languageOptions },
   o("editing", "Editing ability", "To proofread or rewrite"), o("promoting", "Promoting ability", "To advertise or promote events and activities"),
-  o("repairing", "Repairing ability", "To fix, restore, maintain"), { id: "hobby", label: "Hobby related ability", description: "To work with your hands", children: hobbyOptions },
+  o("repairing", "Repairing ability", "To diagnose problems and fix, restore, or maintain equipment, furniture, facilities, or other items"), { id: "hobby", label: "Hobby related ability", description: "To work with your hands", children: hobbyOptions },
   o("feeding", "Feeding ability", "To create meals for large or small groups"), o("recall", "Recall ability", "To remember or recall names and faces"),
   o("mechanical", "Mechanical operating ability", "To operate equipment, tools or machinery"), { id: "technical", label: "Technical ability", description: "To operate/repair equipment", children: technicalOptions },
   o("resourceful", "Resourceful ability", "To search out and find inexpensive materials or resources needed"), o("counting", "Counting ability", "To work with numbers, data or money"),
@@ -235,10 +236,10 @@ export const experiencesSection: Section = {
 };
 
 export const experienceQuestions: MultiSelectQuestion[] = [
-  { id: "spiritual-experiences", type: "multi", prompt: "Circle Your Spiritual Experiences", page: 17, options: spiritualExperiences, otherLabel: "Other spiritual experience" },
-  { id: "painful-experiences", type: "multi", prompt: "Painful Experiences (I can relate to someone who is/or has gone through…)", help: "Only share what you are comfortable sharing. Your responses stay on this device unless you choose to share your profile.", page: 17, options: painfulExperiences, otherLabel: "Other painful experience" },
-  { id: "educational-experiences", type: "multi", prompt: "Circle Your Educational Experiences", page: 17, options: educationalExperiences, otherLabel: "Other educational experience" },
-  { id: "work-experiences", type: "multi", prompt: "Circle Your Work Experiences", page: [17,18,19], options: workExperiences, otherLabel: "Other work experience" },
+  { id: "spiritual-experiences", type: "multi", prompt: "Select Your Spiritual Experiences", page: 17, options: spiritualExperiences, otherLabel: "Other spiritual experience" },
+  { id: "painful-experiences", type: "multi", prompt: "Painful Experiences (I can relate to someone who is/or has gone through…)", help: "Only share what you are comfortable sharing. Your answers are saved in this browser and may appear in the profile you download, copy, email, print, or share.", page: 17, options: painfulExperiences, otherLabel: "Other painful experience" },
+  { id: "educational-experiences", type: "multi", prompt: "Select Your Educational Experiences", page: 17, options: educationalExperiences, otherLabel: "Other educational experience" },
+  { id: "work-experiences", type: "multi", prompt: "Select Your Work Experiences", page: [17,18,19], options: workExperiences, otherLabel: "Other work experience" },
   { id: "ministry-people", type: "multi", prompt: "I have worked with… (Age/Life stage)", page: 19, options: ministryPeople, otherLabel: "Other age or life stage", maxSelections: 3 },
   { id: "ministry-roles", type: "multi", prompt: "Ministry Roles/Functions", page: [19,20], options: ministryRoles, otherLabel: "Other ministry role/function", maxSelections: 3 },
 ];
@@ -252,7 +253,6 @@ export const availabilitySection: Section = {
   ],
   questions: [
     { id: "service-priority", type: "text", prompt: "Are you making service a priority?", page: 21, multiline: true, placeholder: "Reflect briefly…" },
-    { id: "season-time", type: "text", prompt: "In your current season of life, how much time do you think you can give?", page: 21, multiline: true, placeholder: "Describe what is realistic…" },
     { id: "hours", type: "single", prompt: "Please select the amount of time you could serve per week:", page: 21, options: list(["1-2 hours", "3-5 hours", "6+ hours"]) },
     { id: "timing", type: "multi", prompt: "Please select your best time during the week:", page: 21, options: list(["Weekday", "Weeknight", "Weekend"]) },
   ],

@@ -2,6 +2,43 @@ import {
   abilities, experienceQuestions, giftResponseOptions, gifts, heartQuestions,
   personalityPairs, type Option, type ProfileSummary,
 } from "@/data/shapeContent";
+import { ministryGiftTable } from "@/data/ministryGiftTable";
+
+const GIFT_MATCH_ALIASES: Record<string, string[]> = {
+  administration: ["Organization"],
+  apostle: ["Mission", "Vision", "Leadership"],
+  pastoring: ["Mentoring", "Leadership"],
+  "praying-with-my-spirit": ["Prayer"],
+  preaching: ["Teaching", "Evangelism"],
+  service: ["Assisting"],
+};
+
+function recommendMinistries(answers: ShapeAnswers) {
+  const ranked = ministryGiftTable.map((row, index) => {
+    const ministryGifts = new Set(row.gifts.map((gift) => gift.toLowerCase()));
+    const matches = gifts.filter((gift) => {
+      const rating = answers.gifts[gift.id];
+      if (rating !== "likely" && rating !== "possible") return false;
+      const names = [gift.label, gift.alternateName, ...(GIFT_MATCH_ALIASES[gift.id] || [])].filter((name): name is string => Boolean(name));
+      return names.some((name) => ministryGifts.has(name.toLowerCase()));
+    });
+    return {
+      ministry: row.ministry,
+      matchedGifts: matches.map((gift) => gift.label),
+      score: matches.reduce((total, gift) => total + (answers.gifts[gift.id] === "likely" ? 3 : 1), 0),
+      index,
+    };
+  }).sort((a, b) => b.score - a.score || a.index - b.index);
+
+  const recommended = ranked.filter((row) => row.score > 0).slice(0, 3);
+  const fallbacks = ["Serve", "Welcome", "Administration"];
+  for (const ministry of fallbacks) {
+    if (recommended.length === 3) break;
+    const row = ranked.find((item) => item.ministry === ministry && !recommended.some((item) => item.ministry === ministry));
+    if (row) recommended.push(row);
+  }
+  return recommended.map(({ ministry, matchedGifts }) => ({ ministry, matchedGifts }));
+}
 
 export type GiftResponse = "likely" | "possible" | "unlikely";
 
@@ -75,8 +112,9 @@ export function buildProfile(answers: ShapeAnswers): ProfileSummary {
     ],
     personality,
     experiences: experienceMap,
-    availability: { priority: answers.text["service-priority"] || "Not recorded", season: answers.text["season-time"] || "Not recorded", hours, timing },
+    availability: { priority: answers.text["service-priority"] || "Not recorded", hours, timing },
     recommendedNextStep: recommendation,
+    recommendedMinistries: recommendMinistries(answers),
   };
 }
 
@@ -93,7 +131,8 @@ export function profileToText(answers: ShapeAnswers, profile: ProfileSummary) {
     `PERSONALITY\n${profile.personality.join(" / ") || "Not completed"}`,
     "EXPERIENCES",
     ...Object.entries(profile.experiences).map(([label, values]) => `${label}: ${values.join(", ") || "None selected"}`),
-    `AVAILABILITY\nService priority: ${profile.availability.priority}\nCurrent season: ${profile.availability.season}\nTime per week: ${profile.availability.hours}\nBest times: ${profile.availability.timing.join(", ") || "Not specified"}`,
+    `AVAILABILITY\nService priority: ${profile.availability.priority}\nTime per week: ${profile.availability.hours}\nBest times: ${profile.availability.timing.join(", ") || "Not specified"}`,
+    `TOP MINISTRY MATCHES\n${profile.recommendedMinistries.map((item, index) => `${index + 1}. ${item.ministry}${item.matchedGifts.length ? ` — ${item.matchedGifts.join(", ")}` : ""}`).join("\n")}`,
     `RECOMMENDED NEXT STEP\n${profile.recommendedNextStep}`,
   ];
   return lines.filter((line) => line !== "").join("\n\n");

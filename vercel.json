@@ -12,7 +12,7 @@
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'" }
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; img-src 'self' data: https://fellowshipdubai.churchcenter.com; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-src https://fellowshipdubai.churchcenter.com; base-uri 'self'; form-action 'self' https://fellowshipdubai.churchcenter.com" }
       ]
     }
   ]

@@ -6,7 +6,7 @@ import type { GiftResponse } from "@/lib/shapeProfile";
 export function GiftAssessment({ responses, onChange }: { responses: Record<string, GiftResponse>; onChange: (id: string, response: GiftResponse) => void }) {
   return (
     <div className="gift-assessment">
-      <header className="assessment-heading"><p className="eyebrow">Source pages 5-7</p><h1>Unwrapping My Gifts</h1><p>For every gift, choose the response that best describes you. Your profile will group all gifts as likely, possible, or unlikely.</p></header>
+      <header className="assessment-heading"><h1>Unwrapping My Gifts</h1><p>For every gift, choose the response that best describes you. Your profile will group all gifts as likely, possible, or unlikely.</p></header>
       <div className="gift-list">
         {gifts.map((gift) => (
           <fieldset className="gift-full-row" key={gift.id}>

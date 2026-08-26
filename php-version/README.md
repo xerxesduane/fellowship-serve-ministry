@@ -1,6 +1,6 @@
 # Fellowship Dubai S.H.A.P.E. — PHP + JavaScript edition
 
-This is a framework-free port of the Next.js/React application. It preserves the 19-stage journey, the complete workbook content, device-private autosave, required-answer validation, profile calculation, copy/email/print actions, and the Ministry–Gift Table.
+This is a framework-free port of the Next.js/React application. It preserves the 19-stage journey, the complete workbook content, browser-based autosave, required-answer validation, profile calculation, top-three ministry suggestions, copy/email/print actions, advisor handoff, the embedded serving form, and the Ministry–Gift Table.
 
 ## Requirements
 

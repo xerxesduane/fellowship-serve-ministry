@@ -13,12 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 const siteUrl = "https://shape-fellowship-dubai.vercel.app";
-const siteDescription = "Discover your Spiritual Gifts, Heart, Abilities, Personality, and Experiences, then build a private ministry profile for serving at Fellowship Dubai.";
+const siteDescription = "Discover your Spiritual Gifts, Heart, Abilities, Personality, and Experiences, then build a ministry profile for serving at Fellowship Dubai.";
 
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "Fellowship Dubai S.H.A.P.E. Discovery",
+  name: "SERVE – S.H.A.P.E. Discovery Tool",
   url: siteUrl,
   description: siteDescription,
   applicationCategory: "LifestyleApplication",
@@ -36,11 +36,11 @@ const structuredData = {
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "S.H.A.P.E. Discovery | Fellowship Dubai",
+    default: "SERVE – S.H.A.P.E. Discovery Tool | Fellowship Dubai",
     template: "%s | Fellowship Dubai",
   },
   description: siteDescription,
-  applicationName: "Fellowship Dubai S.H.A.P.E. Discovery",
+  applicationName: "SERVE – S.H.A.P.E. Discovery Tool",
   keywords: ["Fellowship Dubai", "SHAPE assessment", "spiritual gifts", "church ministry", "serving", "Dubai church"],
   authors: [{ name: "Fellowship Dubai", url: "https://fellowshipdubai.com/" }],
   creator: "Fellowship Dubai",
@@ -58,9 +58,9 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_AE",
     url: "/",
-    siteName: "Fellowship Dubai S.H.A.P.E. Discovery",
-    title: "Discover How God SHAPED You to Serve",
-    description: "Explore your Spiritual Gifts, Heart, Abilities, Personality, and Experiences, then build a private, shareable ministry profile.",
+    siteName: "SERVE – S.H.A.P.E. Discovery Tool",
+    title: "SERVE – S.H.A.P.E. Discovery Tool",
+    description: "Explore your Spiritual Gifts, Heart, Abilities, Personality, and Experiences, then build a shareable ministry profile.",
   },
   twitter: {
     card: "summary_large_image",
