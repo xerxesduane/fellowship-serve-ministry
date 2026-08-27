@@ -52,9 +52,14 @@ before deleting anything: both implementations carried the same 73 option ids,
 SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
 ```
 
-Twenty-seven tests covering the guarantees whose failure would be silent: the
+Thirty-nine tests covering the guarantees whose failure would be silent: the
 safeguarding gate, unverified profiles staying invisible, Experiences redaction,
-what a CSV may contain, and the confirmation-email path in both directions.
+what a CSV may contain, the confirmation-email path in both directions, and what
+activation is supposed to have left behind.
+
+That last group exists because activation runs once, on a database nobody has
+looked at yet, and then never again — so it is the least-exercised code here and
+the only defect this suite has found in anger was hiding in it.
 
 They boot a real WordPress and run against a real database, because every one of
 those guarantees is a SQL predicate or a capability check and none of them would
@@ -64,14 +69,27 @@ again, then reports if a count moved. It refuses to run against an install
 declaring itself production, and otherwise requires `SERVE_TEST_OK=1` so that
 pointing it somewhere real has to be deliberate.
 
-Adding Composer and the WordPress PHPUnit scaffold to run twenty-seven tests
+Adding Composer and the WordPress PHPUnit scaffold to run thirty-nine tests
 would have been a bigger change to this repository than anything they check, so
 the runner is about a hundred lines and has no dependencies.
 
-The suite was checked by breaking things on purpose — removing the safeguarding
+The suite was checked by breaking things on purpose. Removing the safeguarding
 gate, dropping the unverified filter, writing `verify_sent_at` before the mail,
-and disabling redaction each turn the relevant tests red. A suite that only ever
-passes has not been shown to test anything.
+disabling redaction, emptying the metrics scope clause, and deleting an option
+from `uninstall.php` each turn the relevant tests red; restoring each turns them
+green. A suite that has only ever passed has not been shown to test anything.
+
+Two things that exercise found, which is the argument for doing it rather than
+assuming:
+
+- A test can pass by asserting nothing. The metrics test iterated the wrong
+  level of a nested array, so its loop body never ran and it sailed through a
+  deliberately broken scope clause. The runner now **fails any test that
+  finishes without making an assertion.**
+- Three mutations appeared uncaught and had simply never applied — regexes that
+  did not match, and one aimed at the deployed copy of a file the test reads
+  from the repository. Check the mutation landed before believing what it tells
+  you.
 
 ## Build
 

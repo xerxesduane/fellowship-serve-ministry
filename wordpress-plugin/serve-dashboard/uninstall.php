@@ -25,5 +25,38 @@ foreach ( Serve_Dashboard\Schema::table_names() as $name ) {
 	$wpdb->query( "DROP TABLE IF EXISTS {$table}" );
 }
 
-delete_option( Serve_Dashboard\Schema::OPTION_DB_VERSION );
-delete_option( 'serve_dashboard_retention_months' );
+/*
+ * Every option the plugin writes, not only the two that were easy to remember.
+ *
+ * None of these hold personal data, so leaving them behind was untidy rather
+ * than unsafe — except the funnel counters, which would have carried a previous
+ * installation's drop-off figures into a fresh one and quietly misreported
+ * where people stop.
+ *
+ * Named as literals rather than via the class constants because uninstall.php
+ * loads Schema alone; requiring seven more classes here, each with its own
+ * dependencies, to read seven strings would be the more fragile choice. The
+ * test in tests/test-lifecycle.php asserts this list stays complete.
+ */
+foreach (
+	array(
+		'serve_dashboard_db_version',
+		'serve_dashboard_retention_months',
+		'serve_dashboard_assessment_page',
+		'serve_dashboard_consent_page',
+		'serve_dashboard_digest_enabled',
+		'serve_dashboard_pco_subdomain',
+		'serve_dashboard_funnel',
+	) as $option
+) {
+	delete_option( $option );
+}
+
+// One per visitor per step per day, so a busy month leaves a lot of them.
+$wpdb->query(
+	"DELETE FROM {$wpdb->options}
+	 WHERE option_name LIKE '\_transient\_serve\_fn\_%'
+	    OR option_name LIKE '\_transient\_timeout\_serve\_fn\_%'
+	    OR option_name LIKE '\_transient\_serve\_gifts\_%'
+	    OR option_name LIKE '\_transient\_timeout\_serve\_gifts\_%'"
+);

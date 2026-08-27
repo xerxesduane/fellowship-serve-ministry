@@ -264,6 +264,17 @@ function run( string $filter = '' ): int {
 
 		try {
 			( $t['fn'] )( $assert, $fixtures );
+
+			/*
+			 * A test that asserted nothing passes for free, and reads in the
+			 * output exactly like one that checked something. That is worse
+			 * than no test, because it occupies the space where a real one
+			 * would go. This caught a metrics test whose loop body never ran.
+			 */
+			if ( 0 === $assert->count ) {
+				throw new Failure( 'this test made no assertions' );
+			}
+
 			printf( "  \u{2713} %s\n", $t['name'] );
 			++$passed;
 		} catch ( Failure $e ) {
