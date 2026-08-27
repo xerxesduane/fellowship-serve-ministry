@@ -118,8 +118,22 @@ test(
 test(
 	'a team with no target is left out of the gap panel rather than reported as full',
 	function ( Assert $a, Fixtures $f ) {
-		// On a fresh install no headcount has been set, so inventing a number
-		// here would mean the panel opens full of fiction.
+		// Set the condition rather than hoping the install already has it. On a
+		// fresh one no team has a target at all, and an earlier version of this
+		// test simply iterated an empty list and asserted nothing.
+		$short   = $f->set_team_capacity( 'events', 10, 4 );
+		$staffed = $f->set_team_capacity( 'prayer', 5, 5 );
+		$unset   = $f->set_team_capacity( 'administration', 0, 0 );
+
+		$listed = wp_list_pluck( Teams::gaps(), 'id' );
+
+		$a->ok( in_array( $short, $listed, false ), 'a team six people short is listed' );
+		$a->not( in_array( $staffed, $listed, false ), 'a fully staffed team is not' );
+
+		// The distinction the panel exists to make: "nobody has told us what
+		// this team needs" is not the same as "this team needs nobody".
+		$a->not( in_array( $unset, $listed, false ), 'a team with no target is left out, not reported as full' );
+
 		foreach ( Teams::gaps() as $team ) {
 			$a->ok( (int) $team->target_headcount > 0, "{$team->slug} has a real target" );
 			$a->ok( (int) $team->gap > 0, "{$team->slug} has a real shortfall" );

@@ -202,8 +202,65 @@ final class Fixtures {
 		return $id;
 	}
 
+	/** @var array<int,array{target:int,current:int,min:int}> capacity as it was before a test changed it. */
+	private array $team_capacity = array();
+
+	/**
+	 * Give a seeded team a headcount, restoring whatever it had afterwards.
+	 *
+	 * A test must not depend on whether anyone has configured this install:
+	 * on a fresh one no team has a target at all, which is the difference that
+	 * made the first version of the gap test assert nothing.
+	 */
+	public function set_team_capacity( string $slug, int $target, int $current, int $minimum = 0 ): int {
+		global $wpdb;
+
+		$team = \Serve_Dashboard\Teams::get_by_slug( $slug );
+		if ( ! $team ) {
+			throw new Failure( "no such team: $slug" );
+		}
+
+		$id = (int) $team->id;
+		if ( ! array_key_exists( $id, $this->team_capacity ) ) {
+			$this->team_capacity[ $id ] = array(
+				'target'  => (int) $team->target_headcount,
+				'current' => (int) $team->current_headcount,
+				'min'     => (int) $team->min_headcount,
+			);
+		}
+
+		$wpdb->update(
+			Schema::table( 'teams' ),
+			array(
+				'target_headcount'  => $target,
+				'current_headcount' => $current,
+				'min_headcount'     => $minimum,
+			),
+			array( 'id' => $id ),
+			array( '%d', '%d', '%d' ),
+			array( '%d' )
+		);
+
+		return $id;
+	}
+
 	public function cleanup(): void {
 		global $wpdb;
+
+		foreach ( $this->team_capacity as $team_id => $was ) {
+			$wpdb->update(
+				Schema::table( 'teams' ),
+				array(
+					'target_headcount'  => $was['target'],
+					'current_headcount' => $was['current'],
+					'min_headcount'     => $was['min'],
+				),
+				array( 'id' => $team_id ),
+				array( '%d', '%d', '%d' ),
+				array( '%d' )
+			);
+		}
+		$this->team_capacity = array();
 
 		foreach ( $this->team_leaders as $team_id => $previous ) {
 			$wpdb->update(
