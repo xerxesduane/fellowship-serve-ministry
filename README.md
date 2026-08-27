@@ -21,6 +21,7 @@ tools/build-release.sh              produces the installable zip
 tools/run-tests.php                 the test runner
 tests/                              what must never quietly regress
 docs/deployment-runbook.md          taking it live, in order
+docs/privacy-notice.md              what the software actually does with people's data
 docs/content-audit.md               page-by-page workbook fidelity audit
 ```
 
@@ -168,4 +169,7 @@ every name in it is fictional.
 - [`docs/deployment-runbook.md`](docs/deployment-runbook.md) — going live on
   `serve.fellowshipdubai.com`: mail first, the setup steps that look like bugs
   when skipped, the go-live gate, and rollback.
+- [`docs/privacy-notice.md`](docs/privacy-notice.md) — a draft privacy notice
+  describing the actual behaviour, table by table, for legal review before it is
+  published.
 - [`docs/content-audit.md`](docs/content-audit.md) — workbook fidelity, page by page.
