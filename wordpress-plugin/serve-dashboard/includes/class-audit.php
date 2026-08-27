@@ -29,6 +29,8 @@ final class Audit {
 	public const ACTION_SAFEGUARD_BLOCK  = 'safeguarding.blocked';
 	public const ACTION_TEAM_SAVED       = 'team.saved';
 	public const ACTION_CONSENT_RECORDED = 'consent.recorded';
+	public const ACTION_VERIFY_MAIL_FAIL = 'verification.mail_failed';
+	public const ACTION_VERIFY_RESENT    = 'verification.resent';
 
 	/**
 	 * Write one audit row.

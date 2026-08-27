@@ -19,7 +19,36 @@ if ( ! defined( 'ABSPATH' ) ) {
 <div class="wrap serve-wrap">
 	<h1><?php esc_html_e( 'Settings and audit', 'serve-dashboard' ); ?></h1>
 
-	<?php if ( isset( $_GET['notice'] ) ) : ?>
+	<?php
+	// phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only notice rendering after a redirect.
+	$notice = isset( $_GET['notice'] ) ? sanitize_key( wp_unslash( $_GET['notice'] ) ) : '';
+	$resent = isset( $_GET['sent'] ) ? absint( $_GET['sent'] ) : 0;
+	$still  = isset( $_GET['failed'] ) ? absint( $_GET['failed'] ) : 0;
+	// phpcs:enable WordPress.Security.NonceVerification.Recommended
+	?>
+
+	<?php if ( 'resent' === $notice ) : ?>
+		<div class="notice <?php echo $still > 0 ? 'notice-error' : 'notice-success'; ?> is-dismissible">
+			<p>
+				<?php
+				printf(
+					/* translators: %d: number of confirmation emails sent. */
+					esc_html( _n( '%d confirmation email sent.', '%d confirmation emails sent.', $resent, 'serve-dashboard' ) ),
+					absint( $resent )
+				);
+
+				if ( $still > 0 ) {
+					echo ' ';
+					printf(
+						/* translators: %d: number that failed again. */
+						esc_html( _n( '%d still could not be sent — outgoing email is not working yet.', '%d still could not be sent — outgoing email is not working yet.', $still, 'serve-dashboard' ) ),
+						absint( $still )
+					);
+				}
+				?>
+			</p>
+		</div>
+	<?php elseif ( '' !== $notice ) : ?>
 		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Saved.', 'serve-dashboard' ); ?></p></div>
 	<?php endif; ?>
 
@@ -69,6 +98,28 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<?php endforeach; ?>
 		</tbody>
 	</table>
+
+	<?php $unsent = Verification::unsent_count(); ?>
+	<?php if ( $unsent > 0 ) : ?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<?php wp_nonce_field( 'serve_resend_confirmations' ); ?>
+			<input type="hidden" name="action" value="serve_resend_confirmations">
+			<p>
+				<button type="submit" class="button button-primary">
+					<?php
+					printf(
+						/* translators: %d: number of confirmation emails waiting to be sent. */
+						esc_html( _n( 'Send %d unsent confirmation', 'Send %d unsent confirmations', $unsent, 'serve-dashboard' ) ),
+						absint( $unsent )
+					);
+					?>
+				</button>
+				<span class="serve-row-meta">
+					<em><?php esc_html_e( 'Fix outgoing email first — sending against a broken mailer will only fail again.', 'serve-dashboard' ); ?></em>
+				</span>
+			</p>
+		</form>
+	<?php endif; ?>
 
 	<h2><?php esc_html_e( 'Retention', 'serve-dashboard' ); ?></h2>
 	<p class="serve-lede">

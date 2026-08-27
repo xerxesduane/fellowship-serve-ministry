@@ -17,6 +17,7 @@ Built for a dedicated WordPress install at `serve.fellowshipdubai.com`.
 
 ```
 wordpress-plugin/serve-dashboard/   the entire product, one deployable plugin
+tools/build-release.sh              produces the installable zip
 docs/content-audit.md               page-by-page workbook fidelity audit
 ```
 
@@ -43,9 +44,26 @@ before deleting anything: both implementations carried the same 73 option ids,
 - PHP 8.1+
 - MySQL 5.7+ / MariaDB 10.3+
 
+## Build
+
+```bash
+tools/build-release.sh
+```
+
+Reads the version from the plugin header, checks it against
+`SERVE_DASHBOARD_VERSION` (a bump that touches only one of the two ships a
+plugin whose upgrade routine never runs), lints every PHP file, and writes
+`dist/serve-dashboard-<version>.zip` with `dev/` removed. It verifies that
+exclusion against the finished archive and fails rather than shipping the demo
+seeder to a live church site.
+
+Needs PHP on `PATH`, and either `zip` or PowerShell.
+
 ## Install
 
-1. Copy `wordpress-plugin/serve-dashboard/` into `wp-content/plugins/`.
+1. Install `dist/serve-dashboard-<version>.zip` through **Plugins → Add New →
+   Upload Plugin**, or copy `wordpress-plugin/serve-dashboard/` into
+   `wp-content/plugins/` for local development.
 2. Activate it. Activation creates the database tables, adds the two roles, seeds
    the 16 ministry teams, schedules the retention sweep, and creates the two
    public pages.

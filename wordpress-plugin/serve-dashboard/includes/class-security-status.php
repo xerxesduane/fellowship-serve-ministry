@@ -37,6 +37,7 @@ final class Security_Status {
 			self::check_file_editing(),
 			self::check_two_factor(),
 			self::check_mail(),
+			self::check_unsent_confirmations(),
 			self::check_demo_data(),
 			self::check_unverified_backlog(),
 			self::check_debug_display(),
@@ -160,6 +161,36 @@ final class Security_Status {
 				? __( 'A dedicated mail service is configured.', 'serve-dashboard' )
 				: __( 'Confirmation emails are going through the default PHP mailer, which is often silently filtered as spam. If they do not arrive, nobody can confirm a profile and no submission ever reaches a leader.', 'serve-dashboard' ),
 			$smtp ? '' : __( 'Send mail through an authenticated SMTP or transactional email service, and set SPF, DKIM and DMARC for the domain.', 'serve-dashboard' )
+		);
+	}
+
+	/**
+	 * Confirmations the mailer refused outright.
+	 *
+	 * The backlog check below infers trouble from a large number of people not
+	 * having confirmed, which it cannot distinguish from a quiet week. This one
+	 * is not an inference: `wp_mail()` returned false, so we know the message
+	 * never left. Those people are waiting on an email that does not exist.
+	 */
+	private static function check_unsent_confirmations(): array {
+		$unsent = Verification::unsent_count();
+
+		return self::row(
+			__( 'Unsent confirmations', 'serve-dashboard' ),
+			0 === $unsent ? self::PASS : self::FAIL,
+			0 === $unsent
+				? __( 'Every confirmation email has been accepted by the mailer.', 'serve-dashboard' )
+				: sprintf(
+					/* translators: %d: number of submissions whose confirmation email failed. */
+					_n(
+						'%d person completed the journey but their confirmation email could not be sent, so they are waiting on a message that never went out. Their profile is invisible to leaders until it does.',
+						'%d people completed the journey but their confirmation emails could not be sent, so they are waiting on messages that never went out. Their profiles are invisible to leaders until they do.',
+						$unsent,
+						'serve-dashboard'
+					),
+					$unsent
+				),
+			0 === $unsent ? '' : __( 'Fix outgoing email above, then use "Send unsent confirmations" below. These profiles are held back from the seven-day purge until the email actually goes.', 'serve-dashboard' )
 		);
 	}
 

@@ -30,6 +30,7 @@ final class Admin {
 		add_action( 'admin_post_serve_save_team', array( __CLASS__, 'handle_team' ) );
 		add_action( 'admin_post_serve_save_settings', array( __CLASS__, 'handle_settings' ) );
 		add_action( 'admin_post_serve_erase', array( __CLASS__, 'handle_erase' ) );
+		add_action( 'admin_post_serve_resend_confirmations', array( __CLASS__, 'handle_resend_confirmations' ) );
 	}
 
 	public static function menu(): void {
@@ -243,6 +244,36 @@ final class Admin {
 				array(
 					'page'   => self::PAGE_SETTINGS,
 					'notice' => 'saved',
+				),
+				admin_url( 'admin.php' )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Retry the confirmations the mailer previously refused.
+	 *
+	 * Deliberately manual. Retrying on a schedule against a mailer that is still
+	 * broken just burns the sending reputation of a domain the church needs, and
+	 * whoever fixed the mail is the person who knows it is fixed.
+	 */
+	public static function handle_resend_confirmations(): void {
+		check_admin_referer( 'serve_resend_confirmations' );
+
+		if ( ! current_user_can( Roles::CAP_MANAGE_SETTINGS ) ) {
+			wp_die( esc_html__( 'You do not have access to these settings.', 'serve-dashboard' ) );
+		}
+
+		$result = Verification::resend_unsent();
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'   => self::PAGE_SETTINGS,
+					'notice' => 'resent',
+					'sent'   => (int) $result['sent'],
+					'failed' => (int) $result['failed'],
 				),
 				admin_url( 'admin.php' )
 			)

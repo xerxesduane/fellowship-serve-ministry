@@ -225,7 +225,46 @@ them honestly. Before go-live it should read all-pass:
 - **Two-factor** on every Pastor and Ministry Leader account
 - **Authenticated SMTP** with SPF, DKIM and DMARC — verification emails that
   land in spam mean nothing ever reaches a leader
-- **Demo profiles deleted**, and `dev/` excluded from the shipped build
+- **Demo profiles deleted**. `dev/` is excluded by `tools/build-release.sh`,
+  which refuses to produce a zip that still contains it — the checklist item is
+  now enforced rather than remembered.
+
+### When the confirmation email cannot be sent
+
+The one failure this design is most exposed to is its own mailer. Verification
+is what makes an anonymous endpoint safe, so if mail stops working the whole
+journey stops working — and it used to stop *silently*:
+
+```
+POST /serve/v1/submissions   (SMTP broken)
+-> 201 "Almost done — please check your email"
+   verify_sent_at recorded as if it had gone
+   no email, no log line, no audit row, nothing on any screen
+   invisible to leaders; deleted by the purge seven days later
+```
+
+Someone gave nineteen steps of honest self-reflection and it was thrown away
+without one person knowing it happened. So:
+
+- `verify_sent_at` is written **only after the mailer accepts the message**. A
+  row never claims to have emailed someone it did not.
+- A failure writes `verification.mail_failed` to the audit trail.
+- **Settings → Security checklist** gains an *Unsent confirmations* row. It
+  **fails** — not warns — on any non-zero count, and says how many people are
+  waiting on a message that does not exist. This is distinct from the
+  *Unconfirmed submissions* row below it, which is only ever an inference from a
+  large backlog and cannot tell a broken mailer from a quiet week. This one is
+  not an inference: `wp_mail()` returned false.
+- Those submissions are **held back from the seven-day purge**. Deleting a
+  profile because someone "did not confirm" is only defensible if they were
+  asked. They remain bounded by the ordinary retention sweep.
+- **Send unsent confirmations** on the same screen retries them, issuing a fresh
+  token each so the 48-hour clock starts when the email actually does. Manual,
+  not scheduled: retrying into a still-broken mailer only burns the sending
+  reputation of a domain the church depends on.
+- The purge window runs from `verify_sent_at`, not `submitted_at`. Otherwise
+  someone whose confirmation was held through a fortnight of broken SMTP would
+  be sent their link and have it deleted by the next morning's sweep.
 
 ## Accessibility
 

@@ -57,7 +57,12 @@ The rebuild must make every row complete, preserve all assessment options and Ot
 ## Functional QA
 
 - The current launch flow contains 19 guided stages; source page 24 is intentionally deferred and the page 22 action follows the completed profile.
-- Every source assessment option and every source Other field is represented in structured TypeScript content.
+- Every source assessment option and every source Other field is represented in
+  the structured content at
+  `wordpress-plugin/serve-dashboard/public/assessment/shapeContent.js`. (This
+  line previously named a TypeScript source; the TypeScript implementation was
+  removed when the project consolidated on the WordPress plugin, and the content
+  moved to that file unchanged.)
 - Spiritual Gifts cannot be completed until all 18 gifts have a response.
 - Personality cannot be completed until all four pairings have a response.
 - Every response type is represented in the final profile: three gift groups, three Heart groups, Abilities, four Personality choices, all five Experience categories, Availability reflections/options, and a recommended next step.

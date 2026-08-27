@@ -50,6 +50,13 @@ final class Verification {
 	 * The raw token goes in the email; only its hash is stored, so a leaked
 	 * database cannot be used to verify anyone's address.
 	 *
+	 * `verify_sent_at` is written only once the mailer has actually accepted the
+	 * message. Recording it up front made a broken SMTP configuration completely
+	 * silent: the person was told to check an inbox nothing had been sent to,
+	 * the row stayed invisible to every leader, and `purge_unverified()` deleted
+	 * their nineteen steps of work a week later. Nobody was in a position to
+	 * notice, because nothing anywhere said the mail had failed.
+	 *
 	 * @return bool Whether the mail was handed to WordPress successfully.
 	 */
 	public static function issue( int $submission_id ): bool {
@@ -60,20 +67,98 @@ final class Verification {
 			return false;
 		}
 
-		$raw = bin2hex( random_bytes( 32 ) );
+		$raw   = bin2hex( random_bytes( 32 ) );
+		$table = Schema::table( 'submissions' );
 
 		$wpdb->update(
-			Schema::table( 'submissions' ),
+			$table,
 			array(
 				'verify_token'   => hash( 'sha256', $raw ),
-				'verify_sent_at' => current_time( 'mysql', true ),
+				'verify_sent_at' => null,
 			),
 			array( 'id' => $submission_id ),
 			array( '%s', '%s' ),
 			array( '%d' )
 		);
 
-		return self::send_mail( $submission, $raw );
+		if ( ! self::send_mail( $submission, $raw ) ) {
+			/*
+			 * The token stays valid so the same link can go out once the mailer
+			 * is fixed. What must not survive is the claim that it was sent.
+			 */
+			Audit::log( Audit::ACTION_VERIFY_MAIL_FAIL, 'submission', $submission_id );
+
+			return false;
+		}
+
+		$wpdb->update(
+			$table,
+			array( 'verify_sent_at' => current_time( 'mysql', true ) ),
+			array( 'id' => $submission_id ),
+			array( '%s' ),
+			array( '%d' )
+		);
+
+		return true;
+	}
+
+	/**
+	 * Submissions holding a live token that no email ever carried.
+	 *
+	 * Distinct from `pending_count()`, which is everyone yet to confirm — most
+	 * of whom simply have not opened the email yet. This is the count that can
+	 * only mean something is wrong at our end.
+	 */
+	public static function unsent_count(): int {
+		global $wpdb;
+		$table = Schema::table( 'submissions' );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user input.
+		return (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$table}
+			 WHERE verified_at IS NULL
+			   AND verify_token IS NOT NULL
+			   AND verify_sent_at IS NULL"
+		);
+	}
+
+	/**
+	 * Try the unsent confirmations again, after the mailer has been fixed.
+	 *
+	 * A fresh token is issued per person rather than resending the old one: the
+	 * 48-hour clock should start when the email that carries it does.
+	 *
+	 * @return array{sent:int,failed:int}
+	 */
+	public static function resend_unsent(): array {
+		global $wpdb;
+		$table = Schema::table( 'submissions' );
+
+		$ids = $wpdb->get_col(
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user input.
+			"SELECT id FROM {$table}
+			 WHERE verified_at IS NULL
+			   AND verify_token IS NOT NULL
+			   AND verify_sent_at IS NULL
+			 ORDER BY id"
+		);
+
+		$sent   = 0;
+		$failed = 0;
+
+		foreach ( $ids as $id ) {
+			if ( self::issue( (int) $id ) ) {
+				++$sent;
+				Audit::log( Audit::ACTION_VERIFY_RESENT, 'submission', (int) $id );
+			} else {
+				++$failed;
+			}
+		}
+
+		return array(
+			'sent'   => $sent,
+			'failed' => $failed,
+		);
 	}
 
 	private static function send_mail( object $submission, string $raw_token ): bool {
@@ -216,7 +301,20 @@ Fellowship Dubai SERVE team",
 		);
 	}
 
-	/** Unverified submissions waiting longer than the purge window. */
+	/**
+	 * Unverified submissions waiting longer than the purge window.
+	 *
+	 * Only those we actually managed to email. Deleting a profile because the
+	 * person "did not confirm" is only fair if they were ever asked — where the
+	 * mail failed, the fault is ours, and their work stays put until someone
+	 * fixes the mailer and resends. Those rows are still bounded: the ordinary
+	 * retention sweep in `Privacy` reaches them like any other submission.
+	 *
+	 * The window runs from when the email went, not from when the journey was
+	 * finished. Measured from `submitted_at`, someone whose confirmation was
+	 * held back through a fortnight of broken SMTP would be sent their link and
+	 * have it deleted by the next morning's sweep, before they could open it.
+	 */
 	public static function purge_unverified(): int {
 		global $wpdb;
 
@@ -227,7 +325,8 @@ Fellowship Dubai SERVE team",
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
 				"SELECT id FROM {$table}
 				 WHERE verified_at IS NULL
-				   AND submitted_at < DATE_SUB( UTC_TIMESTAMP(), INTERVAL %d DAY )",
+				   AND verify_sent_at IS NOT NULL
+				   AND verify_sent_at < DATE_SUB( UTC_TIMESTAMP(), INTERVAL %d DAY )",
 				self::PURGE_DAYS
 			)
 		);
