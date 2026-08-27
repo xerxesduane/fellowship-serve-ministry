@@ -42,6 +42,7 @@ foreach (
 	array(
 		'serve_dashboard_db_version',
 		'serve_dashboard_retention_months',
+		'serve_dashboard_contact_email',
 		'serve_dashboard_assessment_page',
 		'serve_dashboard_consent_page',
 		'serve_dashboard_digest_enabled',

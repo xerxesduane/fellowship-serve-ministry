@@ -31,6 +31,20 @@ final class Privacy {
 	public const OPTION_RETENTION_MONTHS = 'serve_dashboard_retention_months';
 	public const DEFAULT_RETENTION_MONTHS = 24;
 
+	/** Where somebody writes to have their profile removed. */
+	public const OPTION_CONTACT_EMAIL = 'serve_dashboard_contact_email';
+
+	/**
+	 * The SERVE team's own address.
+	 *
+	 * A default rather than a setting nobody remembers to fill in. This plugin
+	 * is built for one church, and the alternative fallback — whatever address
+	 * happens to be in WordPress' administrator field — is a guess that on this
+	 * very install pointed at an entirely different domain. Settings still
+	 * overrides it.
+	 */
+	public const DEFAULT_CONTACT_EMAIL = 'serve@fellowshipdubai.com';
+
 	/**
 	 * Salted hash of the caller's IP.
 	 *
@@ -77,6 +91,26 @@ final class Privacy {
 		$months = (int) get_option( self::OPTION_RETENTION_MONTHS, self::DEFAULT_RETENTION_MONTHS );
 
 		return $months > 0 ? $months : self::DEFAULT_RETENTION_MONTHS;
+	}
+
+	/**
+	 * The address published on the consent page for removal requests.
+	 *
+	 * Settings first, then the SERVE team's own address. The WordPress
+	 * administrator's address is not used: whoever installed the site is not
+	 * necessarily whoever should receive "please delete my profile", and on the
+	 * development install it belonged to a different organisation entirely.
+	 * Printing a guess on a data-removal notice sends that request to the wrong
+	 * person.
+	 */
+	public static function contact_email(): string {
+		$configured = sanitize_email( (string) get_option( self::OPTION_CONTACT_EMAIL, '' ) );
+
+		if ( '' !== $configured && is_email( $configured ) ) {
+			return $configured;
+		}
+
+		return self::DEFAULT_CONTACT_EMAIL;
 	}
 
 	/**

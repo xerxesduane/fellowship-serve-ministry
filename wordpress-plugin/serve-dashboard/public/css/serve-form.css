@@ -71,6 +71,7 @@
 	color: var(--serve-ink);
 }
 
+.serve-consent h1,
 .serve-consent h2 {
 	margin: 0 0 .5rem;
 	color: var(--serve-navy);
@@ -91,7 +92,7 @@
 	border-radius: 12px;
 }
 
-.serve-summary h3 {
+.serve-summary h2 {
 	margin: 0 0 .6rem;
 	color: var(--serve-navy);
 	font-size: .78rem;
@@ -335,10 +336,94 @@
 
 /* Confirmation state after following an email link. */
 .serve-consent--result { text-align: center; }
-.serve-consent--result h2 { margin-bottom: .75rem; }
-.serve-consent--result.is-ok h2 { color: var(--serve-teal); }
-.serve-consent--result.is-warn h2 { color: var(--serve-coral); }
+.serve-consent--result h1 { margin-bottom: .75rem; }
+.serve-consent--result.is-ok h1 { color: var(--serve-teal); }
+.serve-consent--result.is-warn h1 { color: var(--serve-coral); }
 .serve-consent--result .serve-consent__submit { display: inline-block; width: auto; text-decoration: none; }
+
+/*
+ * Page footer.
+ *
+ * Quiet on purpose. It is there to answer "who has this and how do I get it
+ * back", not to offer somewhere else to go — there is nowhere else on this
+ * subdomain, and inventing links is what the theme's footer was doing wrong.
+ */
+.serve-consent__foot {
+	margin: 1.75rem auto 0;
+	padding: 1.25rem .25rem 0;
+	border-top: 1px solid var(--serve-line);
+	color: var(--serve-muted);
+	font-size: .78rem;
+	line-height: 1.55;
+	text-align: center;
+}
+
+.serve-consent__foot-lede { margin: 0 0 .45rem; }
+
+.serve-consent__foot a {
+	color: var(--serve-teal);
+	text-underline-offset: 2px;
+}
+
+.serve-consent__foot a:focus-visible {
+	outline: 2px solid var(--serve-teal);
+	outline-offset: 2px;
+	border-radius: 3px;
+}
+
+.serve-consent__foot-links {
+	display: flex;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: .4rem 1.1rem;
+	margin: .9rem 0 0;
+}
+
+.serve-consent__foot-links a {
+	/*
+	 * The 44px minimum applies in the footer too. Padding alone came to 35,
+	 * which is the sort of thing that looks fine and misses under a thumb.
+	 */
+	display: inline-flex;
+	align-items: center;
+	min-height: 44px;
+	font-weight: 600;
+}
+
+.serve-consent__foot-mark {
+	margin: .9rem 0 0;
+	font-size: .7rem;
+	letter-spacing: .09em;
+	text-transform: uppercase;
+	color: var(--serve-line);
+}
+
+/*
+ * The page owns the document on the consent template, so it has to paint its
+ * own background — without this the body is whatever the theme reset leaves,
+ * and the card floats on bare white.
+ */
+body.serve-canvas--consent {
+	margin: 0;
+	padding: 2.5rem 1rem 3rem;
+	background: var(--serve-sand, #f5f1e8);
+	-webkit-font-smoothing: antialiased;
+}
+
+body.serve-canvas--consent .skip-to-content {
+	position: absolute;
+	left: -9999px;
+}
+
+body.serve-canvas--consent .skip-to-content:focus {
+	left: 1rem;
+	top: 1rem;
+	z-index: 10;
+	padding: .6rem .9rem;
+	background: #fff;
+	border-radius: 8px;
+	box-shadow: 0 6px 20px rgba(18, 38, 63, .2);
+}
 
 /* One column on a phone, which is where most of these are filled in. */
 @media (max-width: 30rem) {

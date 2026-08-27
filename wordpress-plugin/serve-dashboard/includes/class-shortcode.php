@@ -25,14 +25,89 @@ final class Shortcode {
 
 	public const STORAGE_KEY = 'fellowship-dubai-shape-v2';
 
+	/** Page template that drops the theme's header and footer. */
+	public const TEMPLATE = 'serve-consent-page';
+
 	public static function register(): void {
 		add_shortcode( 'serve_shape_consent', array( __CLASS__, 'render' ) );
+
+		add_filter( 'theme_page_templates', array( __CLASS__, 'register_template' ) );
+		add_filter( 'template_include', array( __CLASS__, 'use_template' ), 11 );
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'maybe_enqueue' ) );
 	}
 
 	/**
-	 * @param array<string,mixed> $atts
+	 * Load the stylesheet in the head, before anything is painted.
+	 *
+	 * A shortcode runs during `the_content()`, long after `wp_head()`, so
+	 * enqueueing there leaves WordPress to print the stylesheet near the bottom
+	 * of the body. On a themed page the theme's own CSS hides most of that; on
+	 * this page's own bare template there is nothing to hide behind, and the
+	 * form appears unstyled and then snaps into place.
+	 *
+	 * The enqueue inside `render()` stays, for a shortcode dropped on some
+	 * other page. Enqueueing the same handle twice is a no-op.
 	 */
-	public static function render( $atts = array() ): string {
+	public static function maybe_enqueue(): void {
+		if ( ! is_page() ) {
+			return;
+		}
+
+		$page_id = get_queried_object_id();
+		$post    = get_post( $page_id );
+
+		$is_consent = $page_id === (int) get_option( Assessment::OPTION_CONSENT_PAGE, 0 )
+			|| ( $post && has_shortcode( (string) $post->post_content, 'serve_shape_consent' ) );
+
+		if ( $is_consent ) {
+			self::enqueue();
+		}
+	}
+
+	/**
+	 * Offer the template in the page editor's Template dropdown.
+	 *
+	 * @param array<string,string> $templates
+	 * @return array<string,string>
+	 */
+	public static function register_template( array $templates ): array {
+		$templates[ self::TEMPLATE ] = __( 'SERVE — Share your profile', 'serve-dashboard' );
+
+		return $templates;
+	}
+
+	/**
+	 * Use the plugin's document for the consent page.
+	 *
+	 * Matched on the stored page id as well as on the chosen template, so a site
+	 * that was set up before this template existed gets it without anyone having
+	 * to know to go and pick it. Somebody who deliberately switches the page to
+	 * a different template still wins — the check is only a fallback for pages
+	 * that never chose one.
+	 */
+	public static function use_template( string $template ): string {
+		if ( ! is_page() ) {
+			return $template;
+		}
+
+		$page_id = get_queried_object_id();
+		$chosen  = get_page_template_slug( $page_id );
+
+		if ( self::TEMPLATE === $chosen ) {
+			return SERVE_DASHBOARD_DIR . 'public/templates/consent.php';
+		}
+
+		$is_consent_page = $page_id > 0 && $page_id === (int) get_option( Assessment::OPTION_CONSENT_PAGE, 0 );
+
+		if ( '' === $chosen && $is_consent_page ) {
+			return SERVE_DASHBOARD_DIR . 'public/templates/consent.php';
+		}
+
+		return $template;
+	}
+
+	/** Register the page's own assets. Safe to call twice. */
+	public static function enqueue(): void {
 		wp_enqueue_style(
 			'serve-shape-form',
 			SERVE_DASHBOARD_URL . 'public/css/serve-form.css',
@@ -67,6 +142,14 @@ final class Shortcode {
 				),
 			)
 		);
+	}
+
+	/**
+	 * @param array<string,mixed> $atts
+	 */
+	public static function render( $atts = array() ): string {
+		// Already done in the head on the consent page; a no-op there.
+		self::enqueue();
 
 		/*
 		 * Arriving from a confirmation email: show the outcome instead of the
@@ -82,16 +165,22 @@ final class Shortcode {
 
 			ob_start();
 			?>
-			<div class="serve-consent serve-consent--result is-<?php echo esc_attr( $message['tone'] ); ?>">
-				<h2><?php echo esc_html( $message['title'] ); ?></h2>
-				<p class="serve-consent__lede"><?php echo esc_html( $message['body'] ); ?></p>
-				<?php if ( Assessment::assessment_url() ) : ?>
-					<p>
-						<a class="serve-consent__submit" href="<?php echo esc_url( Assessment::assessment_url() ); ?>">
-							<?php esc_html_e( 'Back to my profile', 'serve-dashboard' ); ?>
-						</a>
-					</p>
-				<?php endif; ?>
+			<div class="serve-consent-page">
+				<?php self::brand_header( __( 'Confirming your email', 'serve-dashboard' ) ); ?>
+
+				<div class="serve-consent serve-consent--result is-<?php echo esc_attr( $message['tone'] ); ?>">
+					<h1><?php echo esc_html( $message['title'] ); ?></h1>
+					<p class="serve-consent__lede"><?php echo esc_html( $message['body'] ); ?></p>
+					<?php if ( Assessment::assessment_url() ) : ?>
+						<p>
+							<a class="serve-consent__submit" href="<?php echo esc_url( Assessment::assessment_url() ); ?>">
+								<?php esc_html_e( 'Back to my profile', 'serve-dashboard' ); ?>
+							</a>
+						</p>
+					<?php endif; ?>
+				</div>
+
+				<?php self::page_footer(); ?>
 			</div>
 			<?php
 
@@ -102,18 +191,10 @@ final class Shortcode {
 		?>
 		<div class="serve-consent-page">
 
-		<?php /* Carried over from the journey, so the last step does not look like a different website. */ ?>
-		<header class="serve-consent__brand">
-			<img src="<?php echo esc_url( SERVE_DASHBOARD_URL . 'public/assessment/fellowship-logo.jpeg' ); ?>"
-				alt="Fellowship Dubai" width="284" height="221" loading="lazy">
-			<div>
-				<p class="serve-consent__eyebrow"><?php esc_html_e( 'Final step', 'serve-dashboard' ); ?></p>
-				<p class="serve-consent__purpose"><?php esc_html_e( 'KNOW · GROW · GO', 'serve-dashboard' ); ?></p>
-			</div>
-		</header>
+		<?php self::brand_header( __( 'Final step', 'serve-dashboard' ) ); ?>
 
 		<form class="serve-consent" id="serve-consent-form" novalidate>
-			<h2><?php esc_html_e( 'Share your profile with the SERVE team', 'serve-dashboard' ); ?></h2>
+			<h1><?php esc_html_e( 'Share your profile with the SERVE team', 'serve-dashboard' ); ?></h1>
 
 			<p class="serve-consent__lede">
 				<?php esc_html_e( 'Your answers are still only on this device. Sending them lets a ministry leader start the conversation about where you might serve.', 'serve-dashboard' ); ?>
@@ -130,7 +211,7 @@ final class Shortcode {
 			 */
 			?>
 			<section class="serve-summary" data-serve-summary hidden>
-				<h3><?php esc_html_e( 'What you are about to share', 'serve-dashboard' ); ?></h3>
+				<h2><?php esc_html_e( 'What you are about to share', 'serve-dashboard' ); ?></h2>
 				<dl data-serve-summary-body></dl>
 				<p class="serve-summary__note">
 					<?php esc_html_e( 'Your full answers go with it, including anything you wrote in your own words.', 'serve-dashboard' ); ?>
@@ -210,7 +291,7 @@ final class Shortcode {
 		?>
 		<div class="serve-consent serve-consent--done" data-serve-done hidden>
 			<span class="serve-consent__tick" aria-hidden="true">&#10003;</span>
-			<h2><?php esc_html_e( 'Thank you — that is on its way', 'serve-dashboard' ); ?></h2>
+			<h1><?php esc_html_e( 'Thank you — that is on its way', 'serve-dashboard' ); ?></h1>
 			<p class="serve-consent__lede" data-serve-done-message></p>
 			<ol class="serve-consent__next">
 				<li><?php esc_html_e( 'Open the confirmation email we have just sent, so we know the address is yours.', 'serve-dashboard' ); ?></li>
@@ -222,9 +303,80 @@ final class Shortcode {
 			</p>
 		</div>
 
+		<?php self::page_footer(); ?>
+
 		</div>
 		<?php
 
 		return (string) ob_get_clean();
+	}
+
+	/**
+	 * The mark carried over from the journey.
+	 *
+	 * The nineteen steps before this are full-bleed and branded; arriving at
+	 * something that looks like a different website is not the moment to ask
+	 * for somebody's personal details.
+	 */
+	private static function brand_header( string $eyebrow ): void {
+		?>
+		<header class="serve-consent__brand">
+			<img src="<?php echo esc_url( SERVE_DASHBOARD_URL . 'public/assessment/fellowship-logo.jpeg' ); ?>"
+				alt="Fellowship Dubai" width="284" height="221" loading="lazy">
+			<div>
+				<p class="serve-consent__eyebrow"><?php echo esc_html( $eyebrow ); ?></p>
+				<p class="serve-consent__purpose"><?php esc_html_e( 'KNOW · GROW · GO', 'serve-dashboard' ); ?></p>
+			</div>
+		</header>
+		<?php
+	}
+
+	/**
+	 * The footer this page needs, rather than the one a theme supplies.
+	 *
+	 * Somebody is being asked for their spiritual gifts and, in the Experiences
+	 * section, their pastoral history. What belongs at the bottom of that page
+	 * is who is asking, how long it is kept and how to have it removed — not
+	 * Blog, Events and Shop.
+	 */
+	private static function page_footer(): void {
+		$privacy = get_privacy_policy_url();
+		$email   = antispambot( Privacy::contact_email() );
+		?>
+		<footer class="serve-consent__foot">
+			<p class="serve-consent__foot-lede">
+				<?php
+				printf(
+					/* translators: %d: retention period in months. */
+					esc_html__( 'Your profile is seen only by authorised Fellowship Dubai ministry leaders. It is kept for %d months and then deleted automatically.', 'serve-dashboard' ),
+					absint( Privacy::retention_months() )
+				);
+				?>
+			</p>
+
+			<p class="serve-consent__foot-lede">
+				<?php
+				printf(
+					/* translators: %s: mailto link to the SERVE team. */
+					esc_html__( 'Change your mind at any time and we will remove it — just write to %s.', 'serve-dashboard' ),
+					'<a href="mailto:' . esc_attr( $email ) . '">' . esc_html( $email ) . '</a>'
+				);
+				?>
+			</p>
+
+			<nav class="serve-consent__foot-links" aria-label="<?php esc_attr_e( 'Page links', 'serve-dashboard' ); ?>">
+				<?php if ( Assessment::assessment_url() ) : ?>
+					<a href="<?php echo esc_url( Assessment::assessment_url() ); ?>">
+						<?php esc_html_e( 'Back to my S.H.A.P.E. profile', 'serve-dashboard' ); ?>
+					</a>
+				<?php endif; ?>
+				<?php if ( $privacy ) : ?>
+					<a href="<?php echo esc_url( $privacy ); ?>"><?php esc_html_e( 'Privacy', 'serve-dashboard' ); ?></a>
+				<?php endif; ?>
+			</nav>
+
+			<p class="serve-consent__foot-mark"><?php esc_html_e( 'Fellowship Dubai · KNOW · GROW · GO', 'serve-dashboard' ); ?></p>
+		</footer>
+		<?php
 	}
 }

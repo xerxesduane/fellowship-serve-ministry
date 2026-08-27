@@ -194,6 +194,12 @@ final class Admin {
 		$months = isset( $_POST['retention_months'] ) ? absint( $_POST['retention_months'] ) : Privacy::DEFAULT_RETENTION_MONTHS;
 		update_option( Privacy::OPTION_RETENTION_MONTHS, max( 1, min( 120, $months ) ) );
 
+		// Blank is meaningful: it falls back to the administrator's address.
+		$contact = isset( $_POST['contact_email'] )
+			? sanitize_email( wp_unslash( $_POST['contact_email'] ) )
+			: '';
+		update_option( Privacy::OPTION_CONTACT_EMAIL, is_email( $contact ) ? $contact : '' );
+
 		// Explicit, reversible, and never done behind the site owner's back.
 		if ( ! empty( $_POST['use_as_front_page'] ) ) {
 			Assessment::set_as_front_page();

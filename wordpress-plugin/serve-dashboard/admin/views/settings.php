@@ -145,6 +145,25 @@ if ( ! defined( 'ABSPATH' ) ) {
 				</td>
 			</tr>
 			<tr>
+				<th scope="row">
+					<label for="contact_email"><?php esc_html_e( 'Removal requests go to', 'serve-dashboard' ); ?></label>
+				</th>
+				<td>
+					<input type="email" id="contact_email" name="contact_email" class="regular-text"
+						value="<?php echo esc_attr( (string) get_option( Privacy::OPTION_CONTACT_EMAIL, '' ) ); ?>"
+						placeholder="<?php echo esc_attr( Privacy::DEFAULT_CONTACT_EMAIL ); ?>">
+					<p class="description">
+						<?php
+						printf(
+							/* translators: %s: the address published when this is left blank. */
+							esc_html__( 'Published on the share page so somebody can ask for their profile to be deleted. Leave blank to use %s. Whatever is here should reach a person who would act on such a request.', 'serve-dashboard' ),
+							'<code>' . esc_html( Privacy::DEFAULT_CONTACT_EMAIL ) . '</code>'
+						);
+						?>
+					</p>
+				</td>
+			</tr>
+			<tr>
 				<th scope="row"><?php esc_html_e( 'Consent text in use', 'serve-dashboard' ); ?></th>
 				<td>
 					<p class="serve-consent-text"><?php echo esc_html( Privacy::purpose_text() ); ?></p>

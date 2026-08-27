@@ -55,12 +55,18 @@ final class Assessment {
 			update_post_meta( $assessment, '_wp_page_template', self::TEMPLATE );
 		}
 
-		self::ensure_page(
+		$consent = self::ensure_page(
 			self::OPTION_CONSENT_PAGE,
 			__( 'Share your profile', 'serve-dashboard' ),
 			'share-my-profile',
 			'[serve_shape_consent]'
 		);
+
+		// Its own document as well, so the last step of the journey does not
+		// arrive wrapped in whatever nav the active theme ships with.
+		if ( $consent ) {
+			update_post_meta( $consent, '_wp_page_template', Shortcode::TEMPLATE );
+		}
 	}
 
 	/**
