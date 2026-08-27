@@ -253,7 +253,7 @@ function welcome() {
     </div>
     <div>${teachingCard(welcomeSection)}
       <p class="journey-estimate">${icon("clock", 16)}This takes ${escapeHtml(SERVE_CONFIG.estimate || "about 20 minutes")}. Your answers save automatically on this device as you go.</p>
-      <fieldset class="profile-fields"><legend>Your profile details</legend><p>These optional details will appear on your completed profile if you choose to download or share it.</p>
+      <fieldset class="profile-fields"><legend>Your contact details</legend><p>We need these so a ministry leader can get back to you about serving. They appear on your completed profile, and are only shared if you choose to share it.</p>
         ${profileInput("name", "Name", "text", "name")}
         ${profileInput("email", "Email", "email", "email")}
         ${profileInput("phone", "Phone", "tel", "tel")}
@@ -264,7 +264,13 @@ function welcome() {
 }
 
 function profileInput(id, label, type, autocomplete) {
-  return `<label><span>${label}</span><input type="${type}" data-profile="${id}" value="${escapeHtml(answers.profile[id])}" autocomplete="${autocomplete}"></label>`;
+  const error = contactError(id);
+  // Only flag a field the person has actually typed in. Opening the page to
+  // three red boxes reads as being told off before starting.
+  const touched = Boolean((answers.profile[id] || "").trim());
+  const invalid = Boolean(error) && touched;
+
+  return `<label><span>${label} <b class="field-required" aria-hidden="true">*</b></span><input type="${type}" data-profile="${id}" value="${escapeHtml(answers.profile[id])}" autocomplete="${autocomplete}" required aria-required="true"${invalid ? ` aria-invalid="true" aria-describedby="err-${id}"` : ""}><small class="field-error" id="err-${id}"${invalid ? "" : " hidden"}>${escapeHtml(error || "")}</small></label>`;
 }
 
 function contents() {
@@ -420,8 +426,45 @@ function stage() {
   return profilePage();
 }
 
+/*
+ * Contact details are required before the journey starts.
+ *
+ * A finished profile that nobody can be reached about cannot become a serving
+ * conversation, which is the only thing the journey exists to start. The rules
+ * are deliberately forgiving about format: this congregation's numbers come
+ * from a dozen countries, so anything with enough digits to dial is accepted.
+ */
+const CONTACT_FIELDS = ["name", "email", "phone"];
+
+function contactError(id) {
+  const value = (answers.profile[id] || "").trim();
+
+  if (!value) {
+    return { name: "Please tell us your name.", email: "Please add your email address.", phone: "Please add a phone number." }[id];
+  }
+
+  if (id === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) {
+    return "That email address does not look complete — check for a typo.";
+  }
+
+  // Digits only after stripping the punctuation people legitimately type.
+  if (id === "phone" && (value.replace(/[^\d]/g, "").length < 7 || /[^\d\s+()./-]/.test(value))) {
+    return "That phone number does not look complete. Include the country code if you have one.";
+  }
+
+  return "";
+}
+
+function contactErrors() {
+  return CONTACT_FIELDS.map((id) => [id, contactError(id)]).filter(([, error]) => error);
+}
+
 function validationMessage() {
   const id = journeySteps[step].id;
+  if (id === "welcome") {
+    const errors = contactErrors();
+    if (errors.length) return errors[0][1];
+  }
   if (id === "gifts-assessment" && Object.keys(answers.gifts).length < gifts.length) return "Choose a response for every spiritual gift before continuing.";
   if (id === "personality-assessment" && Object.keys(answers.personality).length < personalityPairs.length) return "Choose one response from each personality pairing before continuing.";
   return "";
@@ -497,9 +540,63 @@ root.addEventListener("click", (event) => {
   if (["home", "back", "next", "restart"].includes(action)) window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
+/*
+ * Refresh the Continue gate in place instead of re-rendering.
+ *
+ * render() rebuilds the whole stage, which would throw the caret out of the
+ * field on every keystroke. Only three things can change while someone types a
+ * contact detail, so update exactly those three.
+ */
+function syncContactGate(changed) {
+  const message = validationMessage();
+  const next = root.querySelector('[data-action="next"]');
+  if (next) next.disabled = Boolean(message);
+
+  const holder = next && next.parentElement;
+  if (holder) {
+    let line = holder.querySelector(".validation-message");
+    if (message && !line) {
+      line = document.createElement("p");
+      line.className = "validation-message";
+      holder.insertBefore(line, next);
+    }
+    if (line) {
+      line.textContent = message;
+      line.hidden = !message;
+    }
+  }
+
+  if (!changed) return;
+
+  // Flag the field itself only once there is something in it. Complaining at an
+  // empty box the moment it is touched is nagging rather than help; the footer
+  // already names what is still missing.
+  const error = contactError(changed);
+  const show = Boolean(error) && Boolean((answers.profile[changed] || "").trim());
+  const field = root.querySelector(`[data-profile="${changed}"]`);
+  const note = root.querySelector(`#err-${changed}`);
+
+  if (field) {
+    if (show) {
+      field.setAttribute("aria-invalid", "true");
+      field.setAttribute("aria-describedby", `err-${changed}`);
+    } else {
+      field.removeAttribute("aria-invalid");
+      field.removeAttribute("aria-describedby");
+    }
+  }
+  if (note) {
+    note.textContent = show ? error : "";
+    note.hidden = !show;
+  }
+}
+
 root.addEventListener("input", (event) => {
   const input = event.target;
-  if (input.dataset.profile) answers.profile[input.dataset.profile] = input.value;
+  if (input.dataset.profile) {
+    answers.profile[input.dataset.profile] = input.value;
+    syncContactGate(input.dataset.profile);
+  }
   if (input.dataset.text) answers.text[input.dataset.text] = input.value;
   if (input.dataset.search) {
     searches[input.dataset.search] = input.value;

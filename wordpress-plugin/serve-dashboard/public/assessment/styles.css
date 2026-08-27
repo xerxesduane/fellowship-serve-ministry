@@ -78,6 +78,10 @@ h1, h2, h3, p { text-wrap: pretty; }
 .profile-fields legend { padding: 0 7px; font-weight: 800; }
 .profile-fields > p { grid-column: 1/-1; margin: 0 0 5px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .profile-fields label:first-of-type { grid-column: 1/-1; }
+.field-required { color: var(--orange-dark); font-weight: 800; }
+.field-error { color: var(--orange-dark); font-size: 12px; font-weight: 650; line-height: 1.4; }
+/* Never colour alone: the border thickens too, for anyone who cannot see it. */
+.profile-fields input[aria-invalid="true"] { border-color: var(--orange-dark); border-width: 2px; }
 .profile-fields label, .other-field, .reflection-fields label { display: grid; gap: 7px; font-size: 12px; font-weight: 750; }
 input, textarea { width: 100%; min-height: 48px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: white; color: var(--ink); font-size: 16px; }
 textarea { min-height: 105px; resize: vertical; line-height: 1.5; }

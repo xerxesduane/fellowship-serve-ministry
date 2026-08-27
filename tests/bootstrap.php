@@ -131,6 +131,21 @@ final class Fixtures {
 		return (int) $id;
 	}
 
+	/**
+	 * Take responsibility for a row this object did not create.
+	 *
+	 * A test that posts at the REST endpoint gets a real submission back that
+	 * nothing is tracking. Handing the id over here means it is erased with
+	 * everything else rather than left in the leaders' queue.
+	 */
+	public function adopt( int $submission_id ): int {
+		if ( $submission_id > 0 && ! in_array( $submission_id, $this->submissions, true ) ) {
+			$this->submissions[] = $submission_id;
+		}
+
+		return $submission_id;
+	}
+
 	/** A submission that has confirmed its address. */
 	public function verified_submission( array $overrides = array() ): int {
 		global $wpdb;

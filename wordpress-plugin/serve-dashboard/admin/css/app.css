@@ -990,6 +990,35 @@ button.serve-metric:hover {
 	color: var(--serve-text-muted);
 }
 
+.serve-contact {
+	margin: var(--serve-space-3) 0 0;
+	padding: 0;
+	list-style: none;
+	display: grid;
+	gap: var(--serve-space-2);
+}
+
+.serve-contact li {
+	display: flex;
+	align-items: center;
+	gap: var(--serve-space-2);
+	/* The 44px minimum applies here too: these are the drawer's tap targets. */
+	min-height: 44px;
+	font-size: .875rem;
+	word-break: break-word;
+}
+
+.serve-contact svg {
+	flex: 0 0 auto;
+	color: var(--serve-text-muted);
+}
+
+.serve-contact a {
+	color: inherit;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
 .serve-dim {
 	display: flex;
 	gap: var(--serve-space-3);

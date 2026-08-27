@@ -85,6 +85,8 @@ function icon(name) {
 	const paths = {
 		users: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.5a3.2 3.2 0 0 1 0 6.2"/><path d="M17.5 14.5a5.5 5.5 0 0 1 3 5.5"/>',
 		heart: '<path d="M12 19.5s-7-4.3-7-9A3.8 3.8 0 0 1 12 8.2 3.8 3.8 0 0 1 19 10.5c0 4.7-7 9-7 9z"/>',
+		mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/>',
+		phone: '<path d="M7 3.5h3l1.5 4-2 1.5a12 12 0 0 0 5.5 5.5l1.5-2 4 1.5v3a1.5 1.5 0 0 1-1.7 1.5A17 17 0 0 1 4.5 5.2 1.5 1.5 0 0 1 6 3.5z"/>',
 		clock: '<circle cx="12" cy="12" r="8.2"/><path d="M12 7.5V12l3 2"/>',
 		gift: '<path d="M4.5 10.5h15V20H4.5z"/><path d="M3.5 7h17v3.5h-17zM12 7v13"/>',
 		tool: '<path d="M14.5 6.5a3.5 3.5 0 0 0 4.6 4.6l-8 8a2.4 2.4 0 0 1-3.4-3.4z"/>',
@@ -425,6 +427,27 @@ const drawer = {
 				</p>`
 			: '';
 
+		/*
+		 * The whole dashboard exists to start a conversation, and until now the
+		 * drawer showed no way to have one — the email and phone were in the
+		 * payload and rendered nowhere, so a leader had to leave for the
+		 * WordPress admin screen to find them.
+		 *
+		 * tel: wants the number without the spacing people type; the visible
+		 * text keeps whatever they wrote, which is how they will recognise it.
+		 */
+		const dial = String(person.phone || '').replace(/[^\d+]/g, '');
+		const contact = `
+			<div class="serve-section">
+				<h3>Contact</h3>
+				<ul class="serve-contact">
+					<li>${icon('mail')}<a href="mailto:${esc(person.email)}">${esc(person.email)}</a></li>
+					${dial
+						? `<li>${icon('phone')}<a href="tel:${esc(dial)}">${esc(person.phone)}</a></li>`
+						: '<li class="serve-card__hint">No phone number — this profile predates the question being required.</li>'}
+				</ul>
+			</div>`;
+
 		const actions = [];
 
 		if (CONFIG.caps.manage) {
@@ -454,6 +477,8 @@ const drawer = {
 					${icon('close')}<span class="screen-reader-text">Close profile</span>
 				</button>
 			</div>
+
+			${contact}
 
 			<div class="serve-section">
 				<h3>Journey status</h3>

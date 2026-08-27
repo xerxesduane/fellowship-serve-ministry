@@ -55,6 +55,23 @@ and storage layer, plus the smallest set of views that make it useful.
 - A team with no target set is excluded from the gap panel rather than reported
   as fully staffed.
 
+**Contact details, collected once**
+
+- Name, email and phone are all required, enforced in the journey before it
+  starts and again at the endpoint — `required` in the markup is a courtesy to
+  the person filling the form in and no obstacle to anything posting directly.
+- Phone validation is deliberately forgiving: enough digits to dial, and no
+  characters that mean it is not a number. This congregation's numbers come from
+  a dozen countries and no single format covers them.
+- The journey carries all three through to the consent page and prefills them,
+  because asking twice invites a mistyped second copy — and a wrong email looks
+  exactly like a right one until nobody can reach the person.
+- They are stored in their own columns, never duplicated into `profile_json`.
+  One copy, in one place, erased with the record.
+- The dashboard drawer shows both, as `mailto:` and `tel:` links. They were in
+  the payload and rendered nowhere, so a leader had to leave for the WordPress
+  admin screen to find a phone number.
+
 **Dubai-specific fields**
 - Expected time in the UAE, so a leader does not place someone on a six-month
   contract into a role needing two years of continuity.

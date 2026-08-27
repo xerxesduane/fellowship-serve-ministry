@@ -108,6 +108,19 @@ export function buildProfile(answers) {
     : "Explore one or two current serving opportunities and notice where your gifts become clearer through experience.";
 
   return {
+    /*
+     * The contact details, carried through with the rest of the profile.
+     *
+     * They were collected on the first step and then dropped here, so the
+     * consent page — the one place they are actually needed — asked for all
+     * three again. Somebody who mistyped their email the second time became
+     * unreachable while appearing perfectly complete.
+     */
+    contact: {
+      name: (answers.profile.name || "").trim(),
+      email: (answers.profile.email || "").trim(),
+      phone: (answers.profile.phone || "").trim(),
+    },
     spiritualGifts: giftGroups,
     heart: {
       roles: withOther(answers, "heart-roles", heartQuestions[0].options),

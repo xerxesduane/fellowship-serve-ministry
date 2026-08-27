@@ -55,6 +55,31 @@
 		}
 	}
 
+	/**
+	 * Fill the contact fields from the journey the person just finished.
+	 *
+	 * The assessment now requires all three, so asking for them again is asking
+	 * someone to retype what we already hold — and a mistyped second copy is
+	 * worse than no copy, because a wrong email looks exactly like a right one
+	 * right up until nobody can reach them. Anything already typed here wins,
+	 * and a profile saved before this existed simply carries no contact block,
+	 * so those fields stay empty and the person fills them in as before.
+	 */
+	function prefillContact() {
+		const profile = readProfile();
+		const contact = (profile && profile.contact) || {};
+
+		[['display_name', 'name'], ['email', 'email'], ['phone', 'phone']].forEach(function (pair) {
+			const field = form.elements[pair[0]];
+			const value = contact[pair[1]];
+			if (field && !field.value && value) {
+				field.value = value;
+			}
+		});
+	}
+
+	prefillContact();
+
 	form.addEventListener('submit', function (event) {
 		event.preventDefault();
 

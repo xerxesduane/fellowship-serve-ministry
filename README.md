@@ -52,10 +52,11 @@ before deleting anything: both implementations carried the same 73 option ids,
 SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
 ```
 
-Thirty-nine tests covering the guarantees whose failure would be silent: the
+Forty-five tests covering the guarantees whose failure would be silent: the
 safeguarding gate, unverified profiles staying invisible, Experiences redaction,
-what a CSV may contain, the confirmation-email path in both directions, and what
-activation is supposed to have left behind.
+what a CSV may contain, the confirmation-email path in both directions, what the
+public intake endpoint accepts, and what activation is supposed to have left
+behind.
 
 That last group exists because activation runs once, on a database nobody has
 looked at yet, and then never again — so it is the least-exercised code here and
@@ -69,7 +70,7 @@ again, then reports if a count moved. It refuses to run against an install
 declaring itself production, and otherwise requires `SERVE_TEST_OK=1` so that
 pointing it somewhere real has to be deliberate.
 
-Adding Composer and the WordPress PHPUnit scaffold to run thirty-nine tests
+Adding Composer and the WordPress PHPUnit scaffold to run forty-five tests
 would have been a bigger change to this repository than anything they check, so
 the runner is about a hundred lines and has no dependencies.
 
@@ -86,10 +87,16 @@ assuming:
   level of a nested array, so its loop body never ran and it sailed through a
   deliberately broken scope clause. The runner now **fails any test that
   finishes without making an assertion.**
-- Three mutations appeared uncaught and had simply never applied — regexes that
-  did not match, and one aimed at the deployed copy of a file the test reads
-  from the repository. Check the mutation landed before believing what it tells
-  you.
+- Several mutations appeared uncaught and had simply never applied — regexes
+  that did not match, and one aimed at the deployed copy of a file the test
+  reads from the repository. Check the mutation landed before believing what it
+  tells you. One of these masked a real result twice.
+- The suite has to be repeatable, not merely green once. The intake tests post
+  at the throttled public endpoint and cleared the wrong rate-limit bucket
+  afterwards, so counters accumulated and the suite began returning 429 after
+  enough local runs — passing today, failing on Thursday, and invisible on CI
+  because CI gets a fresh database every time. Running it three times in a row
+  is now part of checking it.
 
 ## Build
 

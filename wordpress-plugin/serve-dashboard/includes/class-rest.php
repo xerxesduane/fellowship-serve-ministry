@@ -124,6 +124,7 @@ final class Rest {
 				'sanitize_callback' => 'sanitize_email',
 			),
 			'phone'         => array(
+				'required'          => true,
 				'type'              => 'string',
 				'sanitize_callback' => 'sanitize_text_field',
 			),
@@ -171,6 +172,26 @@ final class Rest {
 		$name = trim( (string) $request->get_param( 'display_name' ) );
 		if ( '' === $name ) {
 			return new \WP_Error( 'serve_name_required', __( 'Please tell us your name.', 'serve-dashboard' ), array( 'status' => 422 ) );
+		}
+
+		/*
+		 * Checked here as well as in the form, because `required` in the markup
+		 * is a convenience for the person filling it in and no obstacle at all
+		 * to anything posting straight at the endpoint.
+		 *
+		 * Deliberately forgiving about shape: this congregation's numbers come
+		 * from a dozen countries and no format is common to all of them. Enough
+		 * digits to dial, and no characters that mean it is not a number.
+		 */
+		$phone  = trim( (string) $request->get_param( 'phone' ) );
+		$digits = preg_replace( '/\D/', '', $phone );
+
+		if ( '' === $phone ) {
+			return new \WP_Error( 'serve_phone_required', __( 'Please add a phone number so a leader can reach you.', 'serve-dashboard' ), array( 'status' => 422 ) );
+		}
+
+		if ( strlen( (string) $digits ) < 7 || preg_match( '#[^\d\s+()./-]#', $phone ) ) {
+			return new \WP_Error( 'serve_bad_phone', __( 'That phone number does not look complete.', 'serve-dashboard' ), array( 'status' => 422 ) );
 		}
 
 		$profile = self::sanitize_profile( (array) $request->get_param( 'profile' ) );
@@ -260,6 +281,18 @@ final class Rest {
 	 */
 	private static function sanitize_profile( array $raw ): array {
 		$clean = array();
+
+		/*
+		 * `contact` is deliberately absent from this whitelist.
+		 *
+		 * The journey now carries name, email and phone inside the profile so
+		 * the consent page can prefill them rather than asking twice. Once the
+		 * form is posted they belong in their own columns, which is what the
+		 * dashboard, the search, and the export all read. Adding them here as
+		 * well would put a second copy of the same personal data inside
+		 * profile_json, free to drift from the columns and easy to miss when
+		 * erasing someone. One copy, in one place.
+		 */
 
 		foreach ( array( 'likely', 'possible', 'unlikely' ) as $bucket ) {
 			$clean['spiritualGifts'][ $bucket ] = self::string_list( $raw['spiritualGifts'][ $bucket ] ?? array() );

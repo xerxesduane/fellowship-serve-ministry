@@ -113,8 +113,8 @@ final class Shortcode {
 			</div>
 
 			<div class="serve-consent__field">
-				<label for="serve-phone"><?php esc_html_e( 'Phone (optional)', 'serve-dashboard' ); ?></label>
-				<input type="tel" id="serve-phone" name="phone" autocomplete="tel">
+				<label for="serve-phone"><?php esc_html_e( 'Phone', 'serve-dashboard' ); ?></label>
+				<input type="tel" id="serve-phone" name="phone" required autocomplete="tel">
 			</div>
 
 			<div class="serve-consent__field">
