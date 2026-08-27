@@ -1,0 +1,167 @@
+/*
+ * Consent-and-send step.
+ *
+ * Same palette as the assessment so this final step does not feel like a
+ * different website asking for personal details.
+ */
+
+.serve-consent {
+	--serve-navy: #12263f;
+	--serve-teal: #167d83;
+	--serve-teal-soft: #e6f3f2;
+	--serve-orange: #ec6f45;
+	--serve-sand: #f5f1e8;
+	--serve-paper: #fffdf8;
+	--serve-ink: #17314a;
+	--serve-muted: #667786;
+	--serve-line: #ddd9cf;
+
+	max-width: 34rem;
+	margin: 0 auto;
+	padding: 1.75rem;
+	background: var(--serve-paper);
+	border: 1px solid var(--serve-line);
+	border-radius: 14px;
+	box-shadow: 0 22px 65px rgba(18, 38, 63, .11);
+	color: var(--serve-ink);
+}
+
+.serve-consent h2 {
+	margin: 0 0 .5rem;
+	color: var(--serve-navy);
+	font-size: 1.4rem;
+	line-height: 1.25;
+}
+
+.serve-consent__lede {
+	margin: 0 0 1.5rem;
+	color: var(--serve-muted);
+}
+
+.serve-consent__field {
+	margin-bottom: 1rem;
+	display: flex;
+	flex-direction: column;
+	gap: .35rem;
+}
+
+.serve-consent__field label {
+	font-weight: 600;
+	font-size: .95rem;
+}
+
+.serve-consent__field input,
+.serve-consent__field select {
+	padding: .65rem .75rem;
+	font: inherit;
+	color: inherit;
+	background: #fff;
+	border: 1px solid var(--serve-line);
+	border-radius: 8px;
+}
+
+.serve-consent__field input:focus-visible,
+.serve-consent__field select:focus-visible {
+	outline: 2px solid var(--serve-teal);
+	outline-offset: 1px;
+}
+
+.serve-consent__field small {
+	color: var(--serve-muted);
+	font-size: .8rem;
+	line-height: 1.4;
+}
+
+/* Consent gate. */
+.serve-consent__box {
+	margin: 1.25rem 0;
+	padding: 1rem;
+	background: var(--serve-teal-soft);
+	border-radius: 10px;
+}
+
+.serve-consent__box label {
+	display: flex;
+	gap: .65rem;
+	align-items: flex-start;
+	font-size: .88rem;
+	line-height: 1.5;
+	cursor: pointer;
+}
+
+.serve-consent__box input {
+	flex: 0 0 auto;
+	margin-top: .2rem;
+	width: 1.05rem;
+	height: 1.05rem;
+	accent-color: var(--serve-teal);
+}
+
+/* Hidden from people, visible to bots. Not display:none, which some bots skip. */
+.serve-consent__decoy {
+	position: absolute;
+	left: -9999px;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+}
+
+.serve-consent__submit {
+	width: 100%;
+	padding: .85rem 1rem;
+	font: inherit;
+	font-weight: 600;
+	color: #fff;
+	background: var(--serve-teal);
+	border: 0;
+	border-radius: 999px;
+	cursor: pointer;
+}
+
+.serve-consent__submit:hover:not(:disabled) {
+	background: var(--serve-navy);
+}
+
+.serve-consent__submit:disabled {
+	opacity: .6;
+	cursor: progress;
+}
+
+.serve-consent__status {
+	margin: .85rem 0 0;
+	min-height: 1.4em;
+	text-align: center;
+	font-size: .9rem;
+	color: var(--serve-muted);
+}
+
+.serve-consent__status.is-error {
+	color: var(--serve-orange);
+	font-weight: 600;
+}
+
+.serve-consent.is-sent .serve-consent__field,
+.serve-consent.is-sent .serve-consent__box,
+.serve-consent.is-sent .serve-consent__submit,
+.serve-consent.is-sent .serve-consent__lede {
+	display: none;
+}
+
+.serve-consent.is-sent .serve-consent__status {
+	font-size: 1.05rem;
+	font-weight: 600;
+	color: var(--serve-teal);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.serve-consent__submit {
+		transition: background-color .18s ease;
+	}
+}
+
+/* Confirmation state after following an email link. */
+.serve-consent--result { text-align: center; }
+.serve-consent--result h2 { margin-bottom: .75rem; }
+.serve-consent--result.is-ok h2 { color: var(--serve-teal); }
+.serve-consent--result.is-warn h2 { color: var(--serve-coral); }
+.serve-consent--result .serve-consent__submit { display: inline-block; width: auto; text-decoration: none; }

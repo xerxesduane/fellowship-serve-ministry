@@ -1,0 +1,323 @@
+<?php
+/**
+ * Custom table definitions for the SERVE dashboard.
+ *
+ * Everything the dashboard needs lives in dedicated tables rather than post
+ * meta. Submissions carry sensitive religious and pastoral data, so they stay
+ * out of the WordPress post tables and therefore off the public REST surface.
+ *
+ * @package ServeDashboard
+ */
+
+declare(strict_types=1);
+
+namespace Serve_Dashboard;
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+final class Schema {
+
+	/**
+	 * Bumped whenever a CREATE TABLE statement below changes, so that
+	 * maybe_upgrade() knows to re-run dbDelta.
+	 */
+	public const DB_VERSION = '1.3.0';
+
+	public const OPTION_DB_VERSION = 'serve_dashboard_db_version';
+
+	/* Pipeline states a submission moves through. */
+	public const STATUS_SUBMITTED           = 'submitted';
+	public const STATUS_CONTACTED           = 'contacted';
+	public const STATUS_CONVERSATION_BOOKED = 'conversation_booked';
+	public const STATUS_TRIAL_SERVE         = 'trial_serve';
+	public const STATUS_PLACED              = 'placed';
+	public const STATUS_PAUSED              = 'paused';
+	public const STATUS_DECLINED            = 'declined';
+
+	/**
+	 * The forward pipeline, in order. Position matters: the safeguarding gate
+	 * compares indexes to decide whether a transition moves someone closer to
+	 * actually serving. Paused and declined sit outside the ladder.
+	 *
+	 * @return string[]
+	 */
+	public static function pipeline(): array {
+		return array(
+			self::STATUS_SUBMITTED,
+			self::STATUS_CONTACTED,
+			self::STATUS_CONVERSATION_BOOKED,
+			self::STATUS_TRIAL_SERVE,
+			self::STATUS_PLACED,
+		);
+	}
+
+	/**
+	 * Every valid status, including the two off-ladder ones.
+	 *
+	 * @return string[]
+	 */
+	public static function statuses(): array {
+		return array_merge(
+			self::pipeline(),
+			array( self::STATUS_PAUSED, self::STATUS_DECLINED )
+		);
+	}
+
+	/**
+	 * Human-readable labels for the pipeline states.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function status_labels(): array {
+		return array(
+			self::STATUS_SUBMITTED           => __( 'Submitted', 'serve-dashboard' ),
+			self::STATUS_CONTACTED           => __( 'Contacted', 'serve-dashboard' ),
+			self::STATUS_CONVERSATION_BOOKED => __( 'Conversation booked', 'serve-dashboard' ),
+			self::STATUS_TRIAL_SERVE         => __( 'Trial serve', 'serve-dashboard' ),
+			self::STATUS_PLACED              => __( 'Placed', 'serve-dashboard' ),
+			self::STATUS_PAUSED              => __( 'Paused', 'serve-dashboard' ),
+			self::STATUS_DECLINED            => __( 'Declined', 'serve-dashboard' ),
+		);
+	}
+
+	public static function table( string $name ): string {
+		global $wpdb;
+
+		return $wpdb->prefix . 'serve_' . $name;
+	}
+
+	/**
+	 * Every table this plugin owns, for install and uninstall alike.
+	 *
+	 * @return string[]
+	 */
+	public static function table_names(): array {
+		return array( 'submissions', 'consents', 'teams', 'placements', 'notes', 'drafts', 'audit' );
+	}
+
+	/**
+	 * Create or update the custom tables.
+	 *
+	 * dbDelta is whitespace sensitive: two spaces before PRIMARY KEY, one
+	 * definition per line, lowercase column types. Do not reformat.
+	 */
+	public static function install(): void {
+		global $wpdb;
+
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+		$charset = $wpdb->get_charset_collate();
+
+		$submissions = self::table( 'submissions' );
+		$consents    = self::table( 'consents' );
+		$teams       = self::table( 'teams' );
+		$placements  = self::table( 'placements' );
+		$audit       = self::table( 'audit' );
+
+		/*
+		 * Submissions. profile_json holds the full SHAPE payload; the broken
+		 * out columns exist purely so the leader list can filter and sort
+		 * without unpacking JSON for every row.
+		 */
+		$sql = "CREATE TABLE {$submissions} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			uuid char(36) NOT NULL,
+			display_name varchar(190) NOT NULL DEFAULT '',
+			email varchar(190) NOT NULL DEFAULT '',
+			phone varchar(60) NOT NULL DEFAULT '',
+			status varchar(32) NOT NULL DEFAULT 'submitted',
+			tenure_months smallint(5) unsigned DEFAULT NULL,
+			gifts_likely text NOT NULL,
+			languages text NOT NULL,
+			suggested_teams text NOT NULL,
+			profile_json longtext NOT NULL,
+			verified_at datetime DEFAULT NULL,
+			verify_token char(64) DEFAULT NULL,
+			verify_sent_at datetime DEFAULT NULL,
+			safeguarding_status varchar(32) NOT NULL DEFAULT 'not_required',
+			safeguarding_verified_at datetime DEFAULT NULL,
+			snooze_until date DEFAULT NULL,
+			next_action_at date DEFAULT NULL,
+			assigned_user_id bigint(20) unsigned DEFAULT NULL,
+			submitted_at datetime NOT NULL,
+			updated_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			UNIQUE KEY uuid (uuid),
+			KEY status (status),
+			KEY email (email),
+			KEY next_action_at (next_action_at),
+			KEY snooze_until (snooze_until),
+			KEY assigned_user_id (assigned_user_id),
+			KEY submitted_at (submitted_at),
+			KEY verified_at (verified_at),
+			KEY verify_token (verify_token)
+		) {$charset};";
+		dbDelta( $sql );
+
+		/*
+		 * Consent is recorded once per submission and never mutated. IP and
+		 * user agent are stored hashed, so the record proves consent was given
+		 * without retaining the raw identifiers.
+		 */
+		$sql = "CREATE TABLE {$consents} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			submission_id bigint(20) unsigned NOT NULL,
+			policy_version varchar(32) NOT NULL,
+			purpose_text text NOT NULL,
+			retention_months smallint(5) unsigned NOT NULL DEFAULT 24,
+			ip_hash char(64) NOT NULL DEFAULT '',
+			user_agent_hash char(64) NOT NULL DEFAULT '',
+			consented_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			KEY submission_id (submission_id),
+			KEY policy_version (policy_version)
+		) {$charset};";
+		dbDelta( $sql );
+
+		/*
+		 * Teams carry the capacity numbers the deck's "team gaps" tile needs.
+		 * A gap is target_headcount minus current_headcount; without both
+		 * numbers that tile has nothing to render.
+		 */
+		$sql = "CREATE TABLE {$teams} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			slug varchar(80) NOT NULL,
+			name varchar(190) NOT NULL,
+			gifts text NOT NULL,
+			target_headcount smallint(5) unsigned NOT NULL DEFAULT 0,
+			min_headcount smallint(5) unsigned NOT NULL DEFAULT 0,
+			current_headcount smallint(5) unsigned NOT NULL DEFAULT 0,
+			requires_safeguarding tinyint(1) NOT NULL DEFAULT 0,
+			leader_user_id bigint(20) unsigned DEFAULT NULL,
+			is_active tinyint(1) NOT NULL DEFAULT 1,
+			PRIMARY KEY  (id),
+			UNIQUE KEY slug (slug),
+			KEY leader_user_id (leader_user_id),
+			KEY is_active (is_active)
+		) {$charset};";
+		dbDelta( $sql );
+
+		$sql = "CREATE TABLE {$placements} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			submission_id bigint(20) unsigned NOT NULL,
+			team_id bigint(20) unsigned NOT NULL,
+			status varchar(32) NOT NULL DEFAULT 'submitted',
+			decline_reason varchar(190) NOT NULL DEFAULT '',
+			leader_user_id bigint(20) unsigned DEFAULT NULL,
+			notes text NOT NULL,
+			next_action_at date DEFAULT NULL,
+			created_at datetime NOT NULL,
+			updated_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			UNIQUE KEY submission_team (submission_id,team_id),
+			KEY team_id (team_id),
+			KEY status (status),
+			KEY next_action_at (next_action_at)
+		) {$charset};";
+		dbDelta( $sql );
+
+		/*
+		 * Conversation history. Append-only rather than one editable field, so
+		 * "spoke to her Tuesday, travelling until September" survives the next
+		 * leader's update instead of being overwritten by it.
+		 */
+		$notes = self::table( 'notes' );
+
+		$sql = "CREATE TABLE {$notes} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			submission_id bigint(20) unsigned NOT NULL,
+			user_id bigint(20) unsigned DEFAULT NULL,
+			body text NOT NULL,
+			created_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			KEY submission_id (submission_id),
+			KEY created_at (created_at)
+		) {$charset};";
+		dbDelta( $sql );
+
+		/*
+		 * Unfinished journeys, held so a person can continue on another device.
+		 *
+		 * Kept apart from submissions on purpose. A draft is not something the
+		 * person has agreed to share with anyone — it is their own work in
+		 * progress, saved at their request, and no leader query touches this
+		 * table. Short retention, and the row is deleted the moment it is
+		 * resumed or the journey is submitted.
+		 */
+		$drafts = self::table( 'drafts' );
+
+		$sql = "CREATE TABLE {$drafts} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			token_hash char(64) NOT NULL,
+			email varchar(190) NOT NULL,
+			answers_json longtext NOT NULL,
+			step smallint(5) unsigned NOT NULL DEFAULT 0,
+			created_at datetime NOT NULL,
+			expires_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			UNIQUE KEY token_hash (token_hash),
+			KEY email (email),
+			KEY expires_at (expires_at)
+		) {$charset};";
+		dbDelta( $sql );
+
+		/*
+		 * Append only. Who looked at whose spiritual gifts, and who changed
+		 * what. Written to by nothing except Audit::log().
+		 */
+		$sql = "CREATE TABLE {$audit} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			user_id bigint(20) unsigned DEFAULT NULL,
+			action varchar(64) NOT NULL,
+			object_type varchar(32) NOT NULL DEFAULT '',
+			object_id bigint(20) unsigned DEFAULT NULL,
+			meta_json text NOT NULL,
+			ip_hash char(64) NOT NULL DEFAULT '',
+			created_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			KEY user_id (user_id),
+			KEY action (action),
+			KEY object (object_type,object_id),
+			KEY created_at (created_at)
+		) {$charset};";
+		dbDelta( $sql );
+
+		update_option( self::OPTION_DB_VERSION, self::DB_VERSION );
+	}
+
+	/** Re-run install() when the stored schema version has fallen behind. */
+	public static function maybe_upgrade(): void {
+		$from = (string) get_option( self::OPTION_DB_VERSION, '' );
+
+		if ( $from === self::DB_VERSION ) {
+			return;
+		}
+
+		self::install();
+		self::migrate( $from );
+	}
+
+	/**
+	 * Data fixes that a schema change alone does not cover.
+	 *
+	 * @param string $from Version being upgraded from, empty on a fresh install.
+	 */
+	private static function migrate( string $from ): void {
+		global $wpdb;
+
+		/*
+		 * Email verification arrived in 1.1.0. Rows created before it were
+		 * accepted under the old rules, so treating them as unverified would
+		 * silently empty every leader's queue on upgrade. They are grandfathered
+		 * to their submission date instead.
+		 */
+		if ( '' !== $from && version_compare( $from, '1.1.0', '<' ) ) {
+			$submissions = self::table( 'submissions' );
+
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name is not user input.
+			$wpdb->query( "UPDATE {$submissions} SET verified_at = submitted_at WHERE verified_at IS NULL" );
+		}
+	}
+}

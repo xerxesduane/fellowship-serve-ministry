@@ -1,0 +1,1032 @@
+/**
+ * SERVE Dashboard application.
+ *
+ * No framework and no build step: the plugin has neither, and adding one to
+ * render half a dozen lists would be a poor trade. Plain ES module, fetch, and
+ * template strings — with escaping applied at every interpolation point.
+ *
+ * The server decides what this user may see. This file only decides how to
+ * draw it.
+ */
+
+const configEl = document.getElementById('serve-app-config');
+const CONFIG = configEl ? JSON.parse(configEl.textContent) : null;
+
+/* ── Utilities ─────────────────────────────────────────────────────────── */
+
+/** Escape for text and attribute interpolation. */
+function esc(value) {
+	return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+		'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+	}[char]));
+}
+
+const $ = (name, scope = document) => scope.querySelector(`[data-serve="${name}"]`);
+
+/**
+ * Build a REST URL that survives both permalink styles.
+ *
+ * With pretty permalinks the root is /wp-json/serve/v1; with plain permalinks
+ * it is index.php?rest_route=/serve/v1. Naively appending "?page=1" produces a
+ * second question mark and a 404 on the latter, so query parameters go through
+ * URLSearchParams instead of string concatenation.
+ */
+function restUrl(path, params = {}) {
+	const url = new URL(CONFIG.root + path, window.location.href);
+
+	Object.entries(params).forEach(([key, value]) => {
+		if (value !== '' && value !== null && value !== undefined && value !== false) {
+			url.searchParams.set(key, String(value));
+		}
+	});
+
+	return url.toString();
+}
+
+function api(path, options = {}) {
+	const { params, ...init } = options;
+
+	return fetch(restUrl(path, params), {
+		...init,
+		headers: {
+			'Content-Type': 'application/json',
+			'X-WP-Nonce': CONFIG.nonce,
+			...(init.headers || {})
+		},
+		credentials: 'same-origin'
+	}).then(async (response) => {
+		const body = await response.json().catch(() => ({}));
+
+		if (!response.ok) {
+			throw Object.assign(new Error(body.message || CONFIG.i18n.errorBody), { body, status: response.status });
+		}
+
+		return body;
+	});
+}
+
+function debounce(fn, wait) {
+	let timer;
+	return (...args) => {
+		window.clearTimeout(timer);
+		timer = window.setTimeout(() => fn(...args), wait);
+	};
+}
+
+/** Announce an async change without stealing focus. */
+function announce(message) {
+	const live = $('live');
+	if (live) {
+		live.textContent = message;
+	}
+}
+
+function icon(name) {
+	const paths = {
+		users: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.5a3.2 3.2 0 0 1 0 6.2"/><path d="M17.5 14.5a5.5 5.5 0 0 1 3 5.5"/>',
+		heart: '<path d="M12 19.5s-7-4.3-7-9A3.8 3.8 0 0 1 12 8.2 3.8 3.8 0 0 1 19 10.5c0 4.7-7 9-7 9z"/>',
+		clock: '<circle cx="12" cy="12" r="8.2"/><path d="M12 7.5V12l3 2"/>',
+		gift: '<path d="M4.5 10.5h15V20H4.5z"/><path d="M3.5 7h17v3.5h-17zM12 7v13"/>',
+		tool: '<path d="M14.5 6.5a3.5 3.5 0 0 0 4.6 4.6l-8 8a2.4 2.4 0 0 1-3.4-3.4z"/>',
+		person: '<circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>',
+		briefcase: '<rect x="3.5" y="7.5" width="17" height="12" rx="1.6"/><path d="M9 7.5V6a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 6v1.5"/>',
+		target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/>',
+		send: '<path d="m20 4-8.5 16-2-6.5L3 11.5z"/>',
+		external: '<path d="M14 4h6v6"/><path d="m20 4-8.5 8.5"/><path d="M18 14v4.5A1.5 1.5 0 0 1 16.5 20h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/>',
+		close: '<path d="m6 6 12 12M18 6 6 18"/>',
+		chevron: '<path d="m9 6 6 6-6 6"/>',
+		check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+		alert: '<path d="M12 4.5 20.5 19h-17z"/><path d="M12 10v4M12 16.6v.1"/>',
+		shield: '<path d="M12 4l7 2.5v5c0 4.2-3 7.4-7 8.5-4-1.1-7-4.3-7-8.5v-5z"/>'
+	};
+
+	return `<span class="serve-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" focusable="false">${paths[name] || ''}</svg></span>`;
+}
+
+/* ── Shared partials ───────────────────────────────────────────────────── */
+
+/**
+ * Status badge.
+ *
+ * Carries a glyph and its label, never colour alone — a red pill and a green
+ * pill are the same pill to a colourblind reader.
+ */
+function badge(status, label) {
+	const map = {
+		submitted: ['ready', '●'],
+		contacted: ['progress', '◐'],
+		conversation_booked: ['progress', '◐'],
+		trial_serve: ['progress', '◑'],
+		placed: ['placed', '✓'],
+		paused: ['quiet', '⏸'],
+		declined: ['quiet', '—']
+	};
+	const [tone, glyph] = map[status] || ['quiet', '●'];
+
+	return `<span class="serve-badge serve-badge--${esc(tone)}">
+		<span class="serve-badge__glyph" aria-hidden="true">${glyph}</span>${esc(label)}</span>`;
+}
+
+/** Conversation history, newest first. */
+function notesHtml(notes) {
+	if (!notes || !notes.length) {
+		return '<p class="serve-card__hint">No notes yet. The first one is usually the most useful.</p>';
+	}
+
+	return `<ul class="serve-notes">${notes.map((note) => `
+		<li>
+			<p>${esc(note.body)}</p>
+			<span class="serve-notes__meta">${esc(note.author)} &middot; ${esc(note.when)}</span>
+		</li>`).join('')}</ul>`;
+}
+
+function emptyState({ title, body, action, iconName = 'check' }) {
+	return `<div class="serve-empty">
+		<span class="serve-empty__icon">${icon(iconName)}</span>
+		<h3>${esc(title)}</h3>
+		<p>${esc(body)}</p>
+		${action || ''}
+	</div>`;
+}
+
+function errorState(message, retryAttr) {
+	return `<div class="serve-empty">
+		<span class="serve-empty__icon" style="background:var(--serve-coral-soft);color:var(--serve-coral-dark)">${icon('alert')}</span>
+		<h3>${esc(CONFIG.i18n.errorTitle)}</h3>
+		<p>${esc(message || CONFIG.i18n.errorBody)}</p>
+		<button type="button" class="serve-btn serve-btn--secondary" ${retryAttr}>${esc(CONFIG.i18n.retry)}</button>
+	</div>`;
+}
+
+/** One person row. Columns appear progressively as the viewport allows. */
+function personRow(person) {
+	const flags = [
+		person.needsCheck ? `<span class="serve-flag serve-flag--check">${esc('check required')}</span>` : '',
+		person.isStale ? `<span class="serve-flag serve-flag--stale">${esc('stale')}</span>` : ''
+	].join('');
+
+	const due = person.nextActionLabel
+		? `<span class="serve-fu__when ${person.isOverdue ? 'is-attention' : (person.isDueToday ? 'is-soon' : '')}">${
+			esc(person.isOverdue ? 'Overdue' : (person.isDueToday ? 'Today' : person.nextActionLabel))}</span>`
+		: '';
+
+	return `<button type="button" class="serve-row ${person.isOverdue ? 'is-overdue' : ''}" data-person="${esc(person.id)}">
+		<span class="serve-avatar serve-avatar--sm" aria-hidden="true">${esc(person.initials)}</span>
+		<span class="serve-row__body">
+			<span class="serve-row__name">${esc(person.name)}</span>
+			<span class="serve-row__meta">${esc(person.gifts.join(', ') || '—')}${flags}</span>
+		</span>
+		<span class="serve-row__col">${esc(person.suggestedTeams.join(', ') || '—')}</span>
+		<span class="serve-row__col">${due}</span>
+		<span class="serve-row__aside">
+			${badge(person.status, person.statusLabel)}
+		</span>
+	</button>`;
+}
+
+function rowsOrEmpty(people, empty) {
+	if (!people.length) {
+		return emptyState(empty);
+	}
+
+	return `<div class="serve-rows">${people.map(personRow).join('')}</div>`;
+}
+
+/* ── Dashboard regions ─────────────────────────────────────────────────── */
+
+function renderMetrics(metrics) {
+	const icons = { completed: 'users', ready: 'heart', due: 'clock', serving: 'person' };
+
+	$('metrics').innerHTML = metrics.map((metric) => {
+		const tone = metric.tone === 'attention' ? 'attention' : (metric.tone === 'positive' ? 'positive' : 'neutral');
+		const tag = metric.view ? 'button' : 'div';
+		const attrs = metric.view ? ` type="button" data-metric-view="${esc(metric.view)}"` : '';
+
+		return `<${tag} class="serve-card serve-metric serve-metric--${esc(tone)}"${attrs}>
+			<span class="serve-metric__icon">${icon(icons[metric.key] || 'users')}</span>
+			<span class="serve-metric__label">${esc(metric.label)}</span>
+			<span class="serve-metric__value">${esc(metric.value)}</span>
+			<span class="serve-metric__note">${esc(metric.note)}</span>
+		</${tag}>`;
+	}).join('');
+}
+
+function renderGaps(gaps) {
+	if (!gaps.length) {
+		$('gaps').innerHTML = emptyState({
+			title: 'No gaps recorded',
+			body: 'Set a target headcount for each team so shortfalls can be shown here.',
+			iconName: 'target',
+			action: CONFIG.caps.teams
+				? `<a class="serve-btn serve-btn--secondary" href="${esc(CONFIG.teamsUrl)}">Set team targets</a>`
+				: ''
+		});
+		return;
+	}
+
+	$('gaps').innerHTML = gaps.map((gap) => {
+		const filled = gap.target > 0 ? Math.min(100, Math.round((gap.current / gap.target) * 100)) : 0;
+
+		return `<div class="serve-bar ${gap.below_minimum ? 'serve-bar--critical' : ''}">
+			<span class="serve-bar__label">${esc(gap.name)}</span>
+			<span class="serve-bar__value">${esc(gap.gap)} needed${gap.below_minimum ? ' · below minimum' : ''}</span>
+			<span class="serve-bar__track">
+				<span class="serve-bar__fill" style="width:${filled}%"></span>
+			</span>
+			<span class="screen-reader-text">${esc(gap.current)} of ${esc(gap.target)} places filled</span>
+		</div>`;
+	}).join('');
+}
+
+function renderFollowups(items) {
+	if (!items.length) {
+		$('followups').innerHTML = emptyState({
+			title: CONFIG.i18n.allClear,
+			body: CONFIG.i18n.allClearBody
+		});
+		return;
+	}
+
+	$('followups').innerHTML = items.map((item) => `
+		<button type="button" class="serve-fu" data-person="${esc(item.id)}">
+			<span class="serve-fu__name">${esc(item.name)}</span>
+			<span class="serve-fu__when is-${esc(item.tone)}">${esc(item.when)}</span>
+		</button>`).join('');
+}
+
+function renderGifts(gifts) {
+	if (!gifts.length) {
+		$('gifts').innerHTML = emptyState({
+			title: 'Nothing to summarise yet',
+			body: 'Once profiles are shared, the spread of gifts across the church appears here.',
+			iconName: 'gift'
+		});
+		return;
+	}
+
+	const max = Math.max(...gifts.map((gift) => gift.count));
+
+	$('gifts').innerHTML = gifts.map((gift) => `
+		<div class="serve-bar">
+			<span class="serve-bar__label">${esc(gift.label)}</span>
+			<span class="serve-bar__value">${esc(gift.count)}</span>
+			<span class="serve-bar__track">
+				<span class="serve-bar__fill" style="width:${Math.round((gift.count / max) * 100)}%"></span>
+			</span>
+		</div>`).join('');
+}
+
+/* ── Drawer ────────────────────────────────────────────────────────────── */
+
+const drawer = {
+	el: null,
+	body: null,
+	lastFocus: null,
+
+	init() {
+		this.el = $('drawer');
+		this.body = $('drawer-body');
+
+		document.addEventListener('keydown', (event) => {
+			if (this.el.hidden) {
+				return;
+			}
+
+			if (event.key === 'Escape') {
+				this.close();
+			}
+
+			if (event.key === 'Tab') {
+				this.trapFocus(event);
+			}
+		});
+	},
+
+	/** Keep Tab inside the dialog while it is modal. */
+	trapFocus(event) {
+		const focusable = this.el.querySelectorAll(
+			'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+		);
+
+		if (!focusable.length) {
+			return;
+		}
+
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+
+		if (event.shiftKey && document.activeElement === first) {
+			event.preventDefault();
+			last.focus();
+		} else if (!event.shiftKey && document.activeElement === last) {
+			event.preventDefault();
+			first.focus();
+		}
+	},
+
+	open(personId) {
+		this.lastFocus = document.activeElement;
+		this.el.hidden = false;
+		document.getElementById('serve-app').classList.add('is-drawer-open');
+
+		this.body.innerHTML = `<div class="serve-sk-rows" aria-hidden="true">${
+			'<span class="serve-sk serve-sk--row"></span>'.repeat(7)}</div>`;
+		announce(CONFIG.i18n.loading);
+
+		api(`/people/${personId}`)
+			.then((person) => {
+				this.render(person);
+				announce(person.name);
+
+				const close = this.el.querySelector('.serve-drawer__close');
+				if (close) {
+					close.focus();
+				}
+			})
+			.catch((error) => {
+				this.body.innerHTML = errorState(error.message, `data-retry-person="${esc(personId)}"`);
+			});
+	},
+
+	close() {
+		this.el.hidden = true;
+		document.getElementById('serve-app').classList.remove('is-drawer-open');
+
+		// Return focus to whatever opened the drawer. If that element has gone
+		// (a re-render) or was never focusable, fall back to the search box so
+		// keyboard focus is never left stranded on <body>.
+		const opener = this.lastFocus;
+		const returnable = opener
+			&& document.contains(opener)
+			&& typeof opener.focus === 'function'
+			&& opener !== document.body;
+
+		if (returnable) {
+			opener.focus();
+		} else {
+			$('search')?.focus();
+		}
+	},
+
+	render(person) {
+		const dimIcons = {
+			gifts: 'gift', heart: 'heart', abilities: 'tool',
+			personality: 'person', experience: 'briefcase'
+		};
+
+		const dimensions = person.shape.map((dim) => {
+			let values;
+
+			if (dim.redacted) {
+				values = '<em>Hidden — visible to pastoral staff only</em>';
+			} else if (dim.values.length) {
+				values = esc(dim.values.slice(0, 6).join(', '));
+			} else {
+				values = '<em>Not recorded</em>';
+			}
+
+			return `<div class="serve-dim">
+				<span class="serve-dim__icon">${icon(dimIcons[dim.key])}</span>
+				<span>
+					<span class="serve-dim__label">${esc(dim.label)}</span>
+					<span class="serve-dim__values">${values}</span>
+					<span class="serve-dim__rule" aria-hidden="true"></span>
+				</span>
+			</div>`;
+		}).join('');
+
+		const matches = person.matches.length
+			? person.matches.map((match) => `
+				<div class="serve-match">
+					<div class="serve-match__head">
+						<span class="serve-match__name">${esc(match.team_name)}</span>
+						<span class="serve-badge serve-badge--${match.strength === 'strong' ? 'ready' : 'progress'}">
+							<span class="serve-badge__glyph" aria-hidden="true">${match.strength === 'strong' ? '●' : '◐'}</span>
+							${esc(match.strength_label)}
+						</span>
+					</div>
+					${match.reasons.length ? `<div class="serve-match__why">
+						<span>Why this team?</span>
+						<div class="serve-reasons">${match.reasons.slice(0, 5).map((reason) => `
+							<span class="serve-reason">
+								<span class="serve-reason__dot" aria-hidden="true"></span>
+								<span>${esc(reason.label)}</span>
+							</span>`).join('')}</div>
+					</div>` : `<p class="serve-match__context">No specific overlap was found. This suggestion needs a conversation before anything else.</p>`}
+					${match.opening_note ? `<p class="serve-match__context">${esc(match.opening_note)}</p>` : ''}
+				</div>`).join('')
+			: `<p class="serve-note serve-note--muted">No team suggestions are available for this profile. That is not a problem — it means the conversation starts open.</p>`;
+
+		const safeguarding = person.safeguarding.relevant
+			? `<p class="serve-note ${person.safeguarding.cleared ? 'serve-note--info' : 'serve-note--warn'}">
+					${person.safeguarding.cleared ? icon('check') : icon('shield')}
+					Background check: ${esc(person.safeguarding.label)}.
+					${person.safeguarding.cleared ? '' : 'Required before a placement on a team working with children or youth.'}
+				</p>`
+			: '';
+
+		const actions = [];
+
+		if (CONFIG.caps.manage) {
+			actions.push(`<button type="button" class="serve-btn serve-btn--primary serve-btn--block" data-invite="${esc(person.id)}">
+				${icon('send')}Invite to a conversation</button>`);
+		}
+
+		if (person.planningCenterUrl) {
+			actions.push(`<a class="serve-btn serve-btn--secondary serve-btn--block" href="${esc(person.planningCenterUrl)}" target="_blank" rel="noopener noreferrer">
+				${icon('external')}Open in Planning Center</a>`);
+		} else {
+			actions.push(`<p class="serve-note serve-note--muted">Planning Center links are not configured${
+				CONFIG.caps.settings ? ', so a record cannot be opened from here yet.' : '.'}</p>`);
+		}
+
+		this.body.innerHTML = `
+			<div class="serve-drawer__head">
+				<span class="serve-avatar" aria-hidden="true">${esc(person.initials)}</span>
+				<span>
+					<h2 id="serve-drawer-name">${esc(person.name)}</h2>
+					<span class="serve-drawer__meta">
+						Profile completed ${esc(person.submittedAt)}<br>
+						Last updated ${esc(person.updatedAt)}
+					</span>
+				</span>
+				<button type="button" class="serve-drawer__close" data-close-drawer>
+					${icon('close')}<span class="screen-reader-text">Close profile</span>
+				</button>
+			</div>
+
+			<div class="serve-section">
+				<h3>Journey status</h3>
+				<div style="margin-top:var(--serve-space-3);display:flex;gap:var(--serve-space-2);flex-wrap:wrap">
+					${badge(person.status, person.statusLabel)}
+					${person.isStale ? '<span class="serve-flag serve-flag--stale">profile is stale</span>' : ''}
+				</div>
+				${person.tenureMonths !== null ? `<p class="serve-card__hint">Expects to be in the UAE about ${esc(person.tenureMonths)} more months.</p>` : ''}
+				${safeguarding}
+			</div>
+
+			<div class="serve-section">
+				<h3>S.H.A.P.E. profile</h3>
+				${dimensions}
+				${person.redacted ? '<p class="serve-note serve-note--muted">Some sections are hidden because they can include pastoral history.</p>' : ''}
+			</div>
+
+			<div class="serve-section">
+				<h3>Suggested teams</h3>
+				<p class="serve-card__hint">A suggestion is a starting point. The leader confirms, and the person chooses.</p>
+				${person.matches.find((m) => m.caveat)
+					? `<p class="serve-note serve-note--warn">${esc(person.matches.find((m) => m.caveat).caveat)}</p>`
+					: ''}
+				${matches}
+			</div>
+
+			<div class="serve-section">
+				<h3>Who is following this up</h3>
+				${person.owner.name
+					? `<p class="serve-owner">${esc(person.owner.name)}${person.owner.isMine ? ' (you)' : ''}</p>`
+					: '<p class="serve-card__hint">Nobody has picked this up yet.</p>'}
+				${CONFIG.caps.manage ? (person.owner.isMine || !person.owner.name
+					? `<button type="button" class="serve-btn serve-btn--secondary" data-claim="${esc(person.id)}" data-release="${person.owner.isMine ? '1' : ''}">
+							${person.owner.isMine ? 'Release it' : 'I will follow this up'}</button>`
+					: `<p class="serve-card__hint">Ask them to release it before you call, so you are not both ringing.</p>`) : ''}
+			</div>
+
+			<div class="serve-section">
+				<h3>Conversation history</h3>
+				${CONFIG.caps.manage ? `
+					<form class="serve-noteform" data-note-form="${esc(person.id)}">
+						<label class="screen-reader-text" for="serve-note-${esc(person.id)}">Add a note</label>
+						<textarea id="serve-note-${esc(person.id)}" rows="2" maxlength="2000"
+							placeholder="What was said? e.g. Spoke Tuesday, travelling until September."></textarea>
+						<button type="submit" class="serve-btn serve-btn--secondary">Add note</button>
+					</form>` : ''}
+				<div data-notes-list>${notesHtml(person.notes)}</div>
+			</div>
+
+			<div class="serve-actions">${actions.join('')}</div>
+		`;
+	}
+};
+
+/* ── People view ───────────────────────────────────────────────────────── */
+
+const people = {
+	state: { search: '', status: '', team_id: 0, due_only: false, page: 1 },
+	teams: [],
+	statuses: {},
+
+	renderFilters() {
+		const options = Object.entries(this.statuses)
+			.map(([value, label]) => `<option value="${esc(value)}" ${this.state.status === value ? 'selected' : ''}>${esc(label)}</option>`)
+			.join('');
+
+		const teamOptions = this.teams
+			.map((team) => `<option value="${esc(team.id)}" ${Number(this.state.team_id) === team.id ? 'selected' : ''}>${esc(team.name)}</option>`)
+			.join('');
+
+		$('filters').innerHTML = `
+			<label class="screen-reader-text" for="serve-f-status">Status</label>
+			<select id="serve-f-status" data-filter="status"><option value="">Any status</option>${options}</select>
+
+			<label class="screen-reader-text" for="serve-f-team">Team</label>
+			<select id="serve-f-team" data-filter="team_id"><option value="0">Any team</option>${teamOptions}</select>
+
+			<button type="button" class="serve-chip" data-filter-toggle="due_only" aria-pressed="${this.state.due_only}">
+				${icon('clock')}Due or overdue
+			</button>`;
+	},
+
+	load() {
+		const region = document.querySelector('[data-serve-region="people"]');
+		region.setAttribute('aria-busy', 'true');
+
+		api('/people', {
+			params: {
+				page: this.state.page,
+				per_page: 25,
+				search: this.state.search,
+				status: this.state.status,
+				team_id: Number(this.state.team_id) || '',
+				due_only: this.state.due_only ? '1' : ''
+			}
+		})
+			.then((data) => {
+				const isFiltered = this.state.search || this.state.status || Number(this.state.team_id) || this.state.due_only;
+
+				$('people').innerHTML = rowsOrEmpty(data.people, isFiltered
+					? { title: CONFIG.i18n.noResults, body: CONFIG.i18n.noResultsBody, iconName: 'alert' }
+					: { title: CONFIG.i18n.noProfiles, body: CONFIG.i18n.noProfilesBody, iconName: 'users' });
+
+				$('pager').innerHTML = (data.page > 1 || data.hasMore)
+					? `<span>Page ${esc(data.page)}</span>
+						<span style="display:flex;gap:var(--serve-space-2)">
+							<button type="button" class="serve-btn serve-btn--secondary" data-page="${data.page - 1}" ${data.page <= 1 ? 'disabled' : ''}>Previous</button>
+							<button type="button" class="serve-btn serve-btn--secondary" data-page="${data.page + 1}" ${data.hasMore ? '' : 'disabled'}>Next</button>
+						</span>`
+					: '';
+
+				region.setAttribute('aria-busy', 'false');
+				announce(data.people.length === 1
+					? '1 person listed'
+					: `${data.people.length} people listed`);
+			})
+			.catch((error) => {
+				$('people').innerHTML = errorState(error.message, 'data-retry-people');
+				region.setAttribute('aria-busy', 'false');
+			});
+	}
+};
+
+
+/* ── Team matching ─────────────────────────────────────────────────────── */
+
+const matching = {
+	teams: [],
+	teamId: 0,
+
+	renderPicker() {
+		const select = $('match-team');
+		if (!select) {
+			return;
+		}
+
+		select.innerHTML = this.teams
+			.map((team) => `<option value="${esc(team.id)}" ${Number(this.teamId) === team.id ? 'selected' : ''}>${esc(team.name)}</option>`)
+			.join('');
+
+		if (!this.teamId && this.teams.length) {
+			this.teamId = this.teams[0].id;
+			select.value = String(this.teamId);
+		}
+	},
+
+	load() {
+		if (!this.teamId) {
+			return;
+		}
+
+		const container = $('candidates');
+		container.innerHTML = `<div class="serve-sk-rows" aria-hidden="true">${
+			'<span class="serve-sk serve-sk--row"></span>'.repeat(5)}</div>`;
+
+		api(`/teams/${this.teamId}/candidates`)
+			.then((data) => {
+				const gapLine = data.team.target > 0
+					? `${data.team.current} of ${data.team.target} places filled${data.team.gap > 0 ? ` — ${data.team.gap} still needed` : ''}`
+					: 'No target headcount set for this team yet.';
+
+				if (!data.candidates.length) {
+					container.innerHTML = `<p class="serve-card__hint">${esc(gapLine)}</p>` + emptyState({
+						title: 'Nobody to suggest yet',
+						body: 'No profile currently overlaps this team. That is not a gap in the tool — it may simply mean the right person has not completed the journey yet.',
+						iconName: 'target'
+					});
+					announce('No candidates');
+					return;
+				}
+
+				container.innerHTML = `
+					<p class="serve-card__hint">${esc(gapLine)}</p>
+					<div class="serve-rows">${data.candidates.map((c) => `
+						<button type="button" class="serve-row" data-person="${esc(c.id)}">
+							<span class="serve-avatar serve-avatar--sm" aria-hidden="true">${esc(c.initials)}</span>
+							<span class="serve-row__body">
+								<span class="serve-row__name">${esc(c.name)}</span>
+								<span class="serve-row__meta">
+									${esc(c.match.reasons.length ? c.match.reasons[0].label : 'No specific overlap found')}
+									${c.needsCheck ? '<span class="serve-flag serve-flag--check">check required</span>' : ''}
+									${c.alreadySuggested ? '' : '<span class="serve-flag serve-flag--stale">not auto-suggested</span>'}
+								</span>
+							</span>
+							<span class="serve-row__col">${esc(c.statusLabel)}</span>
+							<span class="serve-row__aside">
+								<span class="serve-badge serve-badge--${c.match.strength === 'strong' ? 'ready' : 'progress'}">
+									<span class="serve-badge__glyph" aria-hidden="true">${c.match.strength === 'strong' ? '●' : '◐'}</span>${esc(c.match.strength_label)}
+								</span>
+							</span>
+						</button>`).join('')}</div>`;
+
+				announce(`${data.candidates.length} possible people for ${data.team.name}`);
+			})
+			.catch((error) => {
+				container.innerHTML = errorState(error.message, 'data-retry-matching');
+			});
+	}
+};
+
+/* ── Views ─────────────────────────────────────────────────────────────── */
+
+function showView(name) {
+	const view = name === 'followup' ? 'people' : name;
+
+	if (view === 'matching') {
+		document.querySelectorAll('[data-serve-region]').forEach((region) => {
+			region.hidden = region.dataset.serveRegion !== 'matching';
+		});
+		document.querySelectorAll('.serve-nav__item[data-serve-view]').forEach((item) => {
+			if (item.dataset.serveView === name) {
+				item.setAttribute('aria-current', 'page');
+			} else {
+				item.removeAttribute('aria-current');
+			}
+		});
+		// Wait for the team list rather than drawing an empty control.
+		const candidates = $('candidates');
+		if (candidates && !matching.teams.length) {
+			candidates.innerHTML = `<div class="serve-sk-rows" aria-hidden="true">${
+				'<span class="serve-sk serve-sk--row"></span>'.repeat(4)}</div>`;
+		}
+
+		Promise.resolve(bootPromise).then(() => {
+			matching.renderPicker();
+			matching.load();
+		});
+
+		closeSidebar();
+		return;
+	}
+
+	document.querySelectorAll('[data-serve-region]').forEach((region) => {
+		region.hidden = region.dataset.serveRegion !== view;
+	});
+
+	document.querySelectorAll('.serve-nav__item[data-serve-view]').forEach((item) => {
+		if (item.dataset.serveView === name) {
+			item.setAttribute('aria-current', 'page');
+		} else {
+			item.removeAttribute('aria-current');
+		}
+	});
+
+	if (view === 'people') {
+		if (name === 'followup') {
+			people.state.due_only = true;
+			people.state.page = 1;
+			people.renderFilters();
+		}
+
+		$('people-title').textContent = name === 'followup' ? 'Follow-up' : 'People';
+		people.load();
+	}
+
+	closeSidebar();
+}
+
+/* ── Sidebar (mobile) ──────────────────────────────────────────────────── */
+
+function openSidebar() {
+	document.getElementById('serve-sidebar').classList.add('is-open');
+	document.querySelector('.serve-navtoggle').setAttribute('aria-expanded', 'true');
+	$('scrim').hidden = false;
+}
+
+function closeSidebar() {
+	document.getElementById('serve-sidebar').classList.remove('is-open');
+	const toggle = document.querySelector('.serve-navtoggle');
+	if (toggle) {
+		toggle.setAttribute('aria-expanded', 'false');
+	}
+	$('scrim').hidden = true;
+}
+
+/* ── Boot ──────────────────────────────────────────────────────────────── */
+
+/**
+ * The initial dashboard fetch.
+ *
+ * Held as a promise because Team matching needs the team list that comes with
+ * it. Clicking that nav item during the first load used to render an empty
+ * picker and no candidates, with nothing to explain why.
+ */
+let bootPromise = null;
+
+function loadDashboard() {
+	const region = document.querySelector('[data-serve-region="dashboard"]');
+	region.setAttribute('aria-busy', 'true');
+
+	return api('/dashboard')
+		.then((data) => {
+			const first = data.greeting.name;
+			const hour = new Date().getHours();
+			const part = hour < 12 ? 'Good morning' : (hour < 18 ? 'Good afternoon' : 'Good evening');
+
+			$('greeting').textContent = first ? `${part}, ${first}` : part;
+
+			document.querySelectorAll('[data-serve="user-initials"]').forEach((el) => {
+				el.textContent = (first || '?').trim().charAt(0).toUpperCase();
+			});
+
+			renderMetrics(data.metrics);
+			renderGaps(data.gaps);
+			renderFollowups(data.followups);
+			renderGifts(data.gifts);
+
+			$('priority').innerHTML = rowsOrEmpty(data.priority, {
+				title: data.metrics.some((m) => m.value > 0) ? CONFIG.i18n.allClear : CONFIG.i18n.noProfiles,
+				body: data.metrics.some((m) => m.value > 0) ? CONFIG.i18n.allClearBody : CONFIG.i18n.noProfilesBody,
+				iconName: 'users'
+			});
+
+			const dueMetric = data.metrics.find((metric) => metric.key === 'due');
+			const badgeEl = $('due-badge');
+			if (badgeEl && dueMetric && dueMetric.value > 0) {
+				badgeEl.textContent = dueMetric.value;
+				badgeEl.hidden = false;
+			}
+
+			people.teams = data.teams;
+			people.statuses = data.statuses;
+			people.renderFilters();
+
+			matching.teams = data.teams;
+
+			// Export lives beside the list it exports, not in a settings screen.
+			if (CONFIG.exportUrl) {
+				const head = document.querySelector('[data-serve-region="dashboard"] .serve-card--primary .serve-card__head');
+				if (head && !head.querySelector('[data-export]')) {
+					const link = document.createElement('a');
+					link.className = 'serve-link';
+					link.href = CONFIG.exportUrl;
+					link.dataset.export = '1';
+					link.textContent = 'Export CSV';
+					head.appendChild(link);
+				}
+			}
+
+			region.setAttribute('aria-busy', 'false');
+			announce('Dashboard loaded');
+		})
+		.catch((error) => {
+			$('priority').innerHTML = errorState(error.message, 'data-retry-dashboard');
+			region.setAttribute('aria-busy', 'false');
+		});
+}
+
+function boot() {
+	drawer.init();
+	bootPromise = loadDashboard();
+
+	// One delegated listener rather than rebinding after every re-render.
+	document.addEventListener('click', (event) => {
+		const personBtn = event.target.closest('[data-person]');
+		if (personBtn) {
+			drawer.open(personBtn.dataset.person);
+			return;
+		}
+
+		const nav = event.target.closest('[data-serve-view]');
+		if (nav) {
+			showView(nav.dataset.serveView);
+			return;
+		}
+
+		const metric = event.target.closest('[data-metric-view]');
+		if (metric) {
+			const params = new URLSearchParams(metric.dataset.metricView);
+			people.state.status = params.get('status') || '';
+			people.state.due_only = params.get('due_only') === '1';
+			people.state.page = 1;
+			people.renderFilters();
+			showView('people');
+			return;
+		}
+
+		if (event.target.closest('[data-close-drawer]')) {
+			drawer.close();
+			return;
+		}
+
+		const toggle = event.target.closest('.serve-navtoggle');
+		if (toggle) {
+			const open = toggle.getAttribute('aria-expanded') === 'true';
+			if (open) { closeSidebar(); } else { openSidebar(); }
+			return;
+		}
+
+		if (event.target.closest('[data-serve="scrim"]')) {
+			closeSidebar();
+			return;
+		}
+
+		const pageBtn = event.target.closest('[data-page]');
+		if (pageBtn && !pageBtn.disabled) {
+			people.state.page = Math.max(1, Number(pageBtn.dataset.page));
+			people.load();
+			return;
+		}
+
+		const chip = event.target.closest('[data-filter-toggle]');
+		if (chip) {
+			const key = chip.dataset.filterToggle;
+			people.state[key] = !people.state[key];
+			people.state.page = 1;
+			chip.setAttribute('aria-pressed', String(people.state[key]));
+			people.load();
+			return;
+		}
+
+		if (event.target.closest('[data-retry-dashboard]')) {
+			loadDashboard();
+			return;
+		}
+
+		if (event.target.closest('[data-retry-people]')) {
+			people.load();
+			return;
+		}
+
+		if (event.target.closest('[data-retry-matching]')) {
+			matching.load();
+			return;
+		}
+
+		const retryPerson = event.target.closest('[data-retry-person]');
+		if (retryPerson) {
+			drawer.open(retryPerson.dataset.retryPerson);
+			return;
+		}
+
+		const invite = event.target.closest('[data-invite]');
+		if (invite) {
+			inviteToConversation(invite);
+			return;
+		}
+
+		const claim = event.target.closest('[data-claim]');
+		if (claim) {
+			const id = claim.dataset.claim;
+			const releasing = claim.dataset.release === '1';
+			claim.disabled = true;
+
+			api(`/people/${id}/claim`, {
+				method: 'POST',
+				body: JSON.stringify({ release: releasing })
+			})
+				.then(() => {
+					announce(releasing ? 'Follow-up released' : 'You are following this up');
+					drawer.open(id);
+				})
+				.catch((error) => {
+					claim.disabled = false;
+					announce(error.message);
+					window.alert(error.message);
+				});
+		}
+	});
+
+	// Adding a note re-renders only the history, so the drawer does not jump.
+	document.addEventListener('submit', (event) => {
+		const form = event.target.closest('[data-note-form]');
+		if (!form) {
+			return;
+		}
+
+		event.preventDefault();
+
+		const id = form.dataset.noteForm;
+		const field = form.querySelector('textarea');
+		const body = field.value.trim();
+
+		if (!body) {
+			field.focus();
+			return;
+		}
+
+		const button = form.querySelector('button');
+		button.disabled = true;
+
+		api(`/people/${id}/notes`, {
+			method: 'POST',
+			body: JSON.stringify({ body })
+		})
+			.then((data) => {
+				field.value = '';
+				button.disabled = false;
+				const list = form.parentElement.querySelector('[data-notes-list]');
+				if (list) {
+					list.innerHTML = notesHtml(data.notes);
+				}
+				announce('Note added');
+			})
+			.catch((error) => {
+				button.disabled = false;
+				announce(error.message);
+			});
+	});
+
+	document.addEventListener('change', (event) => {
+		const picker = event.target.closest('[data-serve="match-team"]');
+		if (picker) {
+			matching.teamId = Number(picker.value);
+			matching.load();
+			return;
+		}
+
+		const filter = event.target.closest('[data-filter]');
+		if (filter) {
+			people.state[filter.dataset.filter] = filter.value;
+			people.state.page = 1;
+			people.load();
+		}
+	});
+
+	// Search drives the people view, debounced so typing does not spam the API.
+	const runSearch = debounce((value) => {
+		people.state.search = value;
+		people.state.page = 1;
+		$('search-spinner').hidden = false;
+
+		const done = () => { $('search-spinner').hidden = true; };
+		people.load();
+		window.setTimeout(done, 300);
+
+		if (document.querySelector('[data-serve-region="people"]').hidden) {
+			showView('people');
+		}
+	}, 280);
+
+	$('search').addEventListener('input', (event) => runSearch(event.target.value.trim()));
+
+	$('search-form').addEventListener('submit', (event) => event.preventDefault());
+}
+
+/**
+ * Move someone to "Contacted".
+ *
+ * Named for what it actually does. It does not send anything: no messaging
+ * workflow has been defined, and a button that claims to have emailed someone
+ * when it has not is worse than no button.
+ */
+function inviteToConversation(button) {
+	const id = button.dataset.invite;
+
+	button.disabled = true;
+	button.textContent = 'Saving…';
+
+	api(`/people/${id}/status`, {
+		method: 'POST',
+		body: JSON.stringify({ status: 'contacted' })
+	})
+		.then(() => {
+			announce('Marked as contacted');
+			drawer.open(id);
+			bootPromise = loadDashboard();
+		})
+		.catch((error) => {
+			button.disabled = false;
+			button.textContent = 'Invite to a conversation';
+
+			const note = document.createElement('p');
+			note.className = 'serve-note serve-note--warn';
+			note.textContent = error.message;
+			button.parentElement.prepend(note);
+		});
+}
+
+/*
+ * Start last: `drawer` and `people` are const bindings, so calling boot()
+ * before this point would hit the temporal dead zone.
+ */
+if (CONFIG) {
+	boot();
+}

@@ -1,0 +1,262 @@
+/*
+ * Dashboard styling.
+ *
+ * Palette taken from the assessment's own styles.css so the dashboard reads as
+ * part of the same tool, while keeping WordPress admin conventions for tables
+ * and buttons.
+ */
+
+.serve-wrap {
+	--serve-navy: #12263f;
+	--serve-teal: #167d83;
+	--serve-teal-soft: #e6f3f2;
+	--serve-orange: #ec6f45;
+	--serve-sand: #f5f1e8;
+	--serve-ink: #17314a;
+	--serve-muted: #667786;
+	--serve-line: #ddd9cf;
+	--serve-success: #287657;
+}
+
+.serve-wrap h1,
+.serve-wrap h2,
+.serve-wrap h3 {
+	color: var(--serve-navy);
+}
+
+.serve-lede,
+.serve-note {
+	max-width: 60ch;
+	color: var(--serve-muted);
+}
+
+.serve-muted {
+	color: var(--serve-muted);
+}
+
+.serve-ok {
+	color: var(--serve-success);
+}
+
+/* Teams short of people. */
+.serve-gaps {
+	margin: 16px 0;
+	padding: 12px 16px;
+	background: var(--serve-teal-soft);
+	border-left: 4px solid var(--serve-teal);
+}
+
+.serve-gaps h2 {
+	margin: 0 0 8px;
+	font-size: 14px;
+	text-transform: uppercase;
+	letter-spacing: .04em;
+}
+
+.serve-gaps ul {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 24px;
+	margin: 0;
+}
+
+.serve-gaps li {
+	margin: 0;
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+}
+
+.serve-gaps li span {
+	color: var(--serve-muted);
+}
+
+.serve-gaps li.is-critical strong {
+	color: var(--serve-orange);
+}
+
+.serve-gaps li em {
+	font-style: normal;
+	font-size: 11px;
+	text-transform: uppercase;
+	color: var(--serve-orange);
+}
+
+/* Filters. */
+.serve-filters {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin: 16px 0;
+	padding: 12px;
+	background: #fff;
+	border: 1px solid var(--serve-line);
+}
+
+.serve-checkbox {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	white-space: nowrap;
+}
+
+/* Table. */
+.serve-table .row-title {
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.serve-row-meta {
+	margin-top: 2px;
+	font-size: 12px;
+	color: var(--serve-muted);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.serve-table tr.is-overdue td {
+	background: #fff6f3;
+}
+
+.serve-overdue {
+	color: var(--serve-orange);
+	font-weight: 600;
+}
+
+.serve-due {
+	font-weight: 600;
+}
+
+.serve-flag {
+	display: inline-block;
+	padding: 1px 6px;
+	border-radius: 10px;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: .03em;
+}
+
+.serve-flag-stale {
+	background: var(--serve-sand);
+	color: var(--serve-ink);
+}
+
+.serve-flag-safeguard {
+	background: #fde8e0;
+	color: #97331a;
+}
+
+.serve-tenure {
+	font-variant-numeric: tabular-nums;
+}
+
+.serve-status {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 3px;
+	background: var(--serve-sand);
+	font-size: 12px;
+}
+
+.serve-status-placed {
+	background: #e2f1ea;
+	color: var(--serve-success);
+}
+
+.serve-status-declined,
+.serve-status-paused {
+	color: var(--serve-muted);
+}
+
+/* Empty state. */
+.serve-empty {
+	margin-top: 24px;
+	padding: 32px;
+	text-align: center;
+	background: #fff;
+	border: 1px dashed var(--serve-line);
+}
+
+.serve-empty h2 {
+	margin-top: 0;
+}
+
+.serve-empty p {
+	max-width: 46ch;
+	margin: 0 auto;
+	color: var(--serve-muted);
+}
+
+/* Detail. */
+.serve-back {
+	display: inline-block;
+	margin-bottom: 8px;
+	text-decoration: none;
+}
+
+.serve-contact {
+	color: var(--serve-muted);
+}
+
+.serve-columns {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+	gap: 24px;
+	align-items: start;
+}
+
+@media (max-width: 960px) {
+	.serve-columns {
+		grid-template-columns: 1fr;
+	}
+}
+
+.serve-card {
+	margin-bottom: 16px;
+	padding: 16px;
+	background: #fff;
+	border: 1px solid var(--serve-line);
+}
+
+.serve-card h3 {
+	margin-top: 0;
+	font-size: 13px;
+	text-transform: uppercase;
+	letter-spacing: .04em;
+}
+
+.serve-consent-text {
+	font-size: 12px;
+	color: var(--serve-muted);
+}
+
+.serve-redacted {
+	padding: 12px;
+	background: var(--serve-sand);
+	color: var(--serve-ink);
+}
+
+.serve-safeguard-current {
+	font-weight: 600;
+}
+
+.serve-move {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 8px;
+}
+
+.serve-inline-field {
+	display: flex;
+	flex-direction: column;
+	font-size: 11px;
+	color: var(--serve-muted);
+}
+
+.serve-inline-field[hidden] {
+	display: none;
+}
