@@ -157,6 +157,98 @@ final class Rest_Dashboard {
 				),
 			)
 		);
+
+		/*
+		 * Recording a background check.
+		 *
+		 * Its own route, and its own capability. Only a pastor may do this, and
+		 * it must not travel with a pipeline move — a leader who can move
+		 * someone along must not be able to clear the check that lets them.
+		 *
+		 * Until this existed there was no reachable way to mark a check cleared
+		 * at all, so the gate on Fellowship Kids and Youth Ministry was not
+		 * merely strict, it was shut: nobody could ever be placed on either.
+		 */
+		register_rest_route(
+			$ns,
+			'/people/(?P<id>\d+)',
+			array(
+				'methods'             => \WP_REST_Server::DELETABLE,
+				'callback'            => array( __CLASS__, 'erase' ),
+				'permission_callback' => array( __CLASS__, 'can_erase' ),
+			)
+		);
+
+		register_rest_route(
+			$ns,
+			'/people/(?P<id>\d+)/safeguarding',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'update_safeguarding' ),
+				'permission_callback' => array( __CLASS__, 'can_verify_safeguarding' ),
+				'args'                => array(
+					'status' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+				),
+			)
+		);
+	}
+
+	public static function can_verify_safeguarding(): bool {
+		return current_user_can( Roles::CAP_VERIFY_SAFEGUARD );
+	}
+
+	public static function can_erase(): bool {
+		return current_user_can( Roles::CAP_MANAGE_SETTINGS );
+	}
+
+	/**
+	 * Delete somebody's profile on request.
+	 *
+	 * A plugin that takes consent, states a retention period and records
+	 * religious belief has to be able to honour "please remove my details".
+	 * The only path to this was a form on a screen nothing rendered, so the
+	 * answer to such a request was, in practice, a database query.
+	 *
+	 * @param \WP_REST_Request $request
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public static function erase( \WP_REST_Request $request ) {
+		$id = (int) $request->get_param( 'id' );
+
+		if ( ! Roles::can_view_submission( $id ) ) {
+			return new \WP_Error( 'serve_forbidden', __( 'You cannot change this record.', 'serve-dashboard' ), array( 'status' => 403 ) );
+		}
+
+		Privacy::erase_submission( $id );
+
+		return new \WP_REST_Response( array( 'erased' => true ) );
+	}
+
+	/**
+	 * @param \WP_REST_Request $request
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public static function update_safeguarding( \WP_REST_Request $request ) {
+		$id = (int) $request->get_param( 'id' );
+
+		if ( ! Roles::can_view_submission( $id ) ) {
+			return new \WP_Error( 'serve_forbidden', __( 'You cannot change this record.', 'serve-dashboard' ), array( 'status' => 403 ) );
+		}
+
+		$status = (string) $request->get_param( 'status' );
+
+		if ( ! in_array( $status, Safeguarding::statuses(), true ) ) {
+			return new \WP_Error( 'serve_bad_safeguarding', __( 'Unknown background-check status.', 'serve-dashboard' ), array( 'status' => 422 ) );
+		}
+
+		if ( ! Safeguarding::set_status( $id, $status ) ) {
+			return new \WP_Error( 'serve_safeguarding_failed', __( 'Could not record that check.', 'serve-dashboard' ), array( 'status' => 500 ) );
+		}
+
+		return self::person( $request );
 	}
 
 	public static function can_view(): bool {

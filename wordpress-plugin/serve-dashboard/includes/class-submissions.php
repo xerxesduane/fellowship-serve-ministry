@@ -281,6 +281,28 @@ final class Submissions {
 			return new \WP_Error( 'serve_forbidden', __( 'You cannot change this record.', 'serve-dashboard' ), array( 'status' => 403 ) );
 		}
 
+		/*
+		 * A gated status has to name its team, because the gate is a question
+		 * about a specific team and cannot be asked without one.
+		 *
+		 * `team_id` used to be optional here for every status, so the check
+		 * below simply did not run when it was left out — and an uncleared
+		 * person suggested to Fellowship Kids could be moved straight to Placed
+		 * by omitting one parameter. Nothing in the UI did that, but the whole
+		 * reason this lives in the transition code rather than the form is that
+		 * the form is not the only caller.
+		 *
+		 * It is the right rule regardless of safeguarding: someone Placed on no
+		 * team is counted in "Serving now" while serving nowhere.
+		 */
+		if ( Safeguarding::is_gated_status( $status ) && ! $team_id ) {
+			return new \WP_Error(
+				'serve_team_required',
+				__( 'Trial serve and Placed apply to a particular team, so one has to be chosen before the move can be recorded.', 'serve-dashboard' ),
+				array( 'status' => 422 )
+			);
+		}
+
 		if ( $team_id ) {
 			$blocked = Safeguarding::block_reason( $id, $team_id, $status );
 			if ( '' !== $blocked ) {

@@ -26,10 +26,8 @@ final class Admin {
 	public static function register(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'assets' ) );
-		add_action( 'admin_post_serve_update_status', array( __CLASS__, 'handle_status' ) );
 		add_action( 'admin_post_serve_save_team', array( __CLASS__, 'handle_team' ) );
 		add_action( 'admin_post_serve_save_settings', array( __CLASS__, 'handle_settings' ) );
-		add_action( 'admin_post_serve_erase', array( __CLASS__, 'handle_erase' ) );
 		add_action( 'admin_post_serve_resend_confirmations', array( __CLASS__, 'handle_resend_confirmations' ) );
 	}
 
@@ -157,37 +155,6 @@ final class Admin {
 
 	/* ------------------------------------------------------------- Handlers */
 
-	public static function handle_status(): void {
-		check_admin_referer( 'serve_update_status' );
-
-		$id      = isset( $_POST['submission_id'] ) ? absint( $_POST['submission_id'] ) : 0;
-		$status  = isset( $_POST['status'] ) ? sanitize_key( wp_unslash( $_POST['status'] ) ) : '';
-		$team_id = isset( $_POST['team_id'] ) ? absint( $_POST['team_id'] ) : 0;
-
-		$extra = array(
-			'snooze_until'   => isset( $_POST['snooze_until'] ) ? sanitize_text_field( wp_unslash( $_POST['snooze_until'] ) ) : '',
-			'decline_reason' => isset( $_POST['decline_reason'] ) ? sanitize_text_field( wp_unslash( $_POST['decline_reason'] ) ) : '',
-		);
-
-		if ( isset( $_POST['next_action_at'] ) && '' !== $_POST['next_action_at'] ) {
-			$extra['next_action_at'] = sanitize_text_field( wp_unslash( $_POST['next_action_at'] ) );
-		}
-
-		$result = Submissions::set_status( $id, $status, $team_id, $extra );
-
-		if ( isset( $_POST['safeguarding_status'] ) && '' !== $_POST['safeguarding_status'] ) {
-			Safeguarding::set_status( $id, sanitize_key( wp_unslash( $_POST['safeguarding_status'] ) ) );
-		}
-
-		self::redirect_back(
-			array(
-				'submission' => $id,
-				'notice'     => is_wp_error( $result ) ? 'error' : 'saved',
-				'message'    => is_wp_error( $result ) ? rawurlencode( $result->get_error_message() ) : '',
-			)
-		);
-	}
-
 	public static function handle_team(): void {
 		check_admin_referer( 'serve_save_team' );
 
@@ -274,28 +241,6 @@ final class Admin {
 					'notice' => 'resent',
 					'sent'   => (int) $result['sent'],
 					'failed' => (int) $result['failed'],
-				),
-				admin_url( 'admin.php' )
-			)
-		);
-		exit;
-	}
-
-	public static function handle_erase(): void {
-		check_admin_referer( 'serve_erase' );
-
-		if ( ! current_user_can( Roles::CAP_MANAGE_SETTINGS ) ) {
-			wp_die( esc_html__( 'Only a pastor can delete a profile.', 'serve-dashboard' ) );
-		}
-
-		$id = isset( $_POST['submission_id'] ) ? absint( $_POST['submission_id'] ) : 0;
-		Privacy::erase_submission( $id );
-
-		wp_safe_redirect(
-			add_query_arg(
-				array(
-					'page'   => self::PAGE_DASHBOARD,
-					'notice' => 'erased',
 				),
 				admin_url( 'admin.php' )
 			)

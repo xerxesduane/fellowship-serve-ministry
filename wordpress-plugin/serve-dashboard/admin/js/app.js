@@ -448,6 +448,77 @@ const drawer = {
 				</ul>
 			</div>`;
 
+		/*
+		 * Moving somebody along the pipeline.
+		 *
+		 * Until now the drawer could set exactly one status — "contacted", via
+		 * the invite button — and the screen that could set the rest had been
+		 * orphaned, required by nothing. So a leader could start a conversation
+		 * and then had nowhere to record how it went.
+		 *
+		 * The team selector is not decoration: Trial serve and Placed are
+		 * decisions about a particular team, and the safeguarding gate is a
+		 * question that cannot be asked without one.
+		 */
+		const teamOptions = person.placements
+			.map((p) => `<option value="${esc(p.teamId)}">${esc(p.teamName)}${p.safeguarded ? ' — background check required' : ''}</option>`)
+			.join('');
+
+		const stageForm = CONFIG.caps.manage ? `
+			<div class="serve-section">
+				<h3>Record what happened</h3>
+				<form class="serve-stageform" data-stage-form="${esc(person.id)}">
+					<label for="serve-stage-${esc(person.id)}">Move to</label>
+					<select id="serve-stage-${esc(person.id)}" data-stage-status>
+						${Object.entries(CONFIG.statuses)
+							.map(([value, label]) => `<option value="${esc(value)}" ${value === person.status ? 'selected' : ''}>${esc(label)}</option>`)
+							.join('')}
+					</select>
+
+					<div data-stage-team ${CONFIG.gatedStatuses.includes(person.status) ? '' : 'hidden'}>
+						<label for="serve-stage-team-${esc(person.id)}">On which team</label>
+						${teamOptions
+							? `<select id="serve-stage-team-${esc(person.id)}" data-stage-team-select>${teamOptions}</select>`
+							: '<p class="serve-note serve-note--warn">No team is suggested for this person yet, so there is nothing to place them on.</p>'}
+					</div>
+
+					<div data-stage-until ${person.status === 'paused' ? '' : 'hidden'}>
+						<label for="serve-stage-until-${esc(person.id)}">Bring them back on</label>
+						<input type="date" id="serve-stage-until-${esc(person.id)}" data-stage-snooze>
+						<p class="serve-card__hint">A pause without a return date is how somebody quietly disappears from the queue.</p>
+					</div>
+
+					<div data-stage-reason ${person.status === 'declined' ? '' : 'hidden'}>
+						<label for="serve-stage-reason-${esc(person.id)}">Anything worth recording (optional)</label>
+						<input type="text" id="serve-stage-reason-${esc(person.id)}" maxlength="190" data-stage-decline
+							placeholder="e.g. not this season, asked us to check back after Ramadan">
+					</div>
+
+					<button type="submit" class="serve-btn serve-btn--primary">Save this change</button>
+					<p class="serve-note serve-note--warn" data-stage-error hidden></p>
+				</form>
+			</div>` : '';
+
+		/*
+		 * Recording a background check. Pastors only, and on its own route — a
+		 * leader who can move someone to Placed must not also be able to clear
+		 * the check that permits it.
+		 */
+		const safeguardForm = (CONFIG.caps.safeguard && person.safeguarding.relevant) ? `
+			<div class="serve-section">
+				<h3>Background check</h3>
+				<form class="serve-stageform" data-safeguard-form="${esc(person.id)}">
+					<label for="serve-sg-${esc(person.id)}">Check status</label>
+					<select id="serve-sg-${esc(person.id)}" data-safeguard-status>
+						${Object.entries(CONFIG.safeguardStatuses)
+							.map(([value, label]) => `<option value="${esc(value)}" ${value === person.safeguarding.status ? 'selected' : ''}>${esc(label)}</option>`)
+							.join('')}
+					</select>
+					<button type="submit" class="serve-btn serve-btn--secondary">Record it</button>
+					<p class="serve-note serve-note--warn" data-safeguard-error hidden></p>
+				</form>
+			</div>` : '';
+
 		const actions = [];
 
 		if (CONFIG.caps.manage) {
@@ -461,6 +532,13 @@ const drawer = {
 		} else {
 			actions.push(`<p class="serve-note serve-note--muted">Planning Center links are not configured${
 				CONFIG.caps.settings ? ', so a record cannot be opened from here yet.' : '.'}</p>`);
+		}
+
+		// Honouring "please remove my details". Pastors only, and it asks twice,
+		// because there is no undo and the profile includes pastoral history.
+		if (CONFIG.caps.settings) {
+			actions.push(`<button type="button" class="serve-btn serve-btn--danger serve-btn--block"
+				data-erase="${esc(person.id)}">${icon('alert')}Delete this profile</button>`);
 		}
 
 		this.body.innerHTML = `
@@ -489,6 +567,9 @@ const drawer = {
 				${person.tenureMonths !== null ? `<p class="serve-card__hint">Expects to be in the UAE about ${esc(person.tenureMonths)} more months.</p>` : ''}
 				${safeguarding}
 			</div>
+
+			${stageForm}
+			${safeguardForm}
 
 			<div class="serve-section">
 				<h3>S.H.A.P.E. profile</h3>
@@ -917,6 +998,41 @@ function boot() {
 			return;
 		}
 
+		const erase = event.target.closest('[data-erase]');
+		if (erase) {
+			const id = erase.dataset.erase;
+
+			/*
+			 * Two presses, not a confirm() dialog. This deletes a profile, its
+			 * consent record, its placements and its conversation notes, with
+			 * no undo — so the button says plainly what the next press does
+			 * rather than putting that in a box people click through.
+			 */
+			if (erase.dataset.armed !== '1') {
+				erase.dataset.armed = '1';
+				erase.textContent = 'Press again to delete permanently';
+				announce('Press again to delete this profile permanently');
+				return;
+			}
+
+			erase.disabled = true;
+			erase.textContent = 'Deleting…';
+
+			api(`/people/${id}`, { method: 'DELETE' })
+				.then(() => {
+					announce('Profile deleted');
+					drawer.close();
+					bootPromise = loadDashboard();
+				})
+				.catch((error) => {
+					erase.disabled = false;
+					delete erase.dataset.armed;
+					erase.textContent = 'Delete this profile';
+					announce(error.message);
+				});
+			return;
+		}
+
 		const claim = event.target.closest('[data-claim]');
 		if (claim) {
 			const id = claim.dataset.claim;
@@ -940,7 +1056,30 @@ function boot() {
 	});
 
 	// Adding a note re-renders only the history, so the drawer does not jump.
+	/* Show only the fields the chosen stage actually needs. */
+	function syncStageFields(form) {
+		const status = form.querySelector('[data-stage-status]').value;
+
+		form.querySelector('[data-stage-team]').hidden = !CONFIG.gatedStatuses.includes(status);
+		form.querySelector('[data-stage-until]').hidden = status !== 'paused';
+		form.querySelector('[data-stage-reason]').hidden = status !== 'declined';
+	}
+
 	document.addEventListener('submit', (event) => {
+		const stage = event.target.closest('[data-stage-form]');
+		if (stage) {
+			event.preventDefault();
+			submitStage(stage);
+			return;
+		}
+
+		const safeguard = event.target.closest('[data-safeguard-form]');
+		if (safeguard) {
+			event.preventDefault();
+			submitSafeguard(safeguard);
+			return;
+		}
+
 		const form = event.target.closest('[data-note-form]');
 		if (!form) {
 			return;
@@ -980,6 +1119,11 @@ function boot() {
 	});
 
 	document.addEventListener('change', (event) => {
+		const stage = event.target.closest('[data-stage-status]');
+		if (stage) {
+			syncStageFields(stage.closest('[data-stage-form]'));
+		}
+
 		const picker = event.target.closest('[data-serve="match-team"]');
 		if (picker) {
 			matching.teamId = Number(picker.value);
@@ -1022,6 +1166,92 @@ function boot() {
  * workflow has been defined, and a button that claims to have emailed someone
  * when it has not is worse than no button.
  */
+/**
+ * Record a pipeline move.
+ *
+ * The server decides whether the move is allowed — the safeguarding gate lives
+ * in the transition code precisely so that it does not depend on this form
+ * being correct — so a refusal is shown as it comes back rather than being
+ * second-guessed here. The one thing worth catching early is a missing return
+ * date, because the person is looking straight at the empty field.
+ */
+function submitStage(form) {
+	const id = form.dataset.stageForm;
+	const status = form.querySelector('[data-stage-status]').value;
+	const teamSelect = form.querySelector('[data-stage-team-select]');
+	const snooze = form.querySelector('[data-stage-snooze]');
+	const reason = form.querySelector('[data-stage-decline]');
+	const error = form.querySelector('[data-stage-error]');
+	const button = form.querySelector('button[type="submit"]');
+
+	const fail = (message) => {
+		error.textContent = message;
+		error.hidden = false;
+		button.disabled = false;
+		button.textContent = 'Save this change';
+	};
+
+	error.hidden = true;
+
+	if (status === 'paused' && !snooze.value) {
+		fail('Pausing someone needs a date to bring them back.');
+		snooze.focus();
+		return;
+	}
+
+	if (CONFIG.gatedStatuses.includes(status) && !teamSelect) {
+		fail('No team is suggested for this person yet, so there is nothing to place them on.');
+		return;
+	}
+
+	const payload = { status };
+
+	if (teamSelect && CONFIG.gatedStatuses.includes(status)) {
+		payload.team_id = Number(teamSelect.value);
+	}
+	if (status === 'paused') {
+		payload.snooze_until = snooze.value;
+	}
+	if (status === 'declined' && reason.value.trim()) {
+		payload.decline_reason = reason.value.trim();
+	}
+
+	button.disabled = true;
+	button.textContent = 'Saving…';
+
+	api(`/people/${id}/status`, { method: 'POST', body: JSON.stringify(payload) })
+		.then(() => {
+			announce(`Moved to ${CONFIG.statuses[status]}`);
+			drawer.open(id);
+			bootPromise = loadDashboard();
+		})
+		.catch((err) => fail(err.message));
+}
+
+/** Record a background check. Pastors only; the route enforces that too. */
+function submitSafeguard(form) {
+	const id = form.dataset.safeguardForm;
+	const status = form.querySelector('[data-safeguard-status]').value;
+	const error = form.querySelector('[data-safeguard-error]');
+	const button = form.querySelector('button[type="submit"]');
+
+	error.hidden = true;
+	button.disabled = true;
+	button.textContent = 'Saving…';
+
+	api(`/people/${id}/safeguarding`, { method: 'POST', body: JSON.stringify({ status }) })
+		.then(() => {
+			announce(`Background check recorded: ${CONFIG.safeguardStatuses[status]}`);
+			drawer.open(id);
+		})
+		.catch((err) => {
+			error.textContent = err.message;
+			error.hidden = false;
+			button.disabled = false;
+			button.textContent = 'Record it';
+		});
+}
+
 function inviteToConversation(button) {
 	const id = button.dataset.invite;
 

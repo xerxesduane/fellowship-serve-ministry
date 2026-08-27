@@ -86,6 +86,14 @@ final class App {
 				'teams'     => current_user_can( Roles::CAP_MANAGE_TEAMS ),
 				'settings'  => current_user_can( Roles::CAP_MANAGE_SETTINGS ),
 				'export'    => current_user_can( Roles::CAP_EXPORT ),
+				'safeguard' => current_user_can( Roles::CAP_VERIFY_SAFEGUARD ),
+			),
+			// The drawer builds its own controls from these rather than
+			// hardcoding a second copy of the pipeline in JavaScript.
+			'statuses'   => Schema::status_labels(),
+			'safeguardStatuses' => Safeguarding::status_labels(),
+			'gatedStatuses'     => array_values(
+				array_filter( array_keys( Schema::status_labels() ), array( Safeguarding::class, 'is_gated_status' ) )
 			),
 			'i18n'     => array(
 				'loading'        => __( 'Loading', 'serve-dashboard' ),

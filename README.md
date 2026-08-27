@@ -52,11 +52,11 @@ before deleting anything: both implementations carried the same 73 option ids,
 SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
 ```
 
-Forty-five tests covering the guarantees whose failure would be silent: the
+Fifty-three tests covering the guarantees whose failure would be silent: the
 safeguarding gate, unverified profiles staying invisible, Experiences redaction,
 what a CSV may contain, the confirmation-email path in both directions, what the
-public intake endpoint accepts, and what activation is supposed to have left
-behind.
+public intake endpoint accepts, who may move somebody along the pipeline or
+erase them, and what activation is supposed to have left behind.
 
 That last group exists because activation runs once, on a database nobody has
 looked at yet, and then never again — so it is the least-exercised code here and
@@ -70,15 +70,17 @@ again, then reports if a count moved. It refuses to run against an install
 declaring itself production, and otherwise requires `SERVE_TEST_OK=1` so that
 pointing it somewhere real has to be deliberate.
 
-Adding Composer and the WordPress PHPUnit scaffold to run forty-five tests
+Adding Composer and the WordPress PHPUnit scaffold to run fifty-three tests
 would have been a bigger change to this repository than anything they check, so
 the runner is about a hundred lines and has no dependencies.
 
 The suite was checked by breaking things on purpose. Removing the safeguarding
 gate, dropping the unverified filter, writing `verify_sent_at` before the mail,
-disabling redaction, emptying the metrics scope clause, and deleting an option
-from `uninstall.php` each turn the relevant tests red; restoring each turns them
-green. A suite that has only ever passed has not been shown to test anything.
+disabling redaction, emptying the metrics scope clause, deleting an option from
+`uninstall.php`, reopening the `team_id` safeguarding bypass, and letting a
+ministry leader clear a background check or erase a profile each turn the
+relevant tests red; restoring each turns them green. A suite that has only ever
+passed has not been shown to test anything.
 
 Two things that exercise found, which is the argument for doing it rather than
 assuming:

@@ -910,6 +910,21 @@ button.serve-metric:hover {
 	border-color: var(--serve-navy);
 }
 
+/*
+ * Deleting a profile. Outlined rather than filled: it should be findable and
+ * unmistakable, not the most eye-catching thing in the drawer.
+ */
+.serve-btn--danger {
+	background: var(--serve-surface);
+	border-color: var(--serve-coral-dark);
+	color: var(--serve-coral-dark);
+}
+
+.serve-btn--danger:hover:not(:disabled) {
+	background: var(--serve-coral-dark);
+	color: #fff;
+}
+
 .serve-btn:disabled {
 	opacity: .55;
 	cursor: not-allowed;
@@ -1403,6 +1418,21 @@ button.serve-metric:hover {
 	color: var(--serve-text); background: var(--serve-surface);
 	border: 1px solid var(--serve-border); border-radius: var(--serve-radius-sm); resize: vertical;
 }
+.serve-stageform { display: flex; flex-direction: column; gap: var(--serve-space-2); margin: var(--serve-space-3) 0; }
+.serve-stageform label { font-size: .8125rem; font-weight: 600; }
+.serve-stageform > div { display: flex; flex-direction: column; gap: var(--serve-space-2); }
+.serve-stageform select,
+.serve-stageform input {
+	width: 100%; padding: var(--serve-space-2) var(--serve-space-3); font: inherit; font-size: .875rem;
+	color: var(--serve-text); background: var(--serve-surface);
+	border: 1px solid var(--serve-border); border-radius: var(--serve-radius-sm);
+	/* These are the drawer's decision controls; they get the full target size. */
+	min-height: 44px;
+}
+.serve-stageform button { align-self: flex-start; }
+/* `hidden` loses to the flex display above unless it is said again here. */
+.serve-stageform [hidden] { display: none; }
+
 .serve-notes { display: flex; flex-direction: column; gap: var(--serve-space-3); }
 .serve-notes li { padding-bottom: var(--serve-space-3); border-bottom: 1px solid var(--serve-border); }
 .serve-notes li:last-child { border-bottom: 0; padding-bottom: 0; }

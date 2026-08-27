@@ -47,6 +47,39 @@ and storage layer, plus the smallest set of views that make it useful.
 - Pausing someone requires a return date. Without that, a follow-up queue fills
   with "travelling until September" and leaders stop opening it.
 - Profiles older than 18 months are flagged stale.
+- Every stage is set from the drawer, on the team the move applies to. For a
+  long time only one of them could be: the drawer's invite button set
+  `Contacted` and nothing else, and the screen holding the rest of the controls
+  — `admin/views/submission-detail.php` — was required by nothing and rendered
+  by no menu entry. A leader could start a conversation and then had nowhere to
+  record how it went. That file and its dead `admin_post` handlers have gone;
+  the drawer is now the one place a person is worked from.
+
+**Trial serve and Placed name their team**
+- Both are decisions about a particular team, so neither can be recorded
+  without one. The safeguarding gate is a question that cannot be asked
+  otherwise, and `team_id` used to be optional for every status — so the check
+  simply did not run when it was left out, and an uncleared person suggested to
+  Fellowship Kids could be moved straight to Placed by omitting one parameter.
+- Nothing in the UI ever did that. The point of putting the gate in the
+  transition code rather than the form is that the form is not the only caller,
+  and the claim only holds if it holds for every path in.
+- It is the right rule regardless: someone Placed on no team counts in "Serving
+  now" while serving nowhere.
+
+**Recording a background check**
+- Its own route and its own capability. A leader who can move somebody to
+  Placed must not also be able to clear the check that permits it.
+- Before this existed nothing reachable could mark a check cleared, so the gate
+  on Fellowship Kids and Youth Ministry was not merely strict — it was shut, and
+  nobody could ever be placed on either team.
+
+**Erasing a profile**
+- A pastor can delete someone from the drawer; the button asks twice, because
+  there is no undo and the record includes pastoral history.
+- The plugin takes consent, states a retention period and stores religious
+  belief, so "please remove my details" has to be answerable without a database
+  client. The only path to it was a form on that same unrendered screen.
 
 **Team gaps**
 - `target`, `minimum`, and `current` headcount per team. A gap is
