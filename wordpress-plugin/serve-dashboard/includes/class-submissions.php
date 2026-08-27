@@ -144,6 +144,15 @@ final class Submissions {
 	public static function query( array $args = array() ): array {
 		global $wpdb;
 
+		/*
+		 * The same gate can_view_submission() opens with. This method was
+		 * relying entirely on visible_team_ids() to scope it, which answers
+		 * "which teams" and was never meant to answer "may you be here at all".
+		 */
+		if ( ! current_user_can( Roles::CAP_VIEW_DASHBOARD ) ) {
+			return array();
+		}
+
 		$defaults = array(
 			'status'          => '',
 			'team_id'         => 0,

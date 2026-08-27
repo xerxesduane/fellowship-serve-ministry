@@ -108,6 +108,18 @@ final class Roles {
 	public static function visible_team_ids( ?int $user_id = null ): ?array {
 		$user_id = $user_id ?? get_current_user_id();
 
+		/*
+		 * A logged-out caller is user 0, and an unassigned team's leader_user_id
+		 * is also 0 — so on a fresh install, where no team has a leader yet, the
+		 * query below matched every team and handed an anonymous caller the
+		 * whole congregation. Nothing reachable over HTTP relied on this alone,
+		 * but it is the wrong answer to give any caller, and "no leader" and
+		 * "not logged in" must never be the same value.
+		 */
+		if ( $user_id <= 0 ) {
+			return array();
+		}
+
 		if ( user_can( $user_id, self::CAP_VIEW_ALL ) ) {
 			return null;
 		}
@@ -118,7 +130,10 @@ final class Roles {
 		$ids = $wpdb->get_col(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-				"SELECT id FROM {$teams} WHERE leader_user_id = %d AND is_active = 1",
+				"SELECT id FROM {$teams}
+				 WHERE leader_user_id = %d
+				   AND leader_user_id > 0
+				   AND is_active = 1",
 				$user_id
 			)
 		);

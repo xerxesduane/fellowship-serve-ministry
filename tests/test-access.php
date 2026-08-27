@@ -136,3 +136,44 @@ test(
 		$a->same( array(), Submissions::query(), 'and lists nothing' );
 	}
 );
+
+/*
+ * A regression found by running the suite on a fresh install, where no team has
+ * been given a leader yet. An unassigned team's leader_user_id was 0, and a
+ * logged-out caller is user 0, so "the teams you lead" matched all sixteen.
+ * This is the state every church is in on their first day.
+ */
+test(
+	'an unassigned team does not make everyone its leader',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+		$teams = Schema::table( 'teams' );
+
+		$saved = $wpdb->get_results( "SELECT id, leader_user_id FROM {$teams}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->query( "UPDATE {$teams} SET leader_user_id = 0" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		try {
+			$f->verified_submission();
+
+			wp_set_current_user( 0 );
+			$a->same( array(), Roles::visible_team_ids(), 'anonymous leads no teams' );
+			$a->same( array(), Submissions::query(), 'and is shown no profiles' );
+
+			// Nor does a logged-in user who simply has no team.
+			$nobody = $f->user( 'subscriber' );
+			wp_set_current_user( $nobody );
+			$a->same( array(), Roles::visible_team_ids(), 'a subscriber leads no teams' );
+			$a->same( array(), Submissions::query(), 'and is shown no profiles' );
+		} finally {
+			foreach ( $saved as $team ) {
+				$wpdb->update(
+					$teams,
+					array( 'leader_user_id' => $team->leader_user_id ),
+					array( 'id' => (int) $team->id ),
+					array( null === $team->leader_user_id ? null : '%d' ),
+					array( '%d' )
+				);
+			}
+		}
+	}
+);
