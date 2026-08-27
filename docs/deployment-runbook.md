@@ -294,13 +294,18 @@ Have this ready before you need it.
 
 - **Watch "Unsent confirmations" daily.** Any non-zero number means people are
   waiting on emails that never left.
+- **Read "How the pilot is going"** in Settings each week. The number that
+  matters is *Waiting on a first response* — people who confirmed their address
+  and have had nothing happen since. That is the claim the pilot is testing.
 - **Watch the completion funnel** in Settings. It shows where people abandon the
   journey. Contact details are required on the first step, which is the highest
   drop-off position in the whole journey — if that number is bad, moving that
   fieldset to the end is a small change.
-- **Ask two or three people who completed it** whether the confirmation email
-  arrived promptly and whether the invitation felt personal. Neither is
-  measurable from inside the system.
+- **Ask the questions the figures cannot answer.** Settings lists them: whether
+  leaders understood the suggested teams, whether the profiles matched the
+  people once met, whether the invitation felt personal, and whether moving into
+  Planning Center was clear. Four of the deck's five success questions are of
+  this kind, and no database produces them.
 - **Check the audit trail** in Settings once or twice, to confirm what leaders
   are actually doing matches what you expected.
 
@@ -313,10 +318,6 @@ Not blockers, but known and worth tracking:
 - **Planning Center is not integrated.** The dashboard offers a deep link to a
   people search and nothing more. Field ownership, sync direction and permissions
   all need agreeing first — that is the deck's own Prepare phase.
-- **Nothing measures the pilot's success questions.** Time-to-first-contact,
-  time-in-stage and per-stage drop-off are all computable from data the audit
-  trail already holds, but nothing reports them yet. Worth building before the
-  pilot rather than after.
 - **The end of the journey offers two routes.** The Church Center serving form
   appears alongside the share step; anyone who takes the form lands in Planning
   Center invisible to this dashboard.

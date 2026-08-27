@@ -53,11 +53,12 @@ before deleting anything: both implementations carried the same 73 option ids,
 SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
 ```
 
-Fifty-three tests covering the guarantees whose failure would be silent: the
+Sixty tests covering the guarantees whose failure would be silent: the
 safeguarding gate, unverified profiles staying invisible, Experiences redaction,
 what a CSV may contain, the confirmation-email path in both directions, what the
 public intake endpoint accepts, who may move somebody along the pipeline or
-erase them, and what activation is supposed to have left behind.
+erase them, what activation is supposed to have left behind, and whether the
+pilot report counts the same population in both halves of a proportion.
 
 That last group exists because activation runs once, on a database nobody has
 looked at yet, and then never again — so it is the least-exercised code here and
@@ -71,7 +72,7 @@ again, then reports if a count moved. It refuses to run against an install
 declaring itself production, and otherwise requires `SERVE_TEST_OK=1` so that
 pointing it somewhere real has to be deliberate.
 
-Adding Composer and the WordPress PHPUnit scaffold to run fifty-three tests
+Adding Composer and the WordPress PHPUnit scaffold to run sixty tests
 would have been a bigger change to this repository than anything they check, so
 the runner is about a hundred lines and has no dependencies.
 

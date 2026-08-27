@@ -235,6 +235,178 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<?php submit_button(); ?>
 	</form>
 
+	<?php
+	$pilot     = Pilot::report();
+	$reach     = $pilot['reach'];
+	$missed    = $pilot['overlooked'];
+	$speed     = $pilot['speed'];
+	$recorded  = $pilot['recorded'];
+	?>
+
+	<h2><?php esc_html_e( 'How the pilot is going', 'serve-dashboard' ); ?></h2>
+	<p class="serve-lede">
+		<?php
+		if ( $pilot['period']['from'] ) {
+			printf(
+				/* translators: %d: number of days the pilot has been running. */
+				esc_html( _n( 'Covering the %d day since the first profile was shared.', 'Covering the %d days since the first profile was shared.', $pilot['period']['days'], 'serve-dashboard' ) ),
+				absint( $pilot['period']['days'] )
+			);
+			echo ' ';
+		}
+		esc_html_e( 'Every figure says how many people it was worked out from, because a median of three is not a median.', 'serve-dashboard' );
+		?>
+	</p>
+
+	<?php if ( 0 === $reach['shared'] ) : ?>
+		<p class="serve-muted"><?php esc_html_e( 'Nothing to report yet. These figures appear once people start sharing profiles.', 'serve-dashboard' ); ?></p>
+	<?php else : ?>
+
+		<table class="wp-list-table widefat fixed striped">
+			<tbody>
+				<tr>
+					<td style="width:280px"><strong><?php esc_html_e( 'Profiles shared', 'serve-dashboard' ); ?></strong></td>
+					<td>
+						<?php echo esc_html( (string) $reach['shared'] ); ?>
+						&mdash;
+						<?php
+						printf(
+							/* translators: 1: number confirmed, 2: percentage. */
+							esc_html__( '%1$d confirmed their email address (%2$d%%)', 'serve-dashboard' ),
+							absint( $reach['confirmed'] ),
+							absint( (int) $reach['rate'] )
+						);
+						?>
+						<?php if ( $reach['waiting'] > 0 ) : ?>
+							<div class="serve-row-meta">
+								<em>
+								<?php
+								printf(
+									/* translators: %d: number of people who have not confirmed. */
+									esc_html( _n( '%d has not confirmed. A number that keeps growing is usually a mail problem rather than a people problem.', '%d have not confirmed. A number that keeps growing is usually a mail problem rather than a people problem.', $reach['waiting'], 'serve-dashboard' ) ),
+									absint( $reach['waiting'] )
+								);
+								?>
+								</em>
+							</div>
+						<?php endif; ?>
+					</td>
+				</tr>
+
+				<tr>
+					<td>
+						<strong><?php esc_html_e( 'Waiting on a first response', 'serve-dashboard' ); ?></strong>
+						<div class="serve-row-meta"><em><?php esc_html_e( 'The number this is all meant to move.', 'serve-dashboard' ); ?></em></div>
+					</td>
+					<td>
+						<?php if ( 0 === $missed['count'] ) : ?>
+							<strong style="color:#287657"><?php esc_html_e( 'Nobody. Everyone who confirmed has been picked up.', 'serve-dashboard' ); ?></strong>
+						<?php else : ?>
+							<strong style="color:#b8401a"><?php echo esc_html( (string) $missed['count'] ); ?></strong>
+							<?php esc_html_e( 'confirmed their address and have had nothing happen since.', 'serve-dashboard' ); ?>
+							<div class="serve-row-meta">
+								<em>
+								<?php
+								printf(
+									/* translators: %d: days the longest-waiting person has waited. */
+									esc_html( _n( 'The person waiting longest has been waiting %d day.', 'The person waiting longest has been waiting %d days.', (int) $missed['longest_days'], 'serve-dashboard' ) ),
+									absint( (int) $missed['longest_days'] )
+								);
+								?>
+								</em>
+							</div>
+						<?php endif; ?>
+					</td>
+				</tr>
+
+				<tr>
+					<td><strong><?php esc_html_e( 'Days until someone acts', 'serve-dashboard' ); ?></strong></td>
+					<td>
+						<?php if ( 0 === $speed['sample'] ) : ?>
+							<span class="serve-muted"><?php esc_html_e( 'Nobody has been moved along yet.', 'serve-dashboard' ); ?></span>
+						<?php else : ?>
+							<?php
+							printf(
+								/* translators: 1: median days, 2: number of people measured. */
+								esc_html__( 'Median %1$s days, across %2$d people', 'serve-dashboard' ),
+								esc_html( (string) $speed['median'] ),
+								absint( $speed['sample'] )
+							);
+							?>
+							<?php if ( null !== $speed['slowest'] ) : ?>
+								<?php
+								printf(
+									/* translators: %s: the longest wait in days. */
+									' &middot; ' . esc_html__( 'longest %s days', 'serve-dashboard' ),
+									esc_html( (string) $speed['slowest'] )
+								);
+								?>
+							<?php endif; ?>
+							<?php if ( ! $speed['enough'] ) : ?>
+								<div class="serve-row-meta">
+									<em><?php esc_html_e( 'Too few people so far for this to mean much. Treat it as a sign of life, not a measurement.', 'serve-dashboard' ); ?></em>
+								</div>
+							<?php endif; ?>
+						<?php endif; ?>
+					</td>
+				</tr>
+
+				<tr>
+					<td><strong><?php esc_html_e( 'Conversations written down', 'serve-dashboard' ); ?></strong></td>
+					<td>
+						<?php
+						printf(
+							/* translators: 1: profiles with a note, 2: profiles acted on. */
+							esc_html__( '%1$d of the %2$d people acted on have a note against them', 'serve-dashboard' ),
+							absint( $recorded['with_notes'] ),
+							absint( $recorded['acted_on'] )
+						);
+						?>
+						<div class="serve-row-meta">
+							<em><?php esc_html_e( 'Not a measure of how the conversations went — only of whether the next leader can find out what was said.', 'serve-dashboard' ); ?></em>
+						</div>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+
+		<h3><?php esc_html_e( 'How far people get', 'serve-dashboard' ); ?></h3>
+		<table class="wp-list-table widefat fixed striped">
+			<thead>
+				<tr>
+					<th scope="col" style="width:220px"><?php esc_html_e( 'Stage', 'serve-dashboard' ); ?></th>
+					<th scope="col" style="width:110px"><?php esc_html_e( 'Ever reached', 'serve-dashboard' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Share of confirmed profiles', 'serve-dashboard' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+			<?php foreach ( $pilot['progression'] as $stage ) : ?>
+				<?php $share = $reach['confirmed'] > 0 ? (int) round( $stage['count'] / $reach['confirmed'] * 100 ) : 0; ?>
+				<tr>
+					<td><?php echo esc_html( $stage['label'] ); ?></td>
+					<td><?php echo esc_html( (string) $stage['count'] ); ?></td>
+					<td>
+						<div style="background:#f5f1e8;border-radius:999px;height:8px;max-width:320px">
+							<div style="width:<?php echo esc_attr( (string) $share ); ?>%;background:#167d83;height:8px;border-radius:999px"></div>
+						</div>
+						<small><?php echo esc_html( $share . '%' ); ?></small>
+					</td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+	<?php endif; ?>
+
+	<h3><?php esc_html_e( 'What this cannot tell you', 'serve-dashboard' ); ?></h3>
+	<p class="serve-lede">
+		<?php esc_html_e( 'Four of the five questions the pilot is meant to answer are about how something felt to a person. No database produces those. They have to be asked, and the answers matter at least as much as the figures above.', 'serve-dashboard' ); ?>
+	</p>
+	<ul class="ul-disc">
+		<?php foreach ( Pilot::unanswerable() as $question ) : ?>
+			<li><?php echo esc_html( $question ); ?></li>
+		<?php endforeach; ?>
+	</ul>
+
 	<h2><?php esc_html_e( 'Where people stop', 'serve-dashboard' ); ?></h2>
 	<p class="serve-lede">
 		<?php esc_html_e( 'Anonymous counts of how many people reached each step of the journey. No names, no addresses, nothing tied to a profile — just where the drop-off is, so it can be fixed.', 'serve-dashboard' ); ?>
