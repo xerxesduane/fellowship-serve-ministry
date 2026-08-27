@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Cheap, no services, catches the mistake that actually happens most: a typo
+  # in a file nobody opened during the change.
+  lint:
+    name: PHP syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'   # the plugin's declared minimum, not the newest
+          coverage: none
+
+      - name: Lint every PHP file
+        run: |
+          status=0
+          while IFS= read -r file; do
+            php -l "$file" > /dev/null || { echo "::error file=$file::syntax error"; status=1; }
+          done < <(find wordpress-plugin tools tests -name '*.php')
+          exit $status
+
+      - name: Plugin header and version constant agree
+        run: |
+          header=$(grep -m1 -oP '^\s*\*\s*Version:\s*\K[0-9.]+' wordpress-plugin/serve-dashboard/serve-dashboard.php)
+          const=$(grep -m1 -oP "SERVE_DASHBOARD_VERSION',\s*'\K[0-9.]+" wordpress-plugin/serve-dashboard/serve-dashboard.php)
+          echo "header=$header constant=$const"
+          # Bumping one and not the other ships a plugin whose upgrade routine
+          # never runs, which is invisible until a migration is skipped.
+          [ "$header" = "$const" ]
+
+  tests:
+    name: Plugin tests
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: wordpress_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mysqli
+          coverage: none
+
+      - name: Install WP-CLI
+        run: |
+          curl -sSLO https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+          chmod +x wp-cli.phar && sudo mv wp-cli.phar /usr/local/bin/wp
+
+      - name: Install WordPress
+        run: |
+          wp core download --path=/tmp/wp --version=latest
+          wp config create --path=/tmp/wp \
+            --dbname=wordpress_test --dbuser=root --dbpass=root --dbhost=127.0.0.1
+          wp config set WP_ENVIRONMENT_TYPE local --path=/tmp/wp
+          wp core install --path=/tmp/wp \
+            --url=http://localhost --title="SERVE CI" \
+            --admin_user=admin --admin_email=ci@example.com --admin_password=ci-password
+
+      - name: Activate the plugin
+        run: |
+          cp -r wordpress-plugin/serve-dashboard /tmp/wp/wp-content/plugins/
+          wp plugin activate serve-dashboard --path=/tmp/wp
+
+      - name: Run the tests
+        env:
+          SERVE_TEST_OK: '1'
+        run: php tools/run-tests.php --wp=/tmp/wp
+
+      - name: Build the release zip
+        run: tools/build-release.sh

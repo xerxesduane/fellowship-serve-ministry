@@ -48,6 +48,56 @@ final class Export {
 	}
 
 	/**
+	 * The exported columns, in order.
+	 *
+	 * Split out from `download()` so the exclusions can be asserted in a test
+	 * rather than only promised in a README. Experiences and conversation notes
+	 * are absent at every capability level, deliberately: a spreadsheet is the
+	 * easiest thing in the world to forward to the wrong person.
+	 *
+	 * @return string[]
+	 */
+	public static function columns(): array {
+		return array(
+			__( 'Name', 'serve-dashboard' ),
+			__( 'Email', 'serve-dashboard' ),
+			__( 'Phone', 'serve-dashboard' ),
+			__( 'Status', 'serve-dashboard' ),
+			__( 'Likely gifts', 'serve-dashboard' ),
+			__( 'Languages', 'serve-dashboard' ),
+			__( 'Suggested teams', 'serve-dashboard' ),
+			__( 'Months in UAE', 'serve-dashboard' ),
+			__( 'Background check', 'serve-dashboard' ),
+			__( 'Next action', 'serve-dashboard' ),
+			__( 'Submitted', 'serve-dashboard' ),
+		);
+	}
+
+	/**
+	 * One submission as a row of cells, matching `columns()`.
+	 *
+	 * @return array<int,string|int>
+	 */
+	public static function row( object $submission ): array {
+		$labels    = Schema::status_labels();
+		$safeguard = Safeguarding::status_labels();
+
+		return array(
+			$submission->display_name,
+			$submission->email,
+			$submission->phone,
+			$labels[ $submission->status ] ?? $submission->status,
+			implode( '; ', Submissions::decode_list( $submission->gifts_likely ) ),
+			implode( '; ', Submissions::decode_list( $submission->languages ) ),
+			implode( '; ', Submissions::decode_list( $submission->suggested_teams ) ),
+			null === $submission->tenure_months ? '' : (int) $submission->tenure_months,
+			$safeguard[ $submission->safeguarding_status ] ?? $submission->safeguarding_status,
+			(string) $submission->next_action_at,
+			(string) $submission->submitted_at,
+		);
+	}
+
+	/**
 	 * Stream the export.
 	 *
 	 * Scoped by the same query the dashboard uses, so a ministry leader
@@ -81,43 +131,10 @@ final class Export {
 		// mangles every non-Latin name in the congregation.
 		fwrite( $out, "\xEF\xBB\xBF" );
 
-		fputcsv(
-			$out,
-			array(
-				__( 'Name', 'serve-dashboard' ),
-				__( 'Email', 'serve-dashboard' ),
-				__( 'Phone', 'serve-dashboard' ),
-				__( 'Status', 'serve-dashboard' ),
-				__( 'Likely gifts', 'serve-dashboard' ),
-				__( 'Languages', 'serve-dashboard' ),
-				__( 'Suggested teams', 'serve-dashboard' ),
-				__( 'Months in UAE', 'serve-dashboard' ),
-				__( 'Background check', 'serve-dashboard' ),
-				__( 'Next action', 'serve-dashboard' ),
-				__( 'Submitted', 'serve-dashboard' ),
-			)
-		);
-
-		$labels    = Schema::status_labels();
-		$safeguard = Safeguarding::status_labels();
+		fputcsv( $out, self::columns() );
 
 		foreach ( $rows as $row ) {
-			fputcsv(
-				$out,
-				array(
-					$row->display_name,
-					$row->email,
-					$row->phone,
-					$labels[ $row->status ] ?? $row->status,
-					implode( '; ', Submissions::decode_list( $row->gifts_likely ) ),
-					implode( '; ', Submissions::decode_list( $row->languages ) ),
-					implode( '; ', Submissions::decode_list( $row->suggested_teams ) ),
-					null === $row->tenure_months ? '' : (int) $row->tenure_months,
-					$safeguard[ $row->safeguarding_status ] ?? $row->safeguarding_status,
-					(string) $row->next_action_at,
-					(string) $row->submitted_at,
-				)
-			);
+			fputcsv( $out, self::row( $row ) );
 		}
 
 		fclose( $out );

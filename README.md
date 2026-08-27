@@ -18,6 +18,8 @@ Built for a dedicated WordPress install at `serve.fellowshipdubai.com`.
 ```
 wordpress-plugin/serve-dashboard/   the entire product, one deployable plugin
 tools/build-release.sh              produces the installable zip
+tools/run-tests.php                 the test runner
+tests/                              what must never quietly regress
 docs/content-audit.md               page-by-page workbook fidelity audit
 ```
 
@@ -43,6 +45,33 @@ before deleting anything: both implementations carried the same 73 option ids,
 - WordPress 6.4+
 - PHP 8.1+
 - MySQL 5.7+ / MariaDB 10.3+
+
+## Tests
+
+```bash
+SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
+```
+
+Twenty-seven tests covering the guarantees whose failure would be silent: the
+safeguarding gate, unverified profiles staying invisible, Experiences redaction,
+what a CSV may contain, and the confirmation-email path in both directions.
+
+They boot a real WordPress and run against a real database, because every one of
+those guarantees is a SQL predicate or a capability check and none of them would
+survive being mocked. That means **the runner writes to the database it is
+pointed at** — it creates submissions, users and placements, and deletes them
+again, then reports if a count moved. It refuses to run against an install
+declaring itself production, and otherwise requires `SERVE_TEST_OK=1` so that
+pointing it somewhere real has to be deliberate.
+
+Adding Composer and the WordPress PHPUnit scaffold to run twenty-seven tests
+would have been a bigger change to this repository than anything they check, so
+the runner is about a hundred lines and has no dependencies.
+
+The suite was checked by breaking things on purpose — removing the safeguarding
+gate, dropping the unverified filter, writing `verify_sent_at` before the mail,
+and disabling redaction each turn the relevant tests red. A suite that only ever
+passes has not been shown to test anything.
 
 ## Build
 

@@ -1,0 +1,300 @@
+<?php
+/**
+ * Assertions, fixtures, and the runner loop.
+ *
+ * @package ServeDashboard
+ */
+
+declare(strict_types=1);
+
+namespace Serve_Test;
+
+use Serve_Dashboard\Privacy;
+use Serve_Dashboard\Roles;
+use Serve_Dashboard\Schema;
+use Serve_Dashboard\Submissions;
+
+/** @var array<int,array{name:string,fn:callable}> */
+$GLOBALS['serve_tests'] = array();
+
+function test( string $name, callable $fn ): void {
+	$GLOBALS['serve_tests'][] = array(
+		'name' => $name,
+		'fn'   => $fn,
+	);
+}
+
+final class Failure extends \Exception {}
+
+/**
+ * Assertions.
+ *
+ * Each one says what it expected and what it got, because a failing test that
+ * only says "false is not true" costs more time than it saves.
+ */
+final class Assert {
+
+	public int $count = 0;
+
+	public function ok( bool $value, string $what ): void {
+		++$this->count;
+		if ( ! $value ) {
+			throw new Failure( "expected true: $what" );
+		}
+	}
+
+	public function not( bool $value, string $what ): void {
+		++$this->count;
+		if ( $value ) {
+			throw new Failure( "expected false: $what" );
+		}
+	}
+
+	/** @param mixed $expected @param mixed $actual */
+	public function same( $expected, $actual, string $what ): void {
+		++$this->count;
+		if ( $expected !== $actual ) {
+			throw new Failure(
+				sprintf( "%s\n      expected: %s\n      actual:   %s", $what, self::show( $expected ), self::show( $actual ) )
+			);
+		}
+	}
+
+	public function contains( string $needle, string $haystack, string $what ): void {
+		++$this->count;
+		if ( ! str_contains( $haystack, $needle ) ) {
+			throw new Failure( "$what\n      \"$needle\" not found in: " . self::show( $haystack ) );
+		}
+	}
+
+	public function lacks( string $needle, string $haystack, string $what ): void {
+		++$this->count;
+		if ( str_contains( $haystack, $needle ) ) {
+			throw new Failure( "$what\n      \"$needle\" WAS found in: " . self::show( $haystack ) );
+		}
+	}
+
+	/** @param mixed $value */
+	private static function show( $value ): string {
+		$out = is_scalar( $value ) || null === $value ? var_export( $value, true ) : wp_json_encode( $value );
+
+		return strlen( (string) $out ) > 300 ? substr( (string) $out, 0, 300 ) . '…' : (string) $out;
+	}
+}
+
+/**
+ * Rows created by a test, and the means to remove them.
+ *
+ * Tests run against a database somebody may also be using by hand, so nothing
+ * is truncated and nothing is deleted by pattern. Only ids this object handed
+ * out are removed.
+ */
+final class Fixtures {
+
+	/** @var int[] */
+	private array $submissions = array();
+
+	/** @var int[] */
+	private array $users = array();
+
+	/** @var array<int,int> team id => the leader it had before a test changed it. */
+	private array $team_leaders = array();
+
+	/**
+	 * @param array<string,mixed> $overrides
+	 */
+	public function submission( array $overrides = array() ): int {
+		$payload = array_merge(
+			array(
+				'display_name'    => 'Test Person',
+				'email'           => 'test-' . wp_generate_password( 8, false ) . '@serve.test',
+				'phone'           => '',
+				'tenure_months'   => 12,
+				'gifts_likely'    => array( 'Mercy' ),
+				'languages'       => array( 'English' ),
+				'suggested_teams' => array( 'welcome' ),
+				'profile'         => array(
+					'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+					'experiences'    => array( 'painful' => array( 'A bereavement' ) ),
+				),
+			),
+			$overrides
+		);
+
+		$id = Submissions::create( $payload );
+		if ( is_wp_error( $id ) ) {
+			throw new Failure( 'could not create fixture: ' . $id->get_error_message() );
+		}
+
+		$this->submissions[] = (int) $id;
+
+		return (int) $id;
+	}
+
+	/** A submission that has confirmed its address. */
+	public function verified_submission( array $overrides = array() ): int {
+		global $wpdb;
+
+		$id = $this->submission( $overrides );
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array(
+				'verified_at'  => current_time( 'mysql', true ),
+				'verify_token' => null,
+			),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		return $id;
+	}
+
+	public function user( string $role ): int {
+		$id = wp_insert_user(
+			array(
+				'user_login' => 'serve-test-' . wp_generate_password( 8, false ),
+				'user_email' => 'user-' . wp_generate_password( 8, false ) . '@serve.test',
+				'user_pass'  => wp_generate_password( 24 ),
+				'role'       => $role,
+			)
+		);
+
+		if ( is_wp_error( $id ) ) {
+			throw new Failure( 'could not create user: ' . $id->get_error_message() );
+		}
+
+		$this->users[] = (int) $id;
+
+		return (int) $id;
+	}
+
+	/**
+	 * Put a user in charge of one of the seeded teams.
+	 *
+	 * The sixteen teams are real rows created at activation, not fixtures, so
+	 * the previous leader is remembered and restored — a test must not leave
+	 * somebody's team pointing at a user that no longer exists.
+	 *
+	 * @return int The team id.
+	 */
+	public function lead_team( int $user_id, string $slug ): int {
+		global $wpdb;
+
+		$team = \Serve_Dashboard\Teams::get_by_slug( $slug );
+		if ( ! $team ) {
+			throw new Failure( "no such team: $slug" );
+		}
+
+		$id = (int) $team->id;
+		if ( ! array_key_exists( $id, $this->team_leaders ) ) {
+			$this->team_leaders[ $id ] = (int) $team->leader_user_id;
+		}
+
+		$wpdb->update(
+			Schema::table( 'teams' ),
+			array( 'leader_user_id' => $user_id ),
+			array( 'id' => $id ),
+			array( '%d' ),
+			array( '%d' )
+		);
+
+		return $id;
+	}
+
+	public function cleanup(): void {
+		global $wpdb;
+
+		foreach ( $this->team_leaders as $team_id => $previous ) {
+			$wpdb->update(
+				Schema::table( 'teams' ),
+				array( 'leader_user_id' => $previous ),
+				array( 'id' => $team_id ),
+				array( '%d' ),
+				array( '%d' )
+			);
+		}
+		$this->team_leaders = array();
+
+		foreach ( $this->submissions as $id ) {
+			Privacy::erase_submission( $id );
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+		foreach ( $this->users as $id ) {
+			wp_delete_user( $id );
+		}
+
+		$this->submissions = array();
+		$this->users       = array();
+	}
+}
+
+/**
+ * Run every registered test.
+ *
+ * @return int Process exit code.
+ */
+function run( string $filter = '' ): int {
+	global $wpdb;
+
+	$tests = $GLOBALS['serve_tests'];
+	if ( '' !== $filter ) {
+		$tests = array_values(
+			array_filter( $tests, static fn( $t ) => str_contains( strtolower( $t['name'] ), strtolower( $filter ) ) )
+		);
+	}
+
+	$submissions_table = Schema::table( 'submissions' );
+	$rows_before       = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$submissions_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+	$passed     = 0;
+	$failed     = 0;
+	$assertions = 0;
+
+	echo "\n";
+
+	foreach ( $tests as $t ) {
+		$fixtures = new Fixtures();
+		$assert   = new Assert();
+
+		// Each test starts logged out; forgetting to reset this is the easiest
+		// way to write a capability test that passes for the wrong reason.
+		wp_set_current_user( 0 );
+
+		try {
+			( $t['fn'] )( $assert, $fixtures );
+			printf( "  \u{2713} %s\n", $t['name'] );
+			++$passed;
+		} catch ( Failure $e ) {
+			printf( "  \u{2717} %s\n      %s\n", $t['name'], $e->getMessage() );
+			++$failed;
+		} catch ( \Throwable $e ) {
+			printf( "  \u{2717} %s\n      %s: %s\n      %s:%d\n", $t['name'], get_class( $e ), $e->getMessage(), $e->getFile(), $e->getLine() );
+			++$failed;
+		} finally {
+			$fixtures->cleanup();
+			wp_set_current_user( 0 );
+			$assertions += $assert->count;
+		}
+	}
+
+	$rows_after = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$submissions_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+	printf( "\n  %d passed, %d failed, %d assertions\n", $passed, $failed, $assertions );
+
+	// Say so rather than leave someone to find it later in the dashboard.
+	if ( $rows_after !== $rows_before ) {
+		printf(
+			"  WARNING: submission count went %d -> %d. A test leaked fixtures.\n",
+			$rows_before,
+			$rows_after
+		);
+
+		return 1;
+	}
+
+	echo "\n";
+
+	return $failed > 0 ? 1 : 0;
+}

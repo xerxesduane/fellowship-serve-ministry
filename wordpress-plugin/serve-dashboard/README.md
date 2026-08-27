@@ -89,6 +89,18 @@ The assessment writes its computed profile to
 the flow you either complete the journey once in the same browser, or seed the
 key from the console.
 
+The automated suite lives one level up, outside the plugin so it never ships:
+
+```bash
+SERVE_TEST_OK=1 php ../../tools/run-tests.php --wp=/path/to/wordpress
+```
+
+It covers the guarantees on this page whose failure would be silent — the
+safeguarding gate, unverified invisibility, Experiences redaction, the export
+exclusions, and the confirmation-email path — and it was validated by breaking
+each of them on purpose and confirming the right tests went red. See the
+repository README for what it writes to the database and the guards around that.
+
 ## Tables
 
 All prefixed `{$wpdb->prefix}serve_`:
