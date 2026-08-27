@@ -101,6 +101,25 @@ final class Fixtures {
 	private array $team_leaders = array();
 
 	/**
+	 * Highest feedback id when this test started.
+	 *
+	 * Friction is recorded through a static call that returns no id, so rather
+	 * than thread one back, anything added during the test is anything newer
+	 * than this. Without it every run left its examples behind in the pilot
+	 * report — which is exactly the sort of invented data that report exists to
+	 * avoid.
+	 */
+	private int $feedback_high_water;
+
+	public function __construct() {
+		global $wpdb;
+
+		$table = Schema::table( 'feedback' );
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user input.
+		$this->feedback_high_water = (int) $wpdb->get_var( "SELECT COALESCE( MAX( id ), 0 ) FROM {$table}" );
+	}
+
+	/**
 	 * @param array<string,mixed> $overrides
 	 */
 	public function submission( array $overrides = array() ): int {
@@ -265,6 +284,15 @@ final class Fixtures {
 	public function cleanup(): void {
 		global $wpdb;
 
+		$feedback = Schema::table( 'feedback' );
+		$wpdb->query(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				"DELETE FROM {$feedback} WHERE id > %d",
+				$this->feedback_high_water
+			)
+		);
+
 		foreach ( $this->team_capacity as $team_id => $was ) {
 			$wpdb->update(
 				Schema::table( 'teams' ),
@@ -322,7 +350,10 @@ function run( string $filter = '' ): int {
 	}
 
 	$submissions_table = Schema::table( 'submissions' );
-	$rows_before       = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$submissions_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	$feedback_table    = Schema::table( 'feedback' );
+
+	$rows_before     = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$submissions_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	$feedback_before = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$feedback_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 
 	$passed     = 0;
 	$failed     = 0;
@@ -366,11 +397,23 @@ function run( string $filter = '' ): int {
 		}
 	}
 
-	$rows_after = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$submissions_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	$rows_after     = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$submissions_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	$feedback_after = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$feedback_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 
 	printf( "\n  %d passed, %d failed, %d assertions\n", $passed, $failed, $assertions );
 
 	// Say so rather than leave someone to find it later in the dashboard.
+	if ( $feedback_after !== $feedback_before ) {
+		printf(
+			"  WARNING: feedback count went %d -> %d. A test leaked friction reports.
+",
+			$feedback_before,
+			$feedback_after
+		);
+
+		return 1;
+	}
+
 	if ( $rows_after !== $rows_before ) {
 		printf(
 			"  WARNING: submission count went %d -> %d. A test leaked fixtures.\n",

@@ -62,6 +62,27 @@ final class Rest_Dashboard {
 			)
 		);
 
+		/*
+		 * Friction. Any leader who can open the dashboard can say what is not
+		 * working — the people who hit the problems are the point.
+		 */
+		register_rest_route(
+			$ns,
+			'/friction',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'record_friction' ),
+				'permission_callback' => array( __CLASS__, 'can_view' ),
+				'args'                => array(
+					'area' => array( 'type' => 'string' ),
+					'body' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+				),
+			)
+		);
+
 		register_rest_route(
 			$ns,
 			'/people/(?P<id>\d+)',
@@ -181,6 +202,16 @@ final class Rest_Dashboard {
 
 		register_rest_route(
 			$ns,
+			'/people/(?P<id>\d+)/settled',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'mark_settled' ),
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+			)
+		);
+
+		register_rest_route(
+			$ns,
 			'/people/(?P<id>\d+)/safeguarding',
 			array(
 				'methods'             => \WP_REST_Server::CREATABLE,
@@ -198,6 +229,57 @@ final class Rest_Dashboard {
 
 	public static function can_verify_safeguarding(): bool {
 		return current_user_can( Roles::CAP_VERIFY_SAFEGUARD );
+	}
+
+	/**
+	 * @param \WP_REST_Request $request
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public static function record_friction( \WP_REST_Request $request ) {
+		$saved = Friction::record(
+			(string) $request->get_param( 'area' ),
+			(string) $request->get_param( 'body' )
+		);
+
+		if ( is_wp_error( $saved ) ) {
+			return $saved;
+		}
+
+		return new \WP_REST_Response( array( 'recorded' => true ) );
+	}
+
+	/**
+	 * Close a settling-in check.
+	 *
+	 * Clears the date rather than changing the status: they are still Placed,
+	 * somebody has simply been to see how it is going.
+	 *
+	 * @param \WP_REST_Request $request
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public static function mark_settled( \WP_REST_Request $request ) {
+		global $wpdb;
+
+		$id = (int) $request->get_param( 'id' );
+
+		if ( ! Roles::can_view_submission( $id ) ) {
+			return new \WP_Error( 'serve_forbidden', __( 'You cannot change this record.', 'serve-dashboard' ), array( 'status' => 403 ) );
+		}
+
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array(
+				'next_action_at' => null,
+				'updated_at'     => current_time( 'mysql', true ),
+			),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		Audit::log( 'submission.settled', 'submission', $id );
+
+		return new \WP_REST_Response( array( 'settled' => true ) );
 	}
 
 	public static function can_erase(): bool {
@@ -311,6 +393,8 @@ final class Rest_Dashboard {
 				'priority'       => self::rows( Submissions::query( array( 'limit' => 5 ) ) ),
 				'gaps'           => $gaps,
 				'followups'      => Metrics::upcoming_followups(),
+				// People placed a while ago that nobody has looked in on.
+				'settling'       => Submissions::settling_in(),
 				'gifts'          => Metrics::gift_distribution(),
 				'teams'          => $teams,
 				'planningCenter' => Planning_Center::status(),

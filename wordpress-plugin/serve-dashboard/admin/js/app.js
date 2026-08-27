@@ -273,6 +273,37 @@ function renderFollowups(items) {
 		</button>`).join('');
 }
 
+/*
+ * People placed a while ago that nobody has looked in on.
+ *
+ * Its own card, hidden when there is nothing due. Folding these into the
+ * follow-up queue would bury "see how Aiza is getting on" among people still
+ * waiting for a first conversation, and make both lists harder to work.
+ */
+function renderSettling(items) {
+	const card = $('settling-card');
+	if (!card) {
+		return;
+	}
+
+	if (!items || !items.length) {
+		card.hidden = true;
+		return;
+	}
+
+	card.hidden = false;
+	$('settling').innerHTML = items.map((item) => `
+		<div class="serve-fu serve-fu--settling">
+			<button type="button" class="serve-fu__open" data-person="${esc(item.id)}">
+				<span class="serve-fu__name">${esc(item.name)}</span>
+				<span class="serve-fu__when ${item.overdue ? 'is-attention' : 'is-soon'}">placed ${esc(item.since)}</span>
+			</button>
+			${CONFIG.caps.manage
+				? `<button type="button" class="serve-btn serve-btn--secondary serve-btn--sm" data-settled="${esc(item.id)}">Spoke to them</button>`
+				: ''}
+		</div>`).join('');
+}
+
 function renderGifts(gifts) {
 	if (!gifts.length) {
 		$('gifts').innerHTML = emptyState({
@@ -882,6 +913,7 @@ function loadDashboard() {
 			renderMetrics(data.metrics);
 			renderGaps(data.gaps);
 			renderFollowups(data.followups);
+			renderSettling(data.settling);
 			renderGifts(data.gifts);
 
 			$('priority').innerHTML = rowsOrEmpty(data.priority, {
@@ -1015,6 +1047,24 @@ function boot() {
 			return;
 		}
 
+		const settled = event.target.closest('[data-settled]');
+		if (settled) {
+			settled.disabled = true;
+			settled.textContent = 'Saving…';
+
+			api(`/people/${settled.dataset.settled}/settled`, { method: 'POST' })
+				.then(() => {
+					announce('Settling-in check closed');
+					bootPromise = loadDashboard();
+				})
+				.catch((error) => {
+					settled.disabled = false;
+					settled.textContent = 'Spoke to them';
+					announce(error.message);
+				});
+			return;
+		}
+
 		const erase = event.target.closest('[data-erase]');
 		if (erase) {
 			const id = erase.dataset.erase;
@@ -1083,6 +1133,46 @@ function boot() {
 	}
 
 	document.addEventListener('submit', (event) => {
+		const friction = event.target.closest('[data-friction-form]');
+		if (friction) {
+			event.preventDefault();
+
+			const body = friction.querySelector('[data-friction-body]');
+			const area = friction.querySelector('[data-friction-area]');
+			const error = friction.querySelector('[data-friction-error]');
+			const button = friction.querySelector('button[type="submit"]');
+
+			error.hidden = true;
+
+			if (!body.value.trim()) {
+				body.focus();
+				return;
+			}
+
+			button.disabled = true;
+			button.textContent = 'Sending…';
+
+			api('/friction', {
+				method: 'POST',
+				body: JSON.stringify({ area: area.value, body: body.value.trim() })
+			})
+				.then(() => {
+					// Replaced rather than merely cleared: a form that empties
+					// itself looks identical to one that failed silently.
+					friction.innerHTML =
+						'<p class="serve-note serve-note--info">Thank you — that is recorded. '
+						+ 'It appears under “How the pilot is going” in Settings.</p>';
+					announce('Feedback recorded');
+				})
+				.catch((err) => {
+					button.disabled = false;
+					button.textContent = 'Send it';
+					error.textContent = err.message;
+					error.hidden = false;
+				});
+			return;
+		}
+
 		const stage = event.target.closest('[data-stage-form]');
 		if (stage) {
 			event.preventDefault();

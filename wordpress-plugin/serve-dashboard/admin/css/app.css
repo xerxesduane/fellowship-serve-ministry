@@ -1449,3 +1449,29 @@ button.serve-metric:hover {
 .serve-notes__meta { display: block; margin-top: 2px; font-size: .75rem; color: var(--serve-text-muted); }
 /* A caveat is not neutral context: it should read as a caution. */
 .serve-match__context--caveat { color: var(--serve-coral-dark); font-weight: 500; }
+
+/* Settling-in: a name and a way to close it, side by side. */
+.serve-fu--settling {
+	display: flex;
+	align-items: center;
+	gap: var(--serve-space-2);
+	justify-content: space-between;
+}
+
+.serve-fu__open {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--serve-space-2);
+	min-height: 44px;
+	text-align: left;
+}
+
+.serve-btn--sm {
+	padding: var(--serve-space-1) var(--serve-space-3);
+	min-height: 36px;
+	font-size: .8125rem;
+	white-space: nowrap;
+}

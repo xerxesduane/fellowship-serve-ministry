@@ -115,6 +115,60 @@ final class Submissions {
 		return $submission_id;
 	}
 
+	/**
+	 * How long after placement to look in on somebody.
+	 *
+	 * Six weeks: long enough to have actually served a few times and formed a
+	 * view, short enough that "this is not for me" has not already become
+	 * quietly not turning up.
+	 */
+	public static function settling_weeks(): int {
+		/**
+		 * Filters the settling-in interval, in weeks.
+		 *
+		 * @param int $weeks Default 6.
+		 */
+		return max( 1, (int) apply_filters( 'serve_dashboard_settling_weeks', 6 ) );
+	}
+
+	/**
+	 * People recently placed whose settling-in check has come round.
+	 *
+	 * Deliberately not folded into the follow-up queue: that queue is people
+	 * waiting for a first conversation, and burying "see how Aiza is getting on"
+	 * among them makes both harder to work.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function settling_in( int $limit = 10 ): array {
+		$rows = self::query(
+			array(
+				'status'          => Schema::STATUS_PLACED,
+				'include_snoozed' => true,
+				'orderby'         => 'next_action_at',
+				'limit'           => $limit,
+			)
+		);
+
+		$today = gmdate( 'Y-m-d' );
+		$out   = array();
+
+		foreach ( $rows as $row ) {
+			if ( ! $row->next_action_at || $row->next_action_at > $today ) {
+				continue;
+			}
+
+			$out[] = array(
+				'id'       => (int) $row->id,
+				'name'     => $row->display_name,
+				'since'    => mysql2date( get_option( 'date_format' ), $row->updated_at ),
+				'overdue'  => $row->next_action_at < $today,
+			);
+		}
+
+		return $out;
+	}
+
 	public static function get( int $id ): ?object {
 		global $wpdb;
 		$table = Schema::table( 'submissions' );
@@ -334,6 +388,19 @@ final class Submissions {
 			$format[]                 = '%s';
 		} elseif ( isset( $extra['next_action_at'] ) ) {
 			$fields['next_action_at'] = sanitize_text_field( (string) $extra['next_action_at'] );
+			$format[]                 = '%s';
+		} elseif ( Schema::STATUS_PLACED === $status ) {
+			/*
+			 * Placed is where the pipeline stopped, and the deck's Serve stage is
+			 * "invite, schedule, and support the person" — the third of which had
+			 * no representation at all. Somebody put on a team and never spoken to
+			 * again is how a willing volunteer quietly stops coming.
+			 *
+			 * So placement schedules one look back. Not a status, not a queue
+			 * entry among people still waiting for a first conversation: a date,
+			 * surfaced separately, that a leader can clear in a click.
+			 */
+			$fields['next_action_at'] = gmdate( 'Y-m-d', strtotime( '+' . self::settling_weeks() . ' weeks' ) );
 			$format[]                 = '%s';
 		}
 

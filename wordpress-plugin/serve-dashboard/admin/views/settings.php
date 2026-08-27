@@ -426,6 +426,41 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<?php endforeach; ?>
 	</ul>
 
+	<?php $friction = Friction::recent( 50 ); ?>
+
+	<h3><?php esc_html_e( 'What leaders have said is not working', 'serve-dashboard' ); ?></h3>
+	<p class="serve-lede">
+		<?php esc_html_e( 'Left from the dashboard, while it was fresh. This is the half of the pilot the figures cannot reach — read it alongside them rather than after them.', 'serve-dashboard' ); ?>
+	</p>
+
+	<?php if ( ! $friction ) : ?>
+		<p class="serve-muted">
+			<?php esc_html_e( 'Nothing reported yet. Silence early in a pilot usually means nobody has been shown where to say it, rather than that everything is working.', 'serve-dashboard' ); ?>
+		</p>
+	<?php else : ?>
+		<table class="wp-list-table widefat fixed striped">
+			<thead>
+				<tr>
+					<th scope="col" style="width:230px"><?php esc_html_e( 'What happened', 'serve-dashboard' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'In their words', 'serve-dashboard' ); ?></th>
+					<th scope="col" style="width:170px"><?php esc_html_e( 'Who and when', 'serve-dashboard' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+			<?php foreach ( $friction as $item ) : ?>
+				<tr>
+					<td><strong><?php echo esc_html( $item['label'] ); ?></strong></td>
+					<td><?php echo esc_html( $item['body'] ); ?></td>
+					<td class="serve-muted">
+						<?php echo esc_html( $item['who'] ); ?><br>
+						<?php echo esc_html( $item['when'] ); ?>
+					</td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+	<?php endif; ?>
+
 	<h2><?php esc_html_e( 'Where people stop', 'serve-dashboard' ); ?></h2>
 	<p class="serve-lede">
 		<?php esc_html_e( 'Anonymous counts of how many people reached each step of the journey. No names, no addresses, nothing tied to a profile — just where the drop-off is, so it can be fixed.', 'serve-dashboard' ); ?>

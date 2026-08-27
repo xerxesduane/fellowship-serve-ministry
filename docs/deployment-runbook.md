@@ -174,6 +174,12 @@ commonly run the pastor as a WordPress administrator.
 **Turn on two-factor for every one of these accounts.** The checklist looks for
 a 2FA plugin and will keep failing until one is active.
 
+**Hand each of them [`docs/leader-guide.md`](leader-guide.md).** It is the only
+document here written for a ministry leader rather than for whoever installs the
+site, and it covers the two things that otherwise generate questions on day one:
+why their dashboard is empty (no team assigned yet), and why the Experiences
+section is hidden from them.
+
 ---
 
 ## 7. Configure teams — skip this and it looks broken
@@ -329,7 +335,9 @@ Not blockers, but known and worth tracking:
 
 - **Planning Center is not integrated.** The dashboard offers a deep link to a
   people search and nothing more. Field ownership, sync direction and permissions
-  all need agreeing first — that is the deck's own Prepare phase.
+  all need agreeing first — that is the deck's own Prepare phase, and
+  [`docs/planning-center-prepare.md`](planning-center-prepare.md) is the material
+  for that conversation.
 - **The end of the journey offers two routes.** The Church Center serving form
   appears alongside the share step; anyone who takes the form lands in Planning
   Center invisible to this dashboard.

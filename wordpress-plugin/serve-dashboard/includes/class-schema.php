@@ -23,7 +23,7 @@ final class Schema {
 	 * Bumped whenever a CREATE TABLE statement below changes, so that
 	 * maybe_upgrade() knows to re-run dbDelta.
 	 */
-	public const DB_VERSION = '1.4.0';
+	public const DB_VERSION = '1.5.0';
 
 	public const OPTION_DB_VERSION = 'serve_dashboard_db_version';
 
@@ -94,7 +94,7 @@ final class Schema {
 	 * @return string[]
 	 */
 	public static function table_names(): array {
-		return array( 'submissions', 'consents', 'teams', 'placements', 'notes', 'drafts', 'audit' );
+		return array( 'submissions', 'consents', 'teams', 'placements', 'notes', 'drafts', 'audit', 'feedback' );
 	}
 
 	/**
@@ -115,6 +115,7 @@ final class Schema {
 		$teams       = self::table( 'teams' );
 		$placements  = self::table( 'placements' );
 		$audit       = self::table( 'audit' );
+		$feedback    = self::table( 'feedback' );
 
 		/*
 		 * Submissions. profile_json holds the full SHAPE payload; the broken
@@ -197,6 +198,26 @@ final class Schema {
 			UNIQUE KEY slug (slug),
 			KEY leader_user_id (leader_user_id),
 			KEY is_active (is_active)
+		) {$charset};";
+		dbDelta( $sql );
+
+		/*
+		 * What leaders say is not working.
+		 *
+		 * The pilot is meant to surface friction, and the figures cannot: they
+		 * count what happened, not whether a suggestion made sense. Kept apart
+		 * from notes deliberately — notes are pastoral and are deleted with the
+		 * person, this is about the tool and has to outlive them.
+		 */
+		$sql = "CREATE TABLE {$feedback} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			user_id bigint(20) unsigned NOT NULL,
+			area varchar(32) NOT NULL DEFAULT 'general',
+			body text NOT NULL,
+			created_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			KEY created_at (created_at),
+			KEY area (area)
 		) {$charset};";
 		dbDelta( $sql );
 

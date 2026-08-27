@@ -193,3 +193,69 @@ test(
 		}
 	}
 );
+
+/*
+ * Friction.
+ *
+ * The deck asks the pilot to capture what is not working, and the figures
+ * above cannot: they count what happened, not whether it made sense.
+ */
+test(
+	'any leader can report friction, and nobody else can',
+	function ( Assert $a, Fixtures $f ) {
+		$request = function ( string $body, string $area = 'suggestion' ) {
+			$r = new \WP_REST_Request( 'POST', '/serve/v1/friction' );
+			$r->set_header( 'content-type', 'application/json' );
+			$r->set_body( (string) wp_json_encode( array( 'area' => $area, 'body' => $body ) ) );
+
+			return rest_do_request( $r );
+		};
+
+		wp_set_current_user( 0 );
+		$a->same( 401, $request( 'anonymous should not manage this' )->get_status(), 'anonymous is refused' );
+
+		// Deliberately the widest capability in the plugin: the people who hit
+		// the problems are the ones who must be able to say so.
+		wp_set_current_user( $f->user( Roles::ROLE_LEADER ) );
+		$a->same( 200, $request( 'Suggested Worship for someone whose gifts are pastoral.' )->get_status(), 'a ministry leader can' );
+	}
+);
+
+test(
+	'an empty report is refused and an unknown area is filed rather than lost',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		$a->ok( is_wp_error( \Serve_Dashboard\Friction::record( 'suggestion', '   ' ) ), 'whitespace is not a report' );
+
+		$before = \Serve_Dashboard\Friction::total();
+		$a->same( true, \Serve_Dashboard\Friction::record( 'not-a-real-area', 'Filed somewhere sensible.' ), 'an unknown area still records' );
+		$a->same( $before + 1, \Serve_Dashboard\Friction::total(), 'rather than being dropped' );
+
+		$a->same( 'general', \Serve_Dashboard\Friction::recent( 1 )[0]['area'], 'under general' );
+	}
+);
+
+/*
+ * Same rule as conversation notes: the audit trail accounts for access, it is
+ * not a second copy of everything anybody wrote.
+ */
+test(
+	'what somebody wrote does not end up in the audit trail',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		$secret = 'Particular wording ' . wp_generate_password( 8, false );
+		\Serve_Dashboard\Friction::record( 'finding', $secret );
+
+		$audit = Schema::table( 'audit' );
+		$rows  = (string) wp_json_encode(
+			$wpdb->get_results( "SELECT action, meta_json FROM {$audit} ORDER BY id DESC LIMIT 5" ) // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		);
+
+		$a->contains( 'friction.recorded', $rows, 'that a report was left is recorded' );
+		$a->lacks( $secret, $rows, 'what it said is not' );
+	}
+);

@@ -213,6 +213,61 @@ $nav = array(
 								</div>
 								<div data-serve="followups"><?php self::skeleton_rows( 3 ); ?></div>
 							</div>
+
+							<?php
+							/*
+							 * "Invite, schedule, and support the person" was the
+							 * Serve stage in the deck. The pipeline stopped at
+							 * Placed, so the third of those had no surface at
+							 * all — somebody put on a team and never spoken to
+							 * again is how a willing volunteer quietly stops
+							 * coming.
+							 */
+							?>
+							<div class="serve-card" data-serve="settling-card" hidden>
+								<div class="serve-card__head">
+									<h2><?php esc_html_e( 'Settling in', 'serve-dashboard' ); ?></h2>
+								</div>
+								<p class="serve-card__hint">
+									<?php esc_html_e( 'Placed a while ago. Worth asking how it is actually going before it becomes obvious.', 'serve-dashboard' ); ?>
+								</p>
+								<div data-serve="settling"></div>
+							</div>
+
+							<?php
+							/*
+							 * The pilot is supposed to surface friction, and the
+							 * figures cannot: they count what happened, not
+							 * whether it made sense. Kept in reach rather than
+							 * buried behind a menu, because the moment somebody
+							 * hits the problem is the only moment they will say
+							 * anything about it.
+							 */
+							?>
+							<div class="serve-card">
+								<div class="serve-card__head">
+									<h2><?php esc_html_e( 'Something not working?', 'serve-dashboard' ); ?></h2>
+								</div>
+								<p class="serve-card__hint">
+									<?php esc_html_e( 'Say so while it is fresh. This goes to whoever is running the pilot, is about the tool rather than about a person, and nobody is judged by it.', 'serve-dashboard' ); ?>
+								</p>
+
+								<form class="serve-stageform" data-friction-form>
+									<label for="serve-friction-area"><?php esc_html_e( 'What happened', 'serve-dashboard' ); ?></label>
+									<select id="serve-friction-area" data-friction-area>
+										<?php foreach ( Friction::areas() as $value => $label ) : ?>
+											<option value="<?php echo esc_attr( $value ); ?>"><?php echo esc_html( $label ); ?></option>
+										<?php endforeach; ?>
+									</select>
+
+									<label for="serve-friction-body"><?php esc_html_e( 'Tell us a little more', 'serve-dashboard' ); ?></label>
+									<textarea id="serve-friction-body" rows="3" maxlength="1000" data-friction-body
+										placeholder="<?php esc_attr_e( 'e.g. it suggested Worship for someone whose gifts are all pastoral', 'serve-dashboard' ); ?>"></textarea>
+
+									<button type="submit" class="serve-btn serve-btn--secondary"><?php esc_html_e( 'Send it', 'serve-dashboard' ); ?></button>
+									<p class="serve-note serve-note--warn" data-friction-error hidden></p>
+								</form>
+							</div>
 						</div>
 					</div>
 

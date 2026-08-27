@@ -199,3 +199,80 @@ test(
 		$a->same( Schema::STATUS_SUBMITTED, Submissions::get( $id )->status, 'nothing moved' );
 	}
 );
+
+/*
+ * "Invite, schedule, and support the person" was the deck's Serve stage. The
+ * pipeline stopped dead at Placed, so the third of those had no surface at
+ * all — somebody put on a team and never spoken to again is how a willing
+ * volunteer quietly stops coming.
+ */
+test(
+	'placing somebody schedules a look back at them',
+	function ( Assert $a, Fixtures $f ) {
+		$id   = candidate( $f );
+		$team = (int) Teams::get_by_slug( 'welcome' )->id;
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		// A new submission already carries a first-conversation date, three days
+		// out. Placement replaces it with the settling-in one rather than
+		// leaving somebody scheduled for a conversation they have already had.
+		$before = Submissions::get( $id )->next_action_at;
+		$a->same( gmdate( 'Y-m-d', strtotime( '+3 days' ) ), $before, 'the first-contact date is what is there beforehand' );
+
+		Submissions::set_status( $id, Schema::STATUS_PLACED, $team );
+
+		$due = Submissions::get( $id )->next_action_at;
+		$a->not( $due === $before, 'placement replaces it' );
+		$a->same(
+			gmdate( 'Y-m-d', strtotime( '+' . Submissions::settling_weeks() . ' weeks' ) ),
+			$due,
+			'the configured number of weeks out'
+		);
+	}
+);
+
+test(
+	'a settling-in check appears when it comes round, and closes without changing the status',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$id   = candidate( $f );
+		$team = (int) Teams::get_by_slug( 'welcome' )->id;
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+		Submissions::set_status( $id, Schema::STATUS_PLACED, $team );
+
+		$listed = fn() => in_array( $id, wp_list_pluck( Submissions::settling_in( 50 ), 'id' ), true );
+		$a->not( $listed(), 'not due yet' );
+
+		$table = Schema::table( 'submissions' );
+		$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET next_action_at = DATE_SUB( UTC_DATE(), INTERVAL 2 DAY ) WHERE id = %d", $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$a->ok( $listed(), 'due once the date passes' );
+
+		list( $status ) = call_route( 'POST', "/serve/v1/people/$id/settled" );
+		$a->same( 200, $status, 'a leader can close it' );
+		$a->not( $listed(), 'and it drops off the list' );
+
+		// They are still on the team; somebody has just been to see them.
+		$a->same( Schema::STATUS_PLACED, Submissions::get( $id )->status, 'still Placed' );
+	}
+);
+
+test(
+	'a settling-in check does not clutter the first-conversation queue',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$id   = candidate( $f );
+		$team = (int) Teams::get_by_slug( 'welcome' )->id;
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+		Submissions::set_status( $id, Schema::STATUS_PLACED, $team );
+
+		$table = Schema::table( 'submissions' );
+		$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET next_action_at = DATE_SUB( UTC_DATE(), INTERVAL 2 DAY ) WHERE id = %d", $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		// Burying "see how they are getting on" among people still waiting for
+		// a first conversation makes both lists harder to work.
+		$queue = wp_list_pluck( \Serve_Dashboard\Metrics::upcoming_followups( 50 ), 'id' );
+		$a->not( in_array( $id, $queue, true ), 'placed people stay out of the follow-up queue' );
+	}
+);
