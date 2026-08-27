@@ -5,19 +5,64 @@
  * different website asking for personal details.
  */
 
+/*
+ * The palette lives on the wrapper so the brand header and the confirmation
+ * panel share it with the form. It used to sit on .serve-consent alone, which
+ * is why `--serve-coral` below resolved to nothing: it was never defined
+ * anywhere, so the warning heading quietly rendered in the inherited colour.
+ */
+.serve-consent-page,
 .serve-consent {
 	--serve-navy: #12263f;
 	--serve-teal: #167d83;
 	--serve-teal-soft: #e6f3f2;
 	--serve-orange: #ec6f45;
+	--serve-coral: #b8401a;
 	--serve-sand: #f5f1e8;
 	--serve-paper: #fffdf8;
 	--serve-ink: #17314a;
 	--serve-muted: #667786;
 	--serve-line: #ddd9cf;
+}
 
-	max-width: 34rem;
+.serve-consent-page {
+	max-width: 38rem;
 	margin: 0 auto;
+	color: var(--serve-ink);
+}
+
+/* Continuity with the journey: same mark, same three words. */
+.serve-consent__brand {
+	display: flex;
+	align-items: center;
+	gap: .85rem;
+	margin: 0 0 1rem;
+	padding: 0 .25rem;
+}
+
+.serve-consent__brand img {
+	width: 3rem;
+	height: auto;
+	border-radius: 10px;
+}
+
+.serve-consent__eyebrow {
+	margin: 0;
+	color: var(--serve-orange);
+	font-size: .7rem;
+	font-weight: 800;
+	letter-spacing: .13em;
+	text-transform: uppercase;
+}
+
+.serve-consent__purpose {
+	margin: .15rem 0 0;
+	color: var(--serve-muted);
+	font-size: .75rem;
+	letter-spacing: .08em;
+}
+
+.serve-consent {
 	padding: 1.75rem;
 	background: var(--serve-paper);
 	border: 1px solid var(--serve-line);
@@ -36,6 +81,79 @@
 .serve-consent__lede {
 	margin: 0 0 1.5rem;
 	color: var(--serve-muted);
+}
+
+/* What you are about to share. */
+.serve-summary {
+	margin: 0 0 1.5rem;
+	padding: 1rem 1.1rem;
+	background: var(--serve-sand);
+	border-radius: 12px;
+}
+
+.serve-summary h3 {
+	margin: 0 0 .6rem;
+	color: var(--serve-navy);
+	font-size: .78rem;
+	font-weight: 800;
+	letter-spacing: .1em;
+	text-transform: uppercase;
+}
+
+.serve-summary dl {
+	display: grid;
+	grid-template-columns: minmax(7.5rem, auto) 1fr;
+	gap: .4rem .9rem;
+	margin: 0;
+}
+
+.serve-summary dt {
+	color: var(--serve-muted);
+	font-size: .82rem;
+}
+
+.serve-summary dd {
+	margin: 0;
+	font-size: .88rem;
+	font-weight: 600;
+	line-height: 1.45;
+}
+
+.serve-summary__note {
+	margin: .75rem 0 0;
+	color: var(--serve-muted);
+	font-size: .78rem;
+	line-height: 1.45;
+}
+
+/* Contact details. */
+.serve-consent__group {
+	margin: 0 0 1.25rem;
+	padding: 0;
+	border: 0;
+}
+
+.serve-consent__group legend {
+	padding: 0;
+	margin-bottom: .6rem;
+	color: var(--serve-navy);
+	font-size: .78rem;
+	font-weight: 800;
+	letter-spacing: .1em;
+	text-transform: uppercase;
+}
+
+.serve-consent__prefilled {
+	margin: 0 0 .8rem;
+	color: var(--serve-teal);
+	font-size: .8rem;
+	line-height: 1.45;
+}
+
+.serve-consent__row {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: .9rem;
 }
 
 .serve-consent__field {
@@ -72,12 +190,17 @@
 	line-height: 1.4;
 }
 
-/* Consent gate. */
+/* Consent gate. The decision on the page, so it is given the weight of one. */
 .serve-consent__box {
 	margin: 1.25rem 0;
-	padding: 1rem;
+	padding: 1.1rem;
 	background: var(--serve-teal-soft);
+	border: 1px solid rgba(22, 125, 131, .28);
 	border-radius: 10px;
+}
+
+.serve-consent__box:focus-within {
+	border-color: var(--serve-teal);
 }
 
 .serve-consent__box label {
@@ -89,11 +212,16 @@
 	cursor: pointer;
 }
 
+/*
+ * The whole label is the tap target — it wraps the box and the text, so on a
+ * phone that is roughly 236 by 296 points. The control itself is enlarged
+ * anyway: it is the one decision on the page and should look like it.
+ */
 .serve-consent__box input {
 	flex: 0 0 auto;
-	margin-top: .2rem;
-	width: 1.05rem;
-	height: 1.05rem;
+	margin-top: .15rem;
+	width: 1.25rem;
+	height: 1.25rem;
 	accent-color: var(--serve-teal);
 }
 
@@ -159,9 +287,63 @@
 	}
 }
 
+.serve-consent__submit:focus-visible {
+	outline: 2px solid var(--serve-navy);
+	outline-offset: 2px;
+}
+
+.serve-consent__reassure {
+	margin: .7rem 0 0;
+	color: var(--serve-muted);
+	font-size: .78rem;
+	line-height: 1.45;
+	text-align: center;
+}
+
+/* Sent. */
+.serve-consent--done { text-align: center; }
+
+.serve-consent__tick {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.6rem;
+	height: 2.6rem;
+	margin-bottom: .6rem;
+	color: #fff;
+	font-size: 1.3rem;
+	background: var(--serve-teal);
+	border-radius: 50%;
+}
+
+.serve-consent__next {
+	margin: 1.25rem 0 0;
+	padding: 0 0 0 1.2rem;
+	text-align: left;
+	color: var(--serve-ink);
+	font-size: .9rem;
+	line-height: 1.6;
+}
+
+.serve-consent__next li { margin-bottom: .4rem; }
+
+.serve-consent__smallprint {
+	margin: 1.1rem 0 0;
+	color: var(--serve-muted);
+	font-size: .78rem;
+}
+
 /* Confirmation state after following an email link. */
 .serve-consent--result { text-align: center; }
 .serve-consent--result h2 { margin-bottom: .75rem; }
 .serve-consent--result.is-ok h2 { color: var(--serve-teal); }
 .serve-consent--result.is-warn h2 { color: var(--serve-coral); }
 .serve-consent--result .serve-consent__submit { display: inline-block; width: auto; text-decoration: none; }
+
+/* One column on a phone, which is where most of these are filled in. */
+@media (max-width: 30rem) {
+	.serve-consent { padding: 1.25rem; }
+	.serve-consent__row { grid-template-columns: 1fr; gap: 0; }
+	.serve-summary dl { grid-template-columns: 1fr; gap: .1rem .9rem; }
+	.serve-summary dt { margin-top: .5rem; }
+}

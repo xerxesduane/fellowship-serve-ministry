@@ -470,14 +470,22 @@ function validationMessage() {
   return "";
 }
 
-function render({ focusSearch = "" } = {}) {
+/*
+ * Rebuild the page.
+ *
+ * `animate` is off for anything that is not a change of step. The entrance
+ * animation is right when a new stage arrives and wrong when someone ticks one
+ * of eighteen gifts: the whole stage is recreated on every click, so replaying
+ * it made answering a single question look like the page had reloaded.
+ */
+function render({ focusSearch = "", animate = true } = {}) {
   const current = journeySteps[step];
   const isProfile = current.id === "profile";
   const progress = Math.round((step / (journeySteps.length - 1)) * 100);
   const validation = validationMessage();
   root.innerHTML = `<main class="app-shell"><div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
     ${isProfile ? "" : `<header class="progress-header no-print"><div class="journey-progress"><button class="fd-mark" type="button" data-action="home" aria-label="Return to welcome"><img src="${escapeHtml(SERVE_CONFIG.logoUrl || "assets/fellowship-logo.jpeg")}" alt="" width="284" height="221"></button><div class="progress-copy"><div class="progress-label"><span>${escapeHtml(current.title)}</span><span>${progress}%</span></div><div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><small>Step ${step + 1} of ${journeySteps.length}</small></div><span class="purpose-mini">KNOW · GROW · GO</span></div></header>`}
-    <div class="journey-wrap ${isProfile ? "profile-wrap" : ""}"><section class="journey-stage animate-in">${stage()}</section>
+    <div class="journey-wrap ${isProfile ? "profile-wrap" : ""}"><section class="journey-stage${animate ? " animate-in" : ""}">${stage()}</section>
       ${isProfile ? "" : `<footer class="journey-actions no-print"><button class="back-button" type="button" data-action="back" ${step === 0 ? "disabled" : ""}>${icon("arrowLeft")}Back</button><div>${validation ? `<p class="validation-message">${validation}</p>` : ""}<button class="primary-button" type="button" data-action="next" ${validation ? "disabled" : ""}>${step === journeySteps.length - 2 ? "Build My Profile" : "Continue"}${icon("arrowRight")}</button></div></footer><p class="autosave-note no-print">${icon("check", 14)} Progress is saved in this browser. <button type="button" data-action="restart" class="restart-inline">${icon("refresh", 14)}Start over</button></p>`}
     </div></main>`;
   if (focusSearch) {
@@ -535,10 +543,48 @@ root.addEventListener("click", (event) => {
   if (action === "copy") { copyProfile(); return; }
   if (action === "print") { window.print(); return; }
   if (action === "save-place") { savePlace(); return; }
+
+  /*
+   * Answering a question is not the same event as moving to a new step, and
+   * should not look like one. render() replaces the whole page, so without
+   * this the button you just pressed ceases to exist: the animation replays,
+   * the scroll position resets, and keyboard focus is dumped back to the top
+   * of the document — which is not merely jarring, it makes the journey very
+   * hard to complete without a mouse.
+   */
+  const navigating = ["home", "back", "next", "restart"].includes(action);
+  const anchor = navigating ? "" : selectorFor(button);
+  const offset = window.scrollY;
+
   save();
-  render();
-  if (["home", "back", "next", "restart"].includes(action)) window.scrollTo({ top: 0, behavior: "smooth" });
+  render({ animate: navigating });
+
+  if (navigating) {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    return;
+  }
+
+  // `scroll-behavior: smooth` is set globally, so without this the restore
+  // glides back into place — which is its own small lurch. Staying put should
+  // look like nothing happened, because nothing did.
+  window.scrollTo({ top: offset, behavior: "instant" });
+
+  const again = anchor && root.querySelector(anchor);
+  if (again) again.focus({ preventScroll: true });
 });
+
+/**
+ * A selector that finds the same control again after the page is rebuilt.
+ *
+ * Built from the data attributes the control already carries, so it needs no
+ * extra ids in the markup.
+ */
+function selectorFor(button) {
+  return ["action", "gift", "pair", "question", "value"]
+    .filter((key) => undefined !== button.dataset[key])
+    .map((key) => `[data-${key}="${CSS.escape(button.dataset[key])}"]`)
+    .join("");
+}
 
 /*
  * Refresh the Continue gate in place instead of re-rendering.
@@ -600,7 +646,8 @@ root.addEventListener("input", (event) => {
   if (input.dataset.text) answers.text[input.dataset.text] = input.value;
   if (input.dataset.search) {
     searches[input.dataset.search] = input.value;
-    render({ focusSearch: input.dataset.search });
+    // Typing in a search box is not a new stage either.
+    render({ focusSearch: input.dataset.search, animate: false });
   }
   save();
 });

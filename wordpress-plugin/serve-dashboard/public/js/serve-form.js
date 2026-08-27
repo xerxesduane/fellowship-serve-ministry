@@ -69,16 +69,85 @@
 		const profile = readProfile();
 		const contact = (profile && profile.contact) || {};
 
+		let filled = 0;
+
 		[['display_name', 'name'], ['email', 'email'], ['phone', 'phone']].forEach(function (pair) {
 			const field = form.elements[pair[0]];
 			const value = contact[pair[1]];
 			if (field && !field.value && value) {
 				field.value = value;
+				filled += 1;
 			}
 		});
+
+		// Say where they came from. Three boxes that fill themselves in are
+		// unsettling unless something explains it, and they still want checking.
+		const note = form.querySelector('[data-serve-prefill]');
+		if (note && filled > 0) {
+			note.hidden = false;
+		}
 	}
 
 	prefillContact();
+
+	/**
+	 * Show what is about to be sent.
+	 *
+	 * Consenting to share something you cannot see is not really consenting,
+	 * and after nineteen steps "what did all that add up to?" is the question
+	 * people actually have in front of them here.
+	 *
+	 * Deliberately a summary and not the whole profile: the Experiences section
+	 * can hold painful history, and reprinting it on a page someone may be
+	 * filling in on a phone in a church foyer serves nobody. The note underneath
+	 * says plainly that the full answers go too.
+	 */
+	function renderSummary() {
+		const panel = form.querySelector('[data-serve-summary]');
+		const body = form.querySelector('[data-serve-summary-body]');
+		if (!panel || !body) {
+			return;
+		}
+
+		const profile = readProfile();
+		if (!profile) {
+			return;
+		}
+
+		const rows = [];
+		const gifts = (profile.spiritualGifts && profile.spiritualGifts.likely) || [];
+		const teams = (profile.recommendedMinistries || []).map(function (m) { return m.ministry; });
+		const availability = profile.availability || {};
+
+		if (gifts.length) {
+			rows.push([config.strings.summaryGifts, gifts.join(', ')]);
+		}
+		if (teams.length) {
+			rows.push([config.strings.summaryTeams, teams.join(', ')]);
+		}
+		if (availability.hours) {
+			const timing = (availability.timing || []).join(', ');
+			rows.push([config.strings.summaryTime, timing ? availability.hours + ' · ' + timing : availability.hours]);
+		}
+
+		if (!rows.length) {
+			return;
+		}
+
+		body.innerHTML = '';
+		rows.forEach(function (row) {
+			const dt = document.createElement('dt');
+			dt.textContent = row[0];
+			const dd = document.createElement('dd');
+			dd.textContent = row[1];
+			body.appendChild(dt);
+			body.appendChild(dd);
+		});
+
+		panel.hidden = false;
+	}
+
+	renderSummary();
 
 	form.addEventListener('submit', function (event) {
 		event.preventDefault();
@@ -128,6 +197,22 @@
 				if (!result.ok) {
 					submit.disabled = false;
 					say((result.body && result.body.message) || config.strings.failed, true);
+					return;
+				}
+
+				// Swap the form for the confirmation rather than emptying it out.
+				const done = document.querySelector('[data-serve-done]');
+				const message = document.querySelector('[data-serve-done-message]');
+
+				if (done) {
+					if (message) {
+						message.textContent = result.body.message || '';
+					}
+					form.hidden = true;
+					done.hidden = false;
+					done.setAttribute('tabindex', '-1');
+					done.focus({ preventScroll: true });
+					done.scrollIntoView({ block: 'start', behavior: 'smooth' });
 					return;
 				}
 

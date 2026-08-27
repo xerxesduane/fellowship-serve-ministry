@@ -54,11 +54,16 @@ final class Shortcode {
 			array(
 				'endpoint'   => rest_url( Rest::NAMESPACE . '/submissions' ),
 				'storageKey' => self::STORAGE_KEY,
+				'logoUrl'    => SERVE_DASHBOARD_URL . 'public/assessment/fellowship-logo.jpeg',
 				'strings'    => array(
 					'noProfile' => __( 'We could not find a completed profile in this browser. Please finish the S.H.A.P.E. journey first.', 'serve-dashboard' ),
 					'sending'   => __( 'Sending…', 'serve-dashboard' ),
 					'failed'    => __( 'That did not send. Please check your connection and try again.', 'serve-dashboard' ),
 					'consent'   => __( 'Please tick the box so we know you agree.', 'serve-dashboard' ),
+					// Labels for the "what you are about to share" summary.
+					'summaryGifts' => __( 'Your likely gifts', 'serve-dashboard' ),
+					'summaryTeams' => __( 'Teams this points to', 'serve-dashboard' ),
+					'summaryTime'  => __( 'Time you can give', 'serve-dashboard' ),
 				),
 			)
 		);
@@ -95,6 +100,18 @@ final class Shortcode {
 
 		ob_start();
 		?>
+		<div class="serve-consent-page">
+
+		<?php /* Carried over from the journey, so the last step does not look like a different website. */ ?>
+		<header class="serve-consent__brand">
+			<img src="<?php echo esc_url( SERVE_DASHBOARD_URL . 'public/assessment/fellowship-logo.jpeg' ); ?>"
+				alt="Fellowship Dubai" width="284" height="221" loading="lazy">
+			<div>
+				<p class="serve-consent__eyebrow"><?php esc_html_e( 'Final step', 'serve-dashboard' ); ?></p>
+				<p class="serve-consent__purpose"><?php esc_html_e( 'KNOW · GROW · GO', 'serve-dashboard' ); ?></p>
+			</div>
+		</header>
+
 		<form class="serve-consent" id="serve-consent-form" novalidate>
 			<h2><?php esc_html_e( 'Share your profile with the SERVE team', 'serve-dashboard' ); ?></h2>
 
@@ -102,20 +119,48 @@ final class Shortcode {
 				<?php esc_html_e( 'Your answers are still only on this device. Sending them lets a ministry leader start the conversation about where you might serve.', 'serve-dashboard' ); ?>
 			</p>
 
-			<div class="serve-consent__field">
-				<label for="serve-name"><?php esc_html_e( 'Your name', 'serve-dashboard' ); ?></label>
-				<input type="text" id="serve-name" name="display_name" required autocomplete="name">
-			</div>
+			<?php
+			/*
+			 * A summary of what is about to be sent, filled in by the script from
+			 * the profile in this browser.
+			 *
+			 * Agreeing to share something you cannot see is not really agreeing.
+			 * It also answers the question people actually have at this point,
+			 * which is "what did all that add up to?"
+			 */
+			?>
+			<section class="serve-summary" data-serve-summary hidden>
+				<h3><?php esc_html_e( 'What you are about to share', 'serve-dashboard' ); ?></h3>
+				<dl data-serve-summary-body></dl>
+				<p class="serve-summary__note">
+					<?php esc_html_e( 'Your full answers go with it, including anything you wrote in your own words.', 'serve-dashboard' ); ?>
+				</p>
+			</section>
 
-			<div class="serve-consent__field">
-				<label for="serve-email"><?php esc_html_e( 'Email', 'serve-dashboard' ); ?></label>
-				<input type="email" id="serve-email" name="email" required autocomplete="email">
-			</div>
+			<fieldset class="serve-consent__group">
+				<legend><?php esc_html_e( 'How a leader reaches you', 'serve-dashboard' ); ?></legend>
 
-			<div class="serve-consent__field">
-				<label for="serve-phone"><?php esc_html_e( 'Phone', 'serve-dashboard' ); ?></label>
-				<input type="tel" id="serve-phone" name="phone" required autocomplete="tel">
-			</div>
+				<p class="serve-consent__prefilled" data-serve-prefill hidden>
+					<?php esc_html_e( 'Filled in from your answers — please check they are right.', 'serve-dashboard' ); ?>
+				</p>
+
+				<div class="serve-consent__field">
+					<label for="serve-name"><?php esc_html_e( 'Your name', 'serve-dashboard' ); ?></label>
+					<input type="text" id="serve-name" name="display_name" required autocomplete="name">
+				</div>
+
+				<div class="serve-consent__row">
+					<div class="serve-consent__field">
+						<label for="serve-email"><?php esc_html_e( 'Email', 'serve-dashboard' ); ?></label>
+						<input type="email" id="serve-email" name="email" required autocomplete="email">
+					</div>
+
+					<div class="serve-consent__field">
+						<label for="serve-phone"><?php esc_html_e( 'Phone', 'serve-dashboard' ); ?></label>
+						<input type="tel" id="serve-phone" name="phone" required autocomplete="tel">
+					</div>
+				</div>
+			</fieldset>
 
 			<div class="serve-consent__field">
 				<label for="serve-tenure"><?php esc_html_e( 'Roughly how long do you expect to be in the UAE?', 'serve-dashboard' ); ?></label>
@@ -130,6 +175,7 @@ final class Shortcode {
 				<small><?php esc_html_e( 'This helps a leader suggest something that fits your season, rather than a role that needs more time than you have.', 'serve-dashboard' ); ?></small>
 			</div>
 
+			<?php // The decision. Given its own weight, because it is the point of the page. ?>
 			<div class="serve-consent__box">
 				<label>
 					<input type="checkbox" id="serve-consent-check" name="consent" value="1" required>
@@ -147,8 +193,36 @@ final class Shortcode {
 				<?php esc_html_e( 'Send my profile', 'serve-dashboard' ); ?>
 			</button>
 
+			<p class="serve-consent__reassure">
+				<?php esc_html_e( 'Nothing is shared until you press this, and you can ask us to delete it at any time.', 'serve-dashboard' ); ?>
+			</p>
+
 			<p class="serve-consent__status" role="status" aria-live="polite"></p>
 		</form>
+
+		<?php
+		/*
+		 * Shown in place of the form once it has sent. The old version hid the
+		 * fields and left a single line of status text, which read as though
+		 * something had gone missing at the exact moment a person most wants to
+		 * know they were heard.
+		 */
+		?>
+		<div class="serve-consent serve-consent--done" data-serve-done hidden>
+			<span class="serve-consent__tick" aria-hidden="true">&#10003;</span>
+			<h2><?php esc_html_e( 'Thank you — that is on its way', 'serve-dashboard' ); ?></h2>
+			<p class="serve-consent__lede" data-serve-done-message></p>
+			<ol class="serve-consent__next">
+				<li><?php esc_html_e( 'Open the confirmation email we have just sent, so we know the address is yours.', 'serve-dashboard' ); ?></li>
+				<li><?php esc_html_e( 'A ministry leader reads your profile and gets in touch.', 'serve-dashboard' ); ?></li>
+				<li><?php esc_html_e( 'You talk it over together, and you decide what happens next.', 'serve-dashboard' ); ?></li>
+			</ol>
+			<p class="serve-consent__smallprint">
+				<?php esc_html_e( 'No email after a few minutes? Check your spam folder before sending again.', 'serve-dashboard' ); ?>
+			</p>
+		</div>
+
+		</div>
 		<?php
 
 		return (string) ob_get_clean();
