@@ -56,10 +56,17 @@ final class Shortcode {
 		$page_id = get_queried_object_id();
 		$post    = get_post( $page_id );
 
-		$is_consent = $page_id === (int) get_option( Assessment::OPTION_CONSENT_PAGE, 0 )
-			|| ( $post && has_shortcode( (string) $post->post_content, 'serve_shape_consent' ) );
+		// The privacy notice uses the same template, so it needs the same styles.
+		$is_ours = in_array(
+			$page_id,
+			array(
+				(int) get_option( Assessment::OPTION_CONSENT_PAGE, 0 ),
+				(int) get_option( 'wp_page_for_privacy_policy', 0 ),
+			),
+			true
+		) || ( $post && has_shortcode( (string) $post->post_content, 'serve_shape_consent' ) );
 
-		if ( $is_consent ) {
+		if ( $is_ours ) {
 			self::enqueue();
 		}
 	}
@@ -97,9 +104,17 @@ final class Shortcode {
 			return SERVE_DASHBOARD_DIR . 'public/templates/consent.php';
 		}
 
-		$is_consent_page = $page_id > 0 && $page_id === (int) get_option( Assessment::OPTION_CONSENT_PAGE, 0 );
+		/*
+		 * The privacy notice too. It is linked from the consent page's footer,
+		 * and following that link should not drop somebody back into the
+		 * theme's navigation — which is the thing this template exists to avoid.
+		 */
+		$ours = array(
+			(int) get_option( Assessment::OPTION_CONSENT_PAGE, 0 ),
+			(int) get_option( 'wp_page_for_privacy_policy', 0 ),
+		);
 
-		if ( '' === $chosen && $is_consent_page ) {
+		if ( '' === $chosen && $page_id > 0 && in_array( $page_id, $ours, true ) ) {
 			return SERVE_DASHBOARD_DIR . 'public/templates/consent.php';
 		}
 
@@ -166,8 +181,6 @@ final class Shortcode {
 			ob_start();
 			?>
 			<div class="serve-consent-page">
-				<?php self::brand_header( __( 'Confirming your email', 'serve-dashboard' ) ); ?>
-
 				<div class="serve-consent serve-consent--result is-<?php echo esc_attr( $message['tone'] ); ?>">
 					<h1><?php echo esc_html( $message['title'] ); ?></h1>
 					<p class="serve-consent__lede"><?php echo esc_html( $message['body'] ); ?></p>
@@ -179,8 +192,6 @@ final class Shortcode {
 						</p>
 					<?php endif; ?>
 				</div>
-
-				<?php self::page_footer(); ?>
 			</div>
 			<?php
 
@@ -190,8 +201,6 @@ final class Shortcode {
 		ob_start();
 		?>
 		<div class="serve-consent-page">
-
-		<?php self::brand_header( __( 'Final step', 'serve-dashboard' ) ); ?>
 
 		<form class="serve-consent" id="serve-consent-form" novalidate>
 			<h1><?php esc_html_e( 'Share your profile with the SERVE team', 'serve-dashboard' ); ?></h1>
@@ -303,8 +312,6 @@ final class Shortcode {
 			</p>
 		</div>
 
-		<?php self::page_footer(); ?>
-
 		</div>
 		<?php
 
@@ -318,7 +325,7 @@ final class Shortcode {
 	 * something that looks like a different website is not the moment to ask
 	 * for somebody's personal details.
 	 */
-	private static function brand_header( string $eyebrow ): void {
+	public static function brand_header( string $eyebrow ): void {
 		?>
 		<header class="serve-consent__brand">
 			<img src="<?php echo esc_url( SERVE_DASHBOARD_URL . 'public/assessment/fellowship-logo.jpeg' ); ?>"
@@ -339,7 +346,7 @@ final class Shortcode {
 	 * is who is asking, how long it is kept and how to have it removed — not
 	 * Blog, Events and Shop.
 	 */
-	private static function page_footer(): void {
+	public static function page_footer( bool $link_privacy = true ): void {
 		$privacy = get_privacy_policy_url();
 		$email   = antispambot( Privacy::contact_email() );
 		?>
@@ -370,7 +377,7 @@ final class Shortcode {
 						<?php esc_html_e( 'Back to my S.H.A.P.E. profile', 'serve-dashboard' ); ?>
 					</a>
 				<?php endif; ?>
-				<?php if ( $privacy ) : ?>
+				<?php if ( $privacy && $link_privacy ) : ?>
 					<a href="<?php echo esc_url( $privacy ); ?>"><?php esc_html_e( 'Privacy', 'serve-dashboard' ); ?></a>
 				<?php endif; ?>
 			</nav>

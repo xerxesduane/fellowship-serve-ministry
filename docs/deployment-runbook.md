@@ -95,13 +95,18 @@ Install WordPress on the subdomain as normal, then:
   (`/wp-json/serve/v1/submissions`) only exists with pretty permalinks, and a
   public church site wants readable URLs regardless.
 - **Delete the sample page and the Hello World post.**
-- **Replace the privacy policy.** WordPress creates a draft describing comment
-  forms, Gravatar and embedded media, none of which this site uses. Publishing
-  it would put a link on the consent page to a document contradicting the
-  accurate wording beside it. [`docs/privacy-notice.md`](privacy-notice.md) is a
-  drafted replacement describing what the software actually does — have it
-  reviewed, then publish it. The share page shows a Privacy link only once a
-  policy is published, so until then there is simply no link.
+- **Review and publish the privacy notice.** Activating the plugin replaces
+  WordPress' boilerplate draft — which describes comment forms, Gravatar and
+  embedded media, none of which this site uses — with a notice describing what
+  the software actually does. **It is left as a draft on purpose**; text about
+  religious belief goes live when a person decides it should. Have it reviewed
+  (see [`docs/privacy-notice.md`](privacy-notice.md) for the same text with the
+  three judgement calls marked), then publish it. The share page shows a Privacy
+  link only once a policy is published.
+
+  Once anybody edits that page, the plugin never touches it again — so review it
+  in WordPress rather than in the file, and your changes are safe from every
+  future upgrade.
 - **Settings → Discussion**: turn comments off. Nothing here needs them.
 - Use a **light, fast theme**. The assessment renders on a full-canvas template
   that bypasses the theme, but the consent page does not.

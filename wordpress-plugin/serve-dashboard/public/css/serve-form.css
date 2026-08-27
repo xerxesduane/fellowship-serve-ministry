@@ -11,6 +11,7 @@
  * is why `--serve-coral` below resolved to nothing: it was never defined
  * anywhere, so the warning heading quietly rendered in the inherited colour.
  */
+body.serve-canvas--consent,
 .serve-consent-page,
 .serve-consent {
 	--serve-navy: #12263f;
@@ -340,6 +341,70 @@
 .serve-consent--result.is-ok h1 { color: var(--serve-teal); }
 .serve-consent--result.is-warn h1 { color: var(--serve-coral); }
 .serve-consent--result .serve-consent__submit { display: inline-block; width: auto; text-decoration: none; }
+
+/*
+ * Long-form pages on this template — the privacy notice.
+ *
+ * The template strips the theme, so there is no typography to inherit and the
+ * page has to set its own. Measured rather than full-width: this is text
+ * somebody has to actually read.
+ */
+body.serve-canvas--consent #serve-main > * {
+	max-width: 38rem;
+	margin-inline: auto;
+}
+
+body.serve-canvas--consent #serve-main :is(h2, h3, p, ul, ol) {
+	max-width: 38rem;
+	margin-inline: auto;
+	color: var(--serve-ink, #17314a);
+}
+
+body.serve-canvas--consent #serve-main .serve-prose__title {
+	max-width: 38rem;
+	margin: 0 auto 1.1rem;
+	color: var(--serve-navy, #12263f);
+	font-size: 1.5rem;
+	line-height: 1.2;
+}
+
+body.serve-canvas--consent #serve-main h2 {
+	margin: 2rem auto .6rem;
+	color: var(--serve-navy, #12263f);
+	font-size: 1.05rem;
+	line-height: 1.3;
+}
+
+body.serve-canvas--consent #serve-main p,
+body.serve-canvas--consent #serve-main li {
+	font-size: .92rem;
+	line-height: 1.65;
+}
+
+body.serve-canvas--consent #serve-main p { margin: 0 auto .9rem; }
+
+body.serve-canvas--consent #serve-main ul,
+body.serve-canvas--consent #serve-main ol {
+	margin: 0 auto 1.1rem;
+	padding-inline-start: 1.25rem;
+}
+
+body.serve-canvas--consent #serve-main li { margin-bottom: .45rem; }
+
+body.serve-canvas--consent #serve-main a {
+	color: var(--serve-teal, #167d83);
+	text-underline-offset: 2px;
+}
+
+/* The opening summary, so the page does not start as a wall of text. */
+body.serve-canvas--consent #serve-main .serve-prose__lede {
+	padding: 1rem 1.1rem;
+	margin-bottom: 1.1rem;
+	background: var(--serve-paper, #fffdf8);
+	border: 1px solid var(--serve-line, #ddd9cf);
+	border-radius: 12px;
+	font-size: .95rem;
+}
 
 /*
  * Page footer.

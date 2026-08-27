@@ -40,12 +40,44 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<?php wp_head(); ?>
 </head>
 <body <?php body_class( 'serve-canvas serve-canvas--consent' ); ?>>
-<a class="skip-to-content" href="#serve-consent-form"><?php esc_html_e( 'Skip to the form', 'serve-dashboard' ); ?></a>
+<a class="skip-to-content" href="#serve-main"><?php esc_html_e( 'Skip to the content', 'serve-dashboard' ); ?></a>
+<?php
+/*
+ * The chrome belongs to the template rather than to a shortcode, so every page
+ * in this journey gets the same header and footer — the consent step and the
+ * privacy notice it links to. A person who follows that link should not land
+ * back in the theme's navigation, which is the thing this template exists to
+ * avoid in the first place.
+ */
+$serve_is_privacy = get_queried_object_id() === (int) get_option( 'wp_page_for_privacy_policy' );
+
+Shortcode::brand_header(
+	$serve_is_privacy
+		? __( 'Privacy', 'serve-dashboard' )
+		: __( 'Final step', 'serve-dashboard' )
+);
+?>
+<main id="serve-main">
 <?php
 while ( have_posts() ) :
 	the_post();
+
+	/*
+	 * The consent page's form supplies its own h1. A content page does not, and
+	 * with the theme stripped there is nothing else to provide one — so the
+	 * privacy notice was rendering as a stack of h2s under no heading at all.
+	 */
+	if ( $serve_is_privacy ) {
+		echo '<h1 class="serve-prose__title">' . esc_html( get_the_title() ) . '</h1>';
+	}
+
 	the_content();
 endwhile;
+?>
+</main>
+<?php
+// No self-link in the footer of the page it points at.
+Shortcode::page_footer( ! $serve_is_privacy );
 
 wp_footer();
 ?>

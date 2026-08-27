@@ -21,6 +21,8 @@ namespace Serve_Test;
 use Serve_Dashboard\Assessment;
 use Serve_Dashboard\Digest;
 use Serve_Dashboard\Metrics;
+use Serve_Dashboard\Privacy;
+use Serve_Dashboard\Privacy_Page;
 use Serve_Dashboard\Roles;
 use Serve_Dashboard\Schema;
 use Serve_Dashboard\Teams;
@@ -226,6 +228,78 @@ test(
 				$a->same( 0, (int) ( $tile['value'] ?? -1 ), "$who sees zero for $key" );
 			}
 		}
+	}
+);
+
+/*
+ * The privacy notice replaces WordPress' boilerplate, which describes comment
+ * forms and Gravatar and would contradict the consent wording it sits beside.
+ * The rule that matters is the one protecting whatever a lawyer writes next.
+ */
+test(
+	'the privacy notice never overwrites text somebody has edited',
+	function ( Assert $a, Fixtures $f ) {
+		$page_id = (int) get_option( 'wp_page_for_privacy_policy', 0 );
+		$a->ok( $page_id > 0, 'a privacy page exists' );
+
+		$original = (string) get_post_field( 'post_content', $page_id );
+
+		try {
+			$reviewed = '<p>Reviewed by counsel. Every word here is deliberate.</p>';
+			wp_update_post( array( 'ID' => $page_id, 'post_content' => $reviewed ) );
+
+			$a->same( 0, Privacy_Page::install(), 'install() declines to touch an edited page' );
+			$a->same( $reviewed, (string) get_post_field( 'post_content', $page_id ), 'and the wording survives' );
+
+			// Boilerplate, by contrast, is exactly what it is there to replace.
+			wp_update_post( array( 'ID' => $page_id, 'post_content' => '<p class="privacy-policy-tutorial">Suggested text: ...</p>' ) );
+			$a->same( $page_id, Privacy_Page::install(), 'but it does replace the WordPress draft' );
+			$a->contains( 'serve-privacy-notice', (string) get_post_field( 'post_content', $page_id ), 'with our own' );
+		} finally {
+			wp_update_post( array( 'ID' => $page_id, 'post_content' => $original ) );
+		}
+	}
+);
+
+/*
+ * The path production actually takes, and the one an install that already has a
+ * privacy page never exercises. Publishing text about religious belief the
+ * moment a plugin is switched on is not a decision software should make.
+ */
+test(
+	'a privacy notice created from nothing is left as a draft',
+	function ( Assert $a, Fixtures $f ) {
+		$existing = (int) get_option( 'wp_page_for_privacy_policy', 0 );
+
+		try {
+			update_option( 'wp_page_for_privacy_policy', 0 );
+
+			$created = Privacy_Page::install();
+			$a->ok( $created > 0, 'a page is created when there is none' );
+			$a->same( 'draft', get_post_status( $created ), 'and it is not published' );
+			$a->contains( 'serve-privacy-notice', (string) get_post_field( 'post_content', $created ), 'with the notice in it' );
+
+			wp_delete_post( $created, true );
+		} finally {
+			update_option( 'wp_page_for_privacy_policy', $existing );
+		}
+	}
+);
+
+test(
+	'the notice states the retention period the system actually uses',
+	function ( Assert $a, Fixtures $f ) {
+		$page_id = (int) get_option( 'wp_page_for_privacy_policy', 0 );
+		$content = (string) get_post_field( 'post_content', $page_id );
+
+		// A privacy notice promising a different number from the one the sweep
+		// enforces is worse than none, and nothing else would catch the drift.
+		$a->contains(
+			(string) Privacy::retention_months() . ' months',
+			$content,
+			'the published figure matches the configured one'
+		);
+		$a->contains( Privacy::contact_email(), html_entity_decode( $content ), 'and names the real contact address' );
 	}
 );
 
