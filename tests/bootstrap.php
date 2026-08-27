@@ -217,7 +217,7 @@ final class Fixtures {
 		return $id;
 	}
 
-	/** @var array<int,array{target:int,current:int,min:int}> capacity as it was before a test changed it. */
+	/** @var array<int,array{target:int,current:int,min:int,checked:?string}> capacity as it was before a test changed it. */
 	private array $team_capacity = array();
 
 	/**
@@ -241,6 +241,9 @@ final class Fixtures {
 				'target'  => (int) $team->target_headcount,
 				'current' => (int) $team->current_headcount,
 				'min'     => (int) $team->min_headcount,
+				// Restored too, or a test that moves it leaves every later
+				// drift figure measured from the wrong moment.
+				'checked' => $team->headcount_checked_at,
 			);
 		}
 
@@ -266,12 +269,13 @@ final class Fixtures {
 			$wpdb->update(
 				Schema::table( 'teams' ),
 				array(
-					'target_headcount'  => $was['target'],
-					'current_headcount' => $was['current'],
-					'min_headcount'     => $was['min'],
+					'target_headcount'     => $was['target'],
+					'current_headcount'    => $was['current'],
+					'min_headcount'        => $was['min'],
+					'headcount_checked_at' => $was['checked'],
 				),
 				array( 'id' => $team_id ),
-				array( '%d', '%d', '%d' ),
+				array( '%d', '%d', '%d', '%s' ),
 				array( '%d' )
 			);
 		}

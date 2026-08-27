@@ -24,6 +24,7 @@ use Serve_Dashboard\Metrics;
 use Serve_Dashboard\Privacy;
 use Serve_Dashboard\Privacy_Page;
 use Serve_Dashboard\Roles;
+use Serve_Dashboard\Submissions;
 use Serve_Dashboard\Schema;
 use Serve_Dashboard\Teams;
 
@@ -140,6 +141,100 @@ test(
 			$a->ok( (int) $team->target_headcount > 0, "{$team->slug} has a real target" );
 			$a->ok( (int) $team->gap > 0, "{$team->slug} has a real shortfall" );
 		}
+	}
+);
+
+/*
+ * Headcount drift.
+ *
+ * `current_headcount` is typed in by hand and counts everyone serving on a
+ * team, most of whom never did a S.H.A.P.E. assessment. Until the pipeline
+ * could be worked at all nobody could be placed, so it never went stale. Now
+ * that they can, an untouched figure drifts a little further with each
+ * placement — and the gap panel is one of the four things the deck promises.
+ *
+ * The fix reports the drift rather than adjusting for it. Adding placements to
+ * a hand-typed number double-counts the moment somebody corrects it themselves.
+ */
+test(
+	'placements after a headcount check are reported, not silently absorbed',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$team_id = $f->set_team_capacity( 'events', 10, 4 );
+		$team    = Schema::table( 'teams' );
+
+		// As though somebody confirmed the figure yesterday.
+		$wpdb->query( $wpdb->prepare( "UPDATE {$team} SET headcount_checked_at = DATE_SUB( UTC_TIMESTAMP(), INTERVAL 1 DAY ) WHERE id = %d", $team_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		$a->same( 0, Teams::placed_since_check()[ $team_id ] ?? 0, 'nothing placed since' );
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+		$id = $f->verified_submission( array( 'suggested_teams' => array( 'events' ) ) );
+		Submissions::set_status( $id, Schema::STATUS_PLACED, $team_id );
+
+		$a->same( 1, Teams::placed_since_check()[ $team_id ] ?? 0, 'the placement is counted' );
+
+		$gap = null;
+		foreach ( Teams::gaps() as $row ) {
+			if ( (int) $row->id === $team_id ) {
+				$gap = $row;
+			}
+		}
+
+		$a->ok( null !== $gap, 'the team is in the gap panel' );
+		$a->same( 6, (int) $gap->gap, 'the shortfall is untouched — reporting, not adjusting' );
+		$a->same( 1, (int) $gap->placed_since, 'and the drift travels with it' );
+	}
+);
+
+test(
+	'confirming the headcount clears the drift',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$team_id = $f->set_team_capacity( 'prayer', 8, 3 );
+		$team    = Schema::table( 'teams' );
+		$wpdb->query( $wpdb->prepare( "UPDATE {$team} SET headcount_checked_at = DATE_SUB( UTC_TIMESTAMP(), INTERVAL 1 DAY ) WHERE id = %d", $team_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+		$id = $f->verified_submission( array( 'suggested_teams' => array( 'prayer' ) ) );
+		Submissions::set_status( $id, Schema::STATUS_PLACED, $team_id );
+		$a->same( 1, Teams::placed_since_check()[ $team_id ] ?? 0, 'drifted by one' );
+
+		// Saving the row counts as looking at the number, whether or not it moved.
+		Teams::save(
+			$team_id,
+			array( 'target_headcount' => 8, 'current_headcount' => 4, 'min_headcount' => 0, 'requires_safeguarding' => 0, 'is_active' => 1, 'leader_user_id' => 0 )
+		);
+
+		$a->same( 0, Teams::placed_since_check()[ $team_id ] ?? 0, 'and back to nothing outstanding' );
+	}
+);
+
+test(
+	'only real, confirmed, actually-placed people count as drift',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$team_id = $f->set_team_capacity( 'welcome', 12, 6 );
+		$team    = Schema::table( 'teams' );
+		$wpdb->query( $wpdb->prepare( "UPDATE {$team} SET headcount_checked_at = DATE_SUB( UTC_TIMESTAMP(), INTERVAL 1 DAY ) WHERE id = %d", $team_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		// Someone only part-way along is not on the team yet.
+		$trial = $f->verified_submission( array( 'suggested_teams' => array( 'welcome' ) ) );
+		Submissions::set_status( $trial, Schema::STATUS_TRIAL_SERVE, $team_id );
+		$a->same( 0, Teams::placed_since_check()[ $team_id ] ?? 0, 'a trial serve is not a placement' );
+
+		$placed = $f->verified_submission( array( 'suggested_teams' => array( 'welcome' ) ) );
+		Submissions::set_status( $placed, Schema::STATUS_PLACED, $team_id );
+		$a->same( 1, Teams::placed_since_check()[ $team_id ] ?? 0, 'a placement is' );
+
+		// And somebody erased is no longer on the team either.
+		Privacy::erase_submission( $placed );
+		$a->same( 0, Teams::placed_since_check()[ $team_id ] ?? 0, 'an erased profile stops counting' );
 	}
 );
 

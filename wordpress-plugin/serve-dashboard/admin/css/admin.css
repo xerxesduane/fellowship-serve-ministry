@@ -260,3 +260,9 @@
 .serve-inline-field[hidden] {
 	display: none;
 }
+
+/* A headcount that placements have moved past since it was last confirmed. */
+.serve-stale {
+	color: #b8401a;
+	font-weight: 600;
+}

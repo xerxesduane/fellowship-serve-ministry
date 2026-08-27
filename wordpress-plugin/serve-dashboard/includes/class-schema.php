@@ -23,7 +23,7 @@ final class Schema {
 	 * Bumped whenever a CREATE TABLE statement below changes, so that
 	 * maybe_upgrade() knows to re-run dbDelta.
 	 */
-	public const DB_VERSION = '1.3.0';
+	public const DB_VERSION = '1.4.0';
 
 	public const OPTION_DB_VERSION = 'serve_dashboard_db_version';
 
@@ -189,6 +189,7 @@ final class Schema {
 			target_headcount smallint(5) unsigned NOT NULL DEFAULT 0,
 			min_headcount smallint(5) unsigned NOT NULL DEFAULT 0,
 			current_headcount smallint(5) unsigned NOT NULL DEFAULT 0,
+			headcount_checked_at datetime DEFAULT NULL,
 			requires_safeguarding tinyint(1) NOT NULL DEFAULT 0,
 			leader_user_id bigint(20) unsigned DEFAULT NULL,
 			is_active tinyint(1) NOT NULL DEFAULT 1,
@@ -318,6 +319,23 @@ final class Schema {
 
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name is not user input.
 			$wpdb->query( "UPDATE {$submissions} SET verified_at = submitted_at WHERE verified_at IS NULL" );
+		}
+
+		/*
+		 * 1.4.0 records when somebody last confirmed a team's headcount, so the
+		 * gap panel can say how many placements have happened since.
+		 *
+		 * Existing rows are stamped now rather than left null. The alternative
+		 * is treating every placement ever made as unreconciled, which would
+		 * greet an upgrading site with a backlog it has no way to judge. Taking
+		 * the typed numbers as accurate on the day of the upgrade is the only
+		 * honest starting point; drift accumulates from here.
+		 */
+		if ( '' !== $from && version_compare( $from, '1.4.0', '<' ) ) {
+			$teams = self::table( 'teams' );
+
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name is not user input.
+			$wpdb->query( "UPDATE {$teams} SET headcount_checked_at = UTC_TIMESTAMP() WHERE headcount_checked_at IS NULL" );
 		}
 	}
 }

@@ -142,8 +142,54 @@ final class Teams {
 	 *
 	 * @return array<int,object>
 	 */
+	/**
+	 * People placed on a team since anybody last confirmed its headcount.
+	 *
+	 * `current_headcount` is typed in by hand and means everyone serving on the
+	 * team, most of whom never completed a S.H.A.P.E. assessment — so placements
+	 * made through the dashboard cannot simply be added to it without
+	 * double-counting the moment somebody updates the number themselves.
+	 *
+	 * What can be said without guessing is how many placements have happened
+	 * since the figure was last looked at. Those are unambiguously not in it
+	 * yet. Before the pipeline could be worked at all this was always zero; now
+	 * that people can actually be placed, an untouched headcount goes stale a
+	 * little further with each one.
+	 *
+	 * @return array<int,int> Team id => count.
+	 */
+	public static function placed_since_check(): array {
+		global $wpdb;
+
+		$placements  = Schema::table( 'placements' );
+		$teams       = Schema::table( 'teams' );
+		$submissions = Schema::table( 'submissions' );
+
+		$rows = (array) $wpdb->get_results(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names are not user input.
+				"SELECT p.team_id, COUNT(*) AS placed
+				 FROM {$placements} p
+				 INNER JOIN {$teams} t ON t.id = p.team_id
+				 INNER JOIN {$submissions} s ON s.id = p.submission_id AND s.verified_at IS NOT NULL
+				 WHERE p.status = %s
+				   AND ( t.headcount_checked_at IS NULL OR p.updated_at > t.headcount_checked_at )
+				 GROUP BY p.team_id",
+				Schema::STATUS_PLACED
+			)
+		);
+
+		$out = array();
+		foreach ( $rows as $row ) {
+			$out[ (int) $row->team_id ] = (int) $row->placed;
+		}
+
+		return $out;
+	}
+
 	public static function gaps(): array {
-		$gaps = array();
+		$gaps  = array();
+		$since = self::placed_since_check();
 
 		foreach ( self::all() as $team ) {
 			$target = (int) $team->target_headcount;
@@ -158,6 +204,15 @@ final class Teams {
 
 			$team->gap           = $gap;
 			$team->below_minimum = (int) $team->current_headcount < (int) $team->min_headcount;
+
+			/*
+			 * Reported beside the gap rather than subtracted from it. A leader
+			 * can see that the shortfall is smaller than it looks and go and
+			 * correct the number; software quietly adjusting it would be a guess
+			 * dressed up as a fact.
+			 */
+			$team->placed_since  = $since[ (int) $team->id ] ?? 0;
+
 			$gaps[]              = $team;
 		}
 
@@ -194,13 +249,19 @@ final class Teams {
 			'requires_safeguarding' => empty( $data['requires_safeguarding'] ) ? 0 : 1,
 			'is_active'             => empty( $data['is_active'] ) ? 0 : 1,
 			'leader_user_id'        => (int) ( $data['leader_user_id'] ?? 0 ) ?: null,
+			/*
+			 * Saving the form counts as confirming the headcount, whether or not
+			 * the number moved: somebody has just looked at it. Placements made
+			 * after this moment are the ones it cannot yet account for.
+			 */
+			'headcount_checked_at'  => current_time( 'mysql', true ),
 		);
 
 		$updated = $wpdb->update(
 			Schema::table( 'teams' ),
 			$fields,
 			array( 'id' => $id ),
-			array( '%d', '%d', '%d', '%d', '%d', '%d' ),
+			array( '%d', '%d', '%d', '%d', '%d', '%d', '%s' ),
 			array( '%d' )
 		);
 

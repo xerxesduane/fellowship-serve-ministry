@@ -58,11 +58,13 @@ $leaders = get_users(
 			</tr>
 		</thead>
 		<tbody>
+		<?php $placed_since = Teams::placed_since_check(); ?>
 		<?php foreach ( $teams as $team ) : ?>
 			<?php
 			$target  = (int) $team->target_headcount;
 			$current = (int) $team->current_headcount;
 			$gap     = $target > 0 ? max( 0, $target - $current ) : null;
+			$since   = (int) ( $placed_since[ (int) $team->id ] ?? 0 );
 			?>
 			<tr>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -74,7 +76,28 @@ $leaders = get_users(
 						<strong><?php echo esc_html( $team->name ); ?></strong>
 						<div class="serve-row-meta"><?php echo esc_html( implode( ', ', Teams::gift_list( $team ) ) ); ?></div>
 					</td>
-					<td><input type="number" min="0" name="current_headcount" value="<?php echo esc_attr( (string) $current ); ?>" <?php disabled( ! $can_edit ); ?> class="small-text"></td>
+					<td>
+						<input type="number" min="0" name="current_headcount" value="<?php echo esc_attr( (string) $current ); ?>" <?php disabled( ! $can_edit ); ?> class="small-text">
+						<?php
+						/*
+						 * This is the screen where the number gets corrected, so
+						 * it is the screen that should say the number is stale.
+						 * Saving the row counts as confirming it, which is why
+						 * the count resets afterwards.
+						 */
+						if ( $since > 0 ) :
+							?>
+							<div class="serve-row-meta serve-stale">
+								<?php
+								printf(
+									/* translators: %d: placements made since the headcount was last confirmed. */
+									esc_html( _n( '%d placed since you last checked this', '%d placed since you last checked this', $since, 'serve-dashboard' ) ),
+									absint( $since )
+								);
+								?>
+							</div>
+						<?php endif; ?>
+					</td>
 					<td><input type="number" min="0" name="target_headcount" value="<?php echo esc_attr( (string) $target ); ?>" <?php disabled( ! $can_edit ); ?> class="small-text"></td>
 					<td><input type="number" min="0" name="min_headcount" value="<?php echo esc_attr( (string) $team->min_headcount ); ?>" <?php disabled( ! $can_edit ); ?> class="small-text"></td>
 					<td>

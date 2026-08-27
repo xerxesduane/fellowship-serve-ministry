@@ -779,6 +779,15 @@ button.serve-metric:hover {
 	background: var(--serve-coral);
 }
 
+/* Says the figure above is out of date, without shouting over it. */
+.serve-bar__note {
+	grid-column: 1 / -1;
+	margin-top: var(--serve-space-1);
+	font-size: .75rem;
+	line-height: 1.4;
+	color: var(--serve-coral-dark);
+}
+
 .serve-bar--critical .serve-bar__value {
 	color: var(--serve-coral-dark);
 	font-weight: 600;

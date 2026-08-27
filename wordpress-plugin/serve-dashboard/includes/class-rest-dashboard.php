@@ -275,6 +275,8 @@ final class Rest_Dashboard {
 				'target'        => (int) $team->target_headcount,
 				'current'       => (int) $team->current_headcount,
 				'below_minimum' => (bool) $team->below_minimum,
+				// Placements the typed-in headcount cannot yet know about.
+				'placedSince'   => (int) $team->placed_since,
 			);
 		}
 

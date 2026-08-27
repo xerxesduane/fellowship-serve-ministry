@@ -229,13 +229,30 @@ function renderGaps(gaps) {
 	$('gaps').innerHTML = gaps.map((gap) => {
 		const filled = gap.target > 0 ? Math.min(100, Math.round((gap.current / gap.target) * 100)) : 0;
 
+		/*
+		 * The shortfall is worked out from a number somebody types in, which
+		 * counts everyone serving on the team — most of whom never did a SHAPE
+		 * assessment. Placements made since it was last confirmed are therefore
+		 * not in it, and each one makes the figure above a little more wrong.
+		 *
+		 * Said out loud rather than quietly subtracted: adjusting the number on
+		 * a leader's behalf would be a guess presented as a fact, and would
+		 * double-count the moment they went and corrected it themselves.
+		 */
+		const since = Number(gap.placedSince) || 0;
+		const stale = since > 0
+			? `<span class="serve-bar__note">${since} placed here since this was last checked — the real shortfall may be smaller</span>`
+			: '';
+
 		return `<div class="serve-bar ${gap.below_minimum ? 'serve-bar--critical' : ''}">
 			<span class="serve-bar__label">${esc(gap.name)}</span>
 			<span class="serve-bar__value">${esc(gap.gap)} needed${gap.below_minimum ? ' · below minimum' : ''}</span>
 			<span class="serve-bar__track">
 				<span class="serve-bar__fill" style="width:${filled}%"></span>
 			</span>
-			<span class="screen-reader-text">${esc(gap.current)} of ${esc(gap.target)} places filled</span>
+			${stale}
+			<span class="screen-reader-text">${esc(gap.current)} of ${esc(gap.target)} places filled${
+				since > 0 ? `, and ${since} placed since this figure was last checked` : ''}</span>
 		</div>`;
 	}).join('');
 }
