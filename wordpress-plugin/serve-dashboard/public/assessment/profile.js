@@ -33,14 +33,32 @@ function recommendMinistries(answers) {
     };
   }).sort((a, b) => b.score - a.score || a.index - b.index);
 
-  const recommended = ranked.filter((row) => row.score > 0).slice(0, 3);
-  const fallbacks = ["Serve", "Welcome", "Administration"];
-  for (const ministry of fallbacks) {
-    if (recommended.length === 3) break;
-    const row = ranked.find((item) => item.ministry === ministry && !recommended.some((item) => item.ministry === ministry));
-    if (row) recommended.push(row);
-  }
-  return recommended.map(({ ministry, matchedGifts }) => ({ ministry, matchedGifts }));
+  /*
+   * Nothing is padded in any more.
+   *
+   * This used to top the list up to three with Serve, Welcome and
+   * Administration whenever fewer than three ministries scored above zero, so
+   * somebody who marked no gifts at all came out with three ministries and
+   * "no matched gift" against every one of them.
+   *
+   * That mattered more than it looked. What this function returns becomes
+   * `suggested_teams` on the server, and the placement rows built from that
+   * column are what decide which ministry leaders may open a person's profile.
+   * Three names invented to reach a round number were handing three teams
+   * access to a pastoral profile on no evidence whatsoever.
+   *
+   * It costs the person nothing to remove. Their results page has shown the
+   * server's ranking across all five S.H.A.P.E. dimensions since 1.18.0, and
+   * that ranks every team and always has something to say — this list is no
+   * longer what anybody reads. A profile with no gift overlap now waits for a
+   * pastor, who sees everyone, rather than being shown to three teams picked
+   * for no reason. It is not lost: the dashboard sorts people nobody has
+   * spoken to to the top of the first band.
+   */
+  return ranked
+    .filter((row) => row.score > 0)
+    .slice(0, 3)
+    .map(({ ministry, matchedGifts }) => ({ ministry, matchedGifts }));
 }
 
 export const emptyAnswers = () => ({

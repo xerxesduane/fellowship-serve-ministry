@@ -553,3 +553,113 @@ test(
 		}
 	}
 );
+
+test(
+	'a profile with no gift overlap hands no team access to it',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * recommendMinistries() used to pad its list up to three with Serve,
+		 * Welcome and Administration when fewer than three ministries scored
+		 * above zero. What it returns becomes suggested_teams, and the placement
+		 * rows built from that column are what decide which ministry leaders may
+		 * open a profile — so three names invented to reach a round number were
+		 * handing three teams access to somebody's pastoral profile on no
+		 * evidence at all.
+		 *
+		 * An empty list is now what arrives. This asserts what that means: no
+		 * placement rows, no ministry leader can open them, and — the part that
+		 * makes it safe rather than merely tidier — a pastor still can, so
+		 * nobody falls out of the process.
+		 */
+		$email = 'nogifts-' . wp_generate_password( 8, false ) . '@serve.test';
+
+		$response = post_submission(
+			intake_payload(
+				array(
+					'email'   => $email,
+					'profile' => array(
+						// What the browser now sends for somebody who matched nothing.
+						'spiritualGifts'        => array( 'likely' => array() ),
+						'recommendedMinistries' => array(),
+					),
+				)
+			),
+			$f
+		);
+
+		$a->same( 201, $response->get_status(), 'the profile is still accepted' );
+
+		global $wpdb;
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT id, suggested_teams, safeguarding_status FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
+				$email
+			)
+		);
+		$a->ok( null !== $row, 'and stored' );
+
+		$a->same(
+			array(),
+			\Serve_Dashboard\Submissions::decode_list( $row->suggested_teams ),
+			'with no suggested teams rather than three invented ones'
+		);
+
+		$placements = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT COUNT(*) FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d',
+				(int) $row->id
+			)
+		);
+		$a->same( 0, $placements, 'and no placement rows, so no team gains access' );
+
+		// Nothing was named, so nothing required a background check.
+		$a->same(
+			\Serve_Dashboard\Safeguarding::STATUS_NOT_REQUIRED,
+			$row->safeguarding_status,
+			'and no background check is claimed to be required'
+		);
+
+		/*
+		 * Confirm the address before asking who can see them. A fresh
+		 * submission is deliberately invisible to everybody, pastors included,
+		 * until the email is proven — so testing visibility on an unconfirmed
+		 * row measures the verification gate rather than the placement rows,
+		 * which is what the first version of this test did.
+		 */
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => (int) $row->id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		$leader = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		$f->lead_team( $leader, 'welcome' );
+		wp_set_current_user( $leader );
+
+		$a->not(
+			\Serve_Dashboard\Roles::can_view_submission( (int) $row->id ),
+			'a leader of a formerly-padded team cannot open them'
+		);
+
+		/*
+		 * The part that keeps this safe. A pastor sees everyone, and the
+		 * dashboard sorts people nobody has spoken to to the top of its first
+		 * band, so an unmatched profile is waiting in front of somebody rather
+		 * than lost.
+		 */
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		$a->ok(
+			\Serve_Dashboard\Roles::can_view_submission( (int) $row->id ),
+			'but a pastor can'
+		);
+		$a->ok(
+			in_array( (int) $row->id, array_map( 'intval', wp_list_pluck( \Serve_Dashboard\Submissions::query( array( 'limit' => 200, 'orderby' => 'waiting' ) ), 'id' ) ), true ),
+			'and they appear in the queue a pastor works from'
+		);
+	}
+);

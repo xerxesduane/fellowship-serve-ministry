@@ -825,7 +825,10 @@ that you left a report, and not a word of what it said.
   frequency, conflict handling, permissions, API limits and the join identifiers
   all have to be agreed first — that is the deck's own "Prepare" phase. The
   boundary class marks where it will go.
-- **Retiring `recommendMinistries()` entirely.** The person is now shown the
+- **Retiring `recommendMinistries()` entirely.** Its evidence-free padding is
+  gone as of 1.20.0 — it no longer tops the list up to three with Serve, Welcome
+  and Administration, so a profile with no gift overlap hands no team access to
+  itself. What remains is the larger swap. The person is now shown the
   server's ranking, but the browser still computes its gift-only top three —
   because that is what `suggested_teams` is built from, and therefore what the
   placement rows and every leader's visibility depend on. It has stopped being
