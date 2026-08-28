@@ -304,7 +304,7 @@ final class Rest {
 				'tenure_months'   => $tenure,
 				'gifts_likely'    => $profile['spiritualGifts']['likely'] ?? array(),
 				'languages'       => self::extract_languages( $profile ),
-				'suggested_teams' => self::extract_team_slugs( $profile ),
+				'suggested_teams' => Matching::slugs_for_profile( $profile ),
 				'profile'         => $profile,
 			)
 		);
@@ -417,19 +417,12 @@ final class Rest {
 
 		$clean['recommendedNextStep'] = sanitize_textarea_field( (string) ( $raw['recommendedNextStep'] ?? '' ) );
 
-		$clean['recommendedMinistries'] = array();
-		if ( isset( $raw['recommendedMinistries'] ) && is_array( $raw['recommendedMinistries'] ) ) {
-			foreach ( $raw['recommendedMinistries'] as $entry ) {
-				if ( ! is_array( $entry ) ) {
-					continue;
-				}
-				$clean['recommendedMinistries'][] = array(
-					'ministry'     => sanitize_text_field( (string) ( $entry['ministry'] ?? '' ) ),
-					'matchedGifts' => self::string_list( $entry['matchedGifts'] ?? array() ),
-				);
-			}
-		}
-
+		/*
+		 * `recommendedMinistries` is gone from the whitelist along with the
+		 * browser function that produced it. Suggestions are ranked on the
+		 * server now, so a stored copy of what the browser thought would be a
+		 * second answer to the same question, free to disagree with the first.
+		 */
 		return $clean;
 	}
 
@@ -480,27 +473,6 @@ final class Rest {
 		return array_values( array_unique( array_filter( $languages ) ) );
 	}
 
-	/**
-	 * @param array<string,mixed> $profile
-	 * @return string[]
-	 */
-	private static function extract_team_slugs( array $profile ): array {
-		$slugs = array();
-
-		foreach ( (array) ( $profile['recommendedMinistries'] ?? array() ) as $entry ) {
-			$name = (string) ( $entry['ministry'] ?? '' );
-			if ( '' === $name ) {
-				continue;
-			}
-
-			// The assessment writes "GROW – Small Group" with an en dash; the
-			// seeded slugs use a hyphen. Normalise before slugifying.
-			$name    = str_replace( array( "\u{2013}", "\u{2014}" ), '-', $name );
-			$slugs[] = sanitize_title( $name );
-		}
-
-		return array_values( array_unique( array_filter( $slugs ) ) );
-	}
 
 	/**
 	 * Rank a profile without storing it.

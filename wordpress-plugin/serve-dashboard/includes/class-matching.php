@@ -205,6 +205,10 @@ final class Matching {
 
 		return array(
 			'team_id'          => (int) $team->id,
+			// The slug, so nothing downstream has to slugify a display name.
+			// Doing that is what needed a str_replace for the assessment's en
+			// dash, and what let a renamed team quietly stop resolving.
+			'team_slug'        => (string) $team->slug,
 			'team_name'        => $team->name,
 			'strength'         => $strength,
 			'strength_label'   => self::strength_labels()[ $strength ],
@@ -235,17 +239,21 @@ final class Matching {
 	/**
 	 * How many teams a profile is worth suggesting.
 	 *
-	 * Five rather than the assessment's three: the point of ranking every team
-	 * is that better fits exist outside the three it picked, and a list capped
-	 * at three would mostly just reshuffle them.
+	 * Three, and the same three everywhere: shown to the person, stored as
+	 * `suggested_teams`, and turned into the placement rows that decide which
+	 * leaders may open the profile. It was briefly five while the person was
+	 * still being shown a separate gift-only list of three, and one number
+	 * governing all of it is what lets those two finally agree — five stored
+	 * would have widened access, and five shown against three stored would have
+	 * made the "not on their profile" flag lie about teams the person had seen.
 	 */
 	public static function suggestion_limit(): int {
 		/**
 		 * Filters how many suggested teams a profile gets.
 		 *
-		 * @param int $limit Default 5.
+		 * @param int $limit Default 3.
 		 */
-		return max( 1, (int) apply_filters( 'serve_dashboard_suggestion_limit', 5 ) );
+		return max( 1, (int) apply_filters( 'serve_dashboard_suggestion_limit', 3 ) );
 	}
 
 	/**
@@ -368,6 +376,38 @@ final class Matching {
 		}
 
 		return $out;
+	}
+
+	/**
+	 * The team slugs a new submission should be recorded against.
+	 *
+	 * This is what `suggested_teams` is built from, and therefore what decides
+	 * the placement rows and which ministry leaders may open the profile. It
+	 * used to come from `recommendMinistries()` in the browser: spiritual-gift
+	 * name overlap against a hardcoded copy of the team list, which could not
+	 * see a team renamed, added or retired on the Teams screen, and which padded
+	 * itself up to three with Serve, Welcome and Administration when nothing
+	 * matched.
+	 *
+	 * Ranked here instead, across all five S.H.A.P.E. dimensions, against the
+	 * teams as they actually are. A profile the ranking finds no evidence for
+	 * gets an empty list and no placement rows, which is the honest answer: a
+	 * pastor sees everyone and the dashboard puts people nobody has spoken to
+	 * first.
+	 *
+	 * @param array<string,mixed> $profile
+	 * @return string[]
+	 */
+	public static function slugs_for_profile( array $profile ): array {
+		$slugs = array();
+
+		foreach ( self::rank_profile( $profile ) as $match ) {
+			if ( ! empty( $match['reasons'] ) && '' !== $match['team_slug'] ) {
+				$slugs[] = $match['team_slug'];
+			}
+		}
+
+		return array_values( array_unique( $slugs ) );
 	}
 
 	/**

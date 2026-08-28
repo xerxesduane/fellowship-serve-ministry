@@ -772,6 +772,81 @@ Two copies, never both visible: `display: none` removes an element from the
 accessibility tree as well as the page, so whichever is hidden is also the one a
 screen reader skips, and the row is never announced twice.
 
+## The server decides which teams may see a profile
+
+`suggested_teams` is what the placement rows are built from, and those rows
+decide which ministry leaders may open somebody's profile. Until now that column
+came from `recommendMinistries()` — a function in the visitor's **browser**,
+ranking on spiritual-gift name overlap against a hardcoded copy of the team list.
+
+Four problems, all of them structural rather than cosmetic:
+
+- **The browser decided an access-control question.** A hand-crafted submission
+  could name whichever teams it liked and get placement rows on them. Bounded —
+  you could only ever expose your own answers, and the safeguarding gate is
+  enforced at the stage transition rather than from the stored status — but the
+  client was choosing who could read a profile.
+- **The team list lived twice.** The browser copy said `GROW – Small Group` with
+  an en dash; the database said `GROW - Small Group` with a hyphen, and a
+  `str_replace` existed in `extract_team_slugs()` for no reason other than to
+  bridge them.
+- **The copy could not see the Teams screen.** Rename, retire or add a team and
+  the browser neither knew nor could ever name the new one.
+- **Gift-name overlap is the narrowest signal available**, and it was deciding
+  access while a five-dimension ranking sat unused on the server.
+
+`Matching::slugs_for_profile()` now ranks the answers server-side, against the
+teams as they actually are, and `recommendMinistries()` and its table are gone
+from the submission path. A profile the ranking finds no evidence for gets an
+empty list and no placement rows: a pastor sees everyone, and the dashboard puts
+people nobody has spoken to first.
+
+### One number, so nothing can disagree
+
+The suggestion limit dropped from five to three, and it is the same three
+everywhere: shown to the person, stored, and placed. Five stored would have
+widened access for no reason; five shown against three stored would have made the
+*not on their profile* flag lie about teams the person had seen.
+
+### Why the flag survived
+
+It was going to be deleted, on the reasoning that everything would now be "on
+their profile". That was wrong, and the data says so — for every profile
+submitted before this change, the stored teams are the old gift-only picks, so
+the current ranking legitimately surfaces teams the person never saw:
+
+    Aiza Ramos   stored: welcome, fellowship-kids
+      Welcome              on their profile
+      GROW - Small Group   [not on their profile]
+      Newcomers Pathway    [not on their profile]
+      Fellowship Kids      on their profile
+
+It also keeps working after this change, as a drift indicator: edit a team's
+vocabulary and a profile's stored teams may no longer be what the ranking would
+choose today. Normally it is empty, and when it is not, it is telling a leader
+something true.
+
+### What the person consented to
+
+Worth recording, because it bounds the question. Ministry leaders never see the
+Experiences section — `Submissions::profile()` strips it without
+`serve_view_sensitive`, which only pastors hold. And the consent text says the
+person is sharing their answers "with the Fellowship Dubai SERVE team so a
+ministry leader can contact me about serving… only authorised ministry leaders
+will see it". Which teams see them is data minimisation, not a consent boundary.
+
+The deck's Prepare phase still lists "agree on who can see personal information"
+as an open item. This makes the current answer better-evidenced. It does not make
+it decided.
+
+### What is still duplicated
+
+`ministryGiftTable.js` remains, because the printed ministry guide on the results
+page is a teaching aid drawn from it. It no longer decides anything, so the en
+dash is now only ever displayed and never slugified — but it is still a second
+copy of the team list, and a church that renames a team will see the old name in
+that table.
+
 ## Reading it without being trained on it
 
 Three things assumed knowledge the person using it did not have.
@@ -825,17 +900,12 @@ that you left a report, and not a word of what it said.
   frequency, conflict handling, permissions, API limits and the join identifiers
   all have to be agreed first — that is the deck's own "Prepare" phase. The
   boundary class marks where it will go.
-- **Retiring `recommendMinistries()` entirely.** Its evidence-free padding is
-  gone as of 1.20.0 — it no longer tops the list up to three with Serve, Welcome
-  and Administration, so a profile with no gift overlap hands no team access to
-  itself. What remains is the larger swap. The person is now shown the
-  server's ranking, but the browser still computes its gift-only top three —
-  because that is what `suggested_teams` is built from, and therefore what the
-  placement rows and every leader's visibility depend on. It has stopped being
-  the answer anybody reads and become an input to access control, which is a
-  strange job for it. Removing it means deciding what should build those rows
-  instead, and that is the visibility decision this change deliberately did not
-  make.
+- **The ministry guide table.** `ministryGiftTable.js` still holds a second
+  copy of the team list, because the printed guide on the results page is
+  drawn from it. It no longer decides anything — suggestions and placements
+  are ranked on the server as of 1.21.0 — but a renamed team will still show
+  its old name there. Serving that table from the Teams screen is the
+  remaining piece.
 - **Team-specific personality fit.** Personality is interpreted per person (see
   above) but cannot be team-specific: `keywords` describes what a team's work is
   about, not what temperament the role suits, and those are different questions.

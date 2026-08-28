@@ -5,61 +5,17 @@ import {
   heartQuestions,
   personalityPairs,
 } from "./shapeContent.js";
-import { ministryGiftTable } from "./ministryGiftTable.js";
 
-const GIFT_MATCH_ALIASES = {
-  administration: ["Organization"],
-  apostle: ["Mission", "Vision", "Leadership"],
-  pastoring: ["Mentoring", "Leadership"],
-  "praying-with-my-spirit": ["Prayer"],
-  preaching: ["Teaching", "Evangelism"],
-  service: ["Assisting"],
-};
-
-function recommendMinistries(answers) {
-  const ranked = ministryGiftTable.map((row, index) => {
-    const ministryGifts = new Set(row.gifts.map((gift) => gift.toLowerCase()));
-    const matches = gifts.filter((gift) => {
-      const rating = answers.gifts[gift.id];
-      if (rating !== "likely" && rating !== "possible") return false;
-      const names = [gift.label, gift.alternateName, ...(GIFT_MATCH_ALIASES[gift.id] || [])].filter(Boolean);
-      return names.some((name) => ministryGifts.has(name.toLowerCase()));
-    });
-    return {
-      ministry: row.ministry,
-      matchedGifts: matches.map((gift) => gift.label),
-      score: matches.reduce((total, gift) => total + (answers.gifts[gift.id] === "likely" ? 3 : 1), 0),
-      index,
-    };
-  }).sort((a, b) => b.score - a.score || a.index - b.index);
-
-  /*
-   * Nothing is padded in any more.
-   *
-   * This used to top the list up to three with Serve, Welcome and
-   * Administration whenever fewer than three ministries scored above zero, so
-   * somebody who marked no gifts at all came out with three ministries and
-   * "no matched gift" against every one of them.
-   *
-   * That mattered more than it looked. What this function returns becomes
-   * `suggested_teams` on the server, and the placement rows built from that
-   * column are what decide which ministry leaders may open a person's profile.
-   * Three names invented to reach a round number were handing three teams
-   * access to a pastoral profile on no evidence whatsoever.
-   *
-   * It costs the person nothing to remove. Their results page has shown the
-   * server's ranking across all five S.H.A.P.E. dimensions since 1.18.0, and
-   * that ranks every team and always has something to say — this list is no
-   * longer what anybody reads. A profile with no gift overlap now waits for a
-   * pastor, who sees everyone, rather than being shown to three teams picked
-   * for no reason. It is not lost: the dashboard sorts people nobody has
-   * spoken to to the top of the first band.
-   */
-  return ranked
-    .filter((row) => row.score > 0)
-    .slice(0, 3)
-    .map(({ ministry, matchedGifts }) => ({ ministry, matchedGifts }));
-}
+/*
+ * The browser used to rank ministries here, by spiritual-gift name overlap
+ * against a hardcoded copy of the team list, and what it returned became
+ * `suggested_teams` on the server — so a function in the visitor's browser,
+ * reading a table that could not see a team renamed or retired on the Teams
+ * screen, decided which ministry leaders could open their profile.
+ *
+ * Ranked on the server now, across all five S.H.A.P.E. dimensions, against
+ * the teams as they actually are. Nothing here computes a suggestion.
+ */
 
 export const emptyAnswers = () => ({
   profile: { name: "", email: "", phone: "" },
@@ -160,19 +116,20 @@ export function buildProfile(answers) {
       timing,
     },
     recommendedNextStep,
-    recommendedMinistries: recommendMinistries(answers),
   };
 }
 
 /**
  * The profile as text, for copying, emailing and printing.
  *
- * `ranked` is the server's ranking when the results page managed to fetch it.
- * It is passed in rather than read from the profile because the profile object
- * is what gets submitted, and `recommendedMinistries` has to keep meaning "what
- * the assessment itself picked" — the server builds the placement rows that
- * decide which leaders may open somebody from exactly that field, and showing a
- * person a wider list must not quietly widen who can see them.
+ * `ranked` is the server's ranking, once the results page has fetched it. It is
+ * passed in rather than read from the profile because the profile object is what
+ * gets submitted, and the suggestions are no longer part of it: the server ranks
+ * them from the answers at submission time, so a copy travelling inside the
+ * payload would be a second answer to the same question.
+ *
+ * Absent when the request has not answered, and the text says so rather than
+ * substituting something weaker.
  */
 export function profileToText(answers, profile, ranked = null) {
   const lines = [
@@ -190,7 +147,7 @@ export function profileToText(answers, profile, ranked = null) {
     `AVAILABILITY\nService priority: ${profile.availability.priority}\nTime per week: ${profile.availability.hours}\nBest times: ${profile.availability.timing.join(", ") || "Not specified"}`,
     ranked && ranked.length
       ? `WHERE YOUR S.H.A.P.E. POINTS\n${ranked.map((item, index) => `${index + 1}. ${item.team} (${item.strengthLabel})${item.reasons.length ? `\n   ${item.reasons.slice(0, 4).join("\n   ")}` : ""}`).join("\n")}`
-      : `TOP MINISTRY MATCHES\n${profile.recommendedMinistries.map((item, index) => `${index + 1}. ${item.ministry}${item.matchedGifts.length ? ` — ${item.matchedGifts.join(", ")}` : ""}`).join("\n")}`,
+      : "WHERE YOUR S.H.A.P.E. POINTS\nWe could not work these out just now. Your answers are saved, and a ministry leader will have them.",
     `RECOMMENDED NEXT STEP\n${profile.recommendedNextStep}`,
   ];
   return lines.filter((line) => line !== "").join("\n\n");

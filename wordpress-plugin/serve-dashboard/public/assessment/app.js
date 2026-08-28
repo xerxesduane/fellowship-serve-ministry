@@ -440,8 +440,16 @@ function ministryRecommendations(profile) {
 
   requestSuggestions(profile);
 
-  const cards = profile.recommendedMinistries.map((item, index) => `<li><span>${index + 1}</span><div><h3>${escapeHtml(item.ministry)}</h3><p>${item.matchedGifts.length ? `Strong alignment with ${escapeHtml(item.matchedGifts.join(", "))}.` : "A flexible place to explore your S.H.A.P.E. with a ministry leader."}</p></div></li>`).join("");
-  return `<article class="recommendations-section"><header><p class="eyebrow">Personalized starting points</p><h2>Your top 3 ministry matches</h2><p>These suggestions are based on your likely and possible spiritual gifts. Use them as conversation starters, not a final assignment.</p></header><ol class="ministry-recommendations">${cards}</ol></article>`;
+  /*
+   * Nothing to fall back to any more, and that is the honest state rather
+   * than a worse one. The browser no longer ranks teams, so if the request
+   * has not answered there is no second opinion to show — and inventing one
+   * from spiritual gifts alone is exactly what this stopped doing.
+   *
+   * Their answers are already saved and the server has ranked them for the
+   * leader either way, so this says so plainly instead of looking broken.
+   */
+  return `<article class="recommendations-section"><header><p class="eyebrow">Personalized starting points</p><h2>Where your S.H.A.P.E. points</h2><p>Working these out from everything you told us…</p></header><p class="ministry-caveat">If this does not appear in a moment, nothing is lost: your answers are saved, and the SERVE team will have your suggested teams alongside them.</p></article>`;
 }
 
 function ministryTable() {

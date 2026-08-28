@@ -92,9 +92,11 @@ with the reasons underneath. These come from weighing every team against
 everything they told us — gifts, passions, abilities and past experience — not
 just their spiritual gifts.
 
-At the end of the assessment the person was shown their own top three, worked out
-from spiritual gifts alone, and that is what the profile they downloaded says.
-Any team here that was not one of those three is marked **not on their profile**.
+The person saw the same three teams at the end of their assessment, so normally
+nothing here is a surprise to them. Any team marked **not on their profile** is
+one they did not see — which happens for profiles completed before September
+2026, when the assessment worked its own suggestions out from spiritual gifts
+alone, and afterwards if somebody has since edited what a team is about.
 It is not a lesser suggestion — often it is the better one — it simply means they
 have not seen it, so start there rather than assuming they are expecting it.
 

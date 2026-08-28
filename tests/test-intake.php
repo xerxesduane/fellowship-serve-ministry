@@ -373,45 +373,42 @@ test(
 );
 
 test(
-	'showing a person more teams does not widen who can see them',
+	'the browser cannot choose which teams may see a profile',
 	function ( Assert $a, Fixtures $f ) {
 		/*
-		 * The constraint on this whole change. The results page now shows the
-		 * server's ranking, which is wider than the three the assessment picked.
-		 * `recommendedMinistries` still carries those three, because the server
-		 * builds `suggested_teams` from that field and the placement rows built
-		 * from *it* are what decide which leaders may open somebody.
+		 * This replaces a test of the opposite guarantee, and the reversal is
+		 * the point.
 		 *
-		 * If the ranking were written back into that field instead, every leader
-		 * whose team happened to match would silently gain access to a profile
-		 * they were never meant to open. This asserts the seam holds even when
-		 * the browser posts a profile carrying both.
+		 * `suggested_teams` used to be built from `recommendedMinistries`, which
+		 * the browser computed and posted. So a hand-crafted submission could
+		 * name whichever teams it liked and get placement rows on them —
+		 * choosing which ministry leaders could open the profile. Bounded, since
+		 * you could only ever expose your own answers, but it was the client
+		 * deciding an access-control question.
+		 *
+		 * The server ranks the answers now and the field is not even in the
+		 * profile whitelist, so what the browser claims is discarded before
+		 * anything reads it. Asserted by posting a profile that names teams its
+		 * answers do not support and watching them fail to appear.
 		 */
-		$email = 'displayonly-' . wp_generate_password( 8, false ) . '@serve.test';
+		$email = 'ranked-' . wp_generate_password( 8, false ) . '@serve.test';
 
 		$response = post_submission(
 			intake_payload(
 				array(
 					'email'   => $email,
 					'profile' => array(
+						// Answers that genuinely point at Administration.
 						'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
 						'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
 
-						// What the assessment itself picked: the one team it named.
+						// And a claim to three teams they say nothing about.
 						'recommendedMinistries' => array(
-							array( 'ministry' => 'Prayer', 'matchedGifts' => array( 'Mercy' ) ),
+							array( 'ministry' => 'Youth Ministry', 'matchedGifts' => array() ),
+							array( 'ministry' => 'Production', 'matchedGifts' => array() ),
+							array( 'ministry' => 'Livestream Team', 'matchedGifts' => array() ),
 						),
-
-						/*
-						 * What the results page displayed, as the browser would
-						 * have received it. Administration leads this ranking and
-						 * the assessment never named it.
-						 */
-						'rankedTeams' => array(
-							array( 'team' => 'Administration' ),
-							array( 'team' => 'Serve' ),
-							array( 'team' => 'Welcome' ),
-						),
+						'rankedTeams'           => array( array( 'team' => 'Youth Ministry' ) ),
 					),
 				)
 			),
@@ -424,58 +421,61 @@ test(
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-				'SELECT id, suggested_teams FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
+				'SELECT id, suggested_teams, profile_json FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
 				$email
 			)
 		);
 		$a->ok( null !== $row, 'and stored' );
 
+		$stored = \Serve_Dashboard\Submissions::decode_list( $row->suggested_teams );
+
+		$a->not( in_array( 'youth-ministry', $stored, true ), 'the team it asked for is not there' );
+		$a->not( in_array( 'production', $stored, true ), 'nor the second' );
+		$a->not( in_array( 'livestream-team', $stored, true ), 'nor the third' );
+		$a->ok( in_array( 'administration', $stored, true ), 'the team its answers point at is' );
+
+		// Exactly the suggestion limit: what is shown, stored and placed agree.
 		$a->same(
-			array( 'prayer' ),
-			\Serve_Dashboard\Submissions::decode_list( $row->suggested_teams ),
-			'suggested_teams still records only what the assessment named'
+			\Serve_Dashboard\Matching::suggestion_limit(),
+			count( $stored ),
+			'and there are as many as the person was shown'
 		);
 
-		/*
-		 * And the reason it holds, which is stronger than this change being
-		 * careful: sanitize_profile() is a whitelist, so a ranking field the
-		 * browser invents never reaches storage at all and cannot be read by
-		 * anything downstream. Asserted directly, because the outcome above
-		 * stays correct even when that guarantee is removed — the first version
-		 * of this test could not tell the difference.
-		 */
-		$stored = json_decode( (string) $wpdb->get_var(
+		// The claim is not kept either — it is not in the whitelist at all.
+		$profile = json_decode( (string) $row->profile_json, true );
+		$a->not( isset( $profile['recommendedMinistries'] ), 'the posted list is not stored' );
+		$a->not( isset( $profile['rankedTeams'] ), 'nor any other ranking the browser invents' );
+
+		// Placement rows follow the stored slugs exactly, nothing more.
+		$placed = $wpdb->get_col(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-				'SELECT profile_json FROM ' . Schema::table( 'submissions' ) . ' WHERE id = %d',
-				(int) $row->id
-			)
-		), true );
-
-		$a->not( isset( $stored['rankedTeams'] ), 'the displayed ranking is not stored' );
-		$a->lacks( 'Administration', (string) wp_json_encode( $stored ), 'nor is any team from it' );
-
-		$placement_teams = $wpdb->get_col(
-			$wpdb->prepare(
-				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-				'SELECT team_id FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d',
+				'SELECT t.slug FROM ' . Schema::table( 'placements' ) . ' p'
+				. ' INNER JOIN ' . Schema::table( 'teams' ) . ' t ON t.id = p.team_id'
+				. ' WHERE p.submission_id = %d ORDER BY t.slug',
 				(int) $row->id
 			)
 		);
-		$prayer = \Serve_Dashboard\Teams::get_by_slug( 'prayer' );
-		$a->same(
-			array( (int) $prayer->id ),
-			array_map( 'intval', (array) $placement_teams ),
-			'and one placement row exists, for that team alone'
+		sort( $stored );
+		$a->same( $stored, array_map( 'strval', (array) $placed ), 'placement rows match the ranked teams and nothing else' );
+
+		// And a leader of a team it tried to claim still cannot open them.
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => (int) $row->id ),
+			array( '%s', '%s' ),
+			array( '%d' )
 		);
 
-		// A leader of the team the ranking put first still cannot open them.
 		$leader = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
-		$admin_team = $f->lead_team( $leader, 'administration' );
+		$f->lead_team( $leader, 'youth-ministry' );
 		wp_set_current_user( $leader );
 
-		$a->same( array( $admin_team ), \Serve_Dashboard\Roles::visible_team_ids(), 'the leader leads Administration' );
-		$a->not( \Serve_Dashboard\Roles::can_view_submission( (int) $row->id ), 'and still cannot open the profile' );
+		$a->not(
+			\Serve_Dashboard\Roles::can_view_submission( (int) $row->id ),
+			'the leader of the claimed team is refused'
+		);
 	}
 );
 
