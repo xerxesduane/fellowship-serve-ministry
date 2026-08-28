@@ -567,6 +567,24 @@ substring matching made every passion for women count as evidence for the men's
 ministry — wrong, and the kind of wrong a leader notices before the software
 does.
 
+### Languages are not evidence for a team either
+
+Same reasoning as personality, found the same way. "Speaks Tagalog, English" was
+filed as an abilities reason, and it fired identically for all sixteen teams — so
+every multilingual person gained the abilities dimension everywhere, whether one
+of their actual abilities matched or not. That inflated the dimension count
+ranking sorts on and helped satisfy the two-dimension requirement for "Strong
+match" with evidence that says nothing about the team.
+
+It surfaced only once the demo people were given real languages and unrelated
+teams started climbing their lists — which is the argument for demo data that
+looks like a congregation rather than five copies of one person.
+
+Languages stay in front of the leader: they are part of the Abilities section of
+the profile, their own column in the people list, and a filter on it. In a
+congregation speaking six languages that is worth surfacing, as something read
+about a person rather than as a reason for a team.
+
 ### What ordering counts, and what it deliberately does not
 
 Distinct SHAPE dimensions, then readable reasons, then gift selectivity.

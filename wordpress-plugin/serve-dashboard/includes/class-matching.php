@@ -114,10 +114,9 @@ final class Matching {
 			);
 		}
 
-		// 3. Abilities, including languages. The assessment has always
-		// collected these and nothing has ever used them.
+		// 3. Abilities. The assessment has always collected these and, before
+		// 1.12.0, nothing had ever used them.
 		$abilities = (array) ( $profile['abilities'] ?? array() );
-		$languages = Submissions::decode_list( $submission->languages );
 
 		foreach ( self::term_overlap( $abilities, $vocabulary ) as $term ) {
 			$reasons[] = array(
@@ -130,16 +129,25 @@ final class Matching {
 			);
 		}
 
-		if ( count( $languages ) > 1 ) {
-			$reasons[] = array(
-				'dimension' => 'abilities',
-				'label'     => sprintf(
-					/* translators: %s: comma-separated language list. */
-					__( 'Speaks %s', 'serve-dashboard' ),
-					implode( ', ', $languages )
-				),
-			);
-		}
+		/*
+		 * Speaking more than one language is not a reason for any particular
+		 * team, and it used to be filed as one.
+		 *
+		 * It fired identically for all sixteen teams, so every multilingual
+		 * person gained the abilities dimension everywhere whether a single
+		 * ability of theirs matched or not — inflating the dimension count that
+		 * ranking sorts on, and helping satisfy the two-dimension requirement
+		 * for "Strong match" with evidence that says nothing about the team.
+		 * That is exactly the reasoning that keeps personality out of this list,
+		 * and it applied here too; it was found by seeding demo people with real
+		 * languages and watching unrelated teams climb.
+		 *
+		 * Languages are still in front of the leader: they are part of the
+		 * Abilities section of the profile, they are their own column in the
+		 * people list, and they are a filter on it. In a congregation speaking
+		 * six languages that is worth surfacing — but as something a leader
+		 * reads about a person, not as evidence for a team.
+		 */
 
 		// 4. Experience. Redacted profiles legitimately have none of this, and
 		// the absence must not read as "no relevant experience".

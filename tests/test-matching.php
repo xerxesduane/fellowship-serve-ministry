@@ -527,3 +527,69 @@ test(
 		$a->same( $before, Teams::keyword_list( Teams::get_by_slug( 'production' ) ), 'restored for the next run' );
 	}
 );
+
+test(
+	'speaking several languages is not evidence for any particular team',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		/*
+		 * Found by giving the demo people real languages and watching unrelated
+		 * teams climb. "Speaks Tagalog, English" was filed as an abilities
+		 * reason, and it fired the same way for all sixteen teams — so every
+		 * multilingual person gained the abilities dimension everywhere, whether
+		 * a single ability of theirs matched or not. That inflates the dimension
+		 * count ranking sorts on, and helps satisfy the two-dimension
+		 * requirement for "Strong match" on evidence that says nothing about the
+		 * team. It is the same reasoning that keeps personality out of the
+		 * reason list.
+		 */
+		$mono = $f->verified_submission(
+			array(
+				'languages' => array( 'English' ),
+				'profile'   => array( 'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ) ),
+			)
+		);
+		$poly = $f->verified_submission(
+			array(
+				'languages' => array( 'Tagalog', 'Arabic', 'English' ),
+				'profile'   => array( 'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ) ),
+			)
+		);
+
+		$profile = array( 'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ) );
+
+		// Prayer shares Mercy; Administration shares nothing with this profile.
+		foreach ( array( 'prayer', 'administration' ) as $slug ) {
+			$team = Teams::get_by_slug( $slug );
+
+			$one  = Matching::explain( Submissions::get( $mono ), $team, $profile );
+			$many = Matching::explain( Submissions::get( $poly ), $team, $profile );
+
+			$a->same(
+				count( $one['reasons'] ),
+				count( $many['reasons'] ),
+				"{$slug}: three languages add no reasons a single one does not"
+			);
+			$a->same(
+				(int) $one['dimensions_hit'],
+				(int) $many['dimensions_hit'],
+				"{$slug}: nor a SHAPE dimension"
+			);
+			$a->same(
+				$one['strength'],
+				$many['strength'],
+				"{$slug}: nor any strength the evidence does not support"
+			);
+		}
+
+		// And nothing claims it as a reason on a team that has no language need.
+		$labels = array_column(
+			Matching::explain( Submissions::get( $poly ), Teams::get_by_slug( 'administration' ), $profile )['reasons'],
+			'label'
+		);
+		foreach ( $labels as $label ) {
+			$a->lacks( 'Speaks', $label, 'no team is offered a language as its reason' );
+		}
+	}
+);
