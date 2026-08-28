@@ -191,29 +191,10 @@ $experience_prompts = array(
 );
 
 global $wpdb;
-$created = 0;
-$skipped  = 0;
+$created   = 0;
+$refreshed = 0;
 
 foreach ( $people as $person ) {
-	/*
-	 * Re-runnable. Without this a second run silently doubles every demo
-	 * person, and the duplicates are indistinguishable from the originals in
-	 * the dashboard.
-	 */
-	$exists = $wpdb->get_var(
-		$wpdb->prepare(
-			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-			'SELECT id FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
-			$person['email']
-		)
-	);
-
-	if ( $exists ) {
-		\WP_CLI::log( "Already seeded, skipping: {$person['name']}" );
-		++$skipped;
-		continue;
-	}
-
 	$experiences = array();
 	foreach ( $experience_prompts as $key => $prompt ) {
 		if ( ! empty( $person[ $key ] ) ) {
@@ -272,6 +253,43 @@ foreach ( $people as $person ) {
 	);
 
 	$now = current_time( 'mysql', true );
+
+	/*
+	 * Re-runnable, and it refreshes rather than skips.
+	 *
+	 * Skipping was the first version and left demo rows frozen at whatever the
+	 * seeder said the day they were created — which is exactly the state that
+	 * made the flat profiles survive into 1.17.0 unnoticed. An existing person
+	 * has their *answers* rewritten and nothing else: status, follow-up date,
+	 * placements and notes are left alone, because a developer part-way through
+	 * working the pipeline should not have it reset underneath them.
+	 */
+	$existing = (int) $wpdb->get_var(
+		$wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+			'SELECT id FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
+			$person['email']
+		)
+	);
+
+	if ( $existing ) {
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array(
+				'gifts_likely' => wp_json_encode( $person['likely'] ),
+				'languages'    => wp_json_encode( $person['langs'] ),
+				'profile_json' => wp_json_encode( $profile ),
+				'updated_at'   => $now,
+			),
+			array( 'id' => $existing ),
+			array( '%s', '%s', '%s', '%s' ),
+			array( '%d' )
+		);
+
+		\WP_CLI::log( "Refreshed answers for: {$person['name']}" );
+		++$refreshed;
+		continue;
+	}
 
 	$wpdb->insert(
 		Schema::table( 'submissions' ),
@@ -347,6 +365,6 @@ foreach ( $capacity as $slug => list( $target, $min, $current ) ) {
 }
 
 \WP_CLI::success(
-	"Seeded {$created} demo submissions ({$skipped} already present) and capacity for "
+	"Seeded {$created} demo submissions, refreshed {$refreshed}, and set capacity for "
 	. count( $capacity ) . ' teams.'
 );
