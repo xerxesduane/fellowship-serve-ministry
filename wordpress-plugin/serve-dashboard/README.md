@@ -385,6 +385,36 @@ team:
 Ranking is by distinct dimensions supported, then by selectivity, then by reason
 count. Team need is deliberately absent from the ordering.
 
+### Personality is read, and deliberately not counted
+
+The assessment has collected the four personality couplets since the beginning
+and the profile has always displayed them, but nothing interpreted them — while
+the presentation lists personality among the five things matching considers.
+
+It is now interpreted, in the one direction the data honestly supports. Each
+tendency produces a note about *how* the person is likely to serve, shown once
+per person under the suggestions:
+
+> **Be Introverted.** Gains energy from quiet reflection and listens well. Depth
+> with a few people may suit better than a busy front-of-house role.
+
+That is the workbook's own position: personality governs the manner in which a
+gift is exercised, not which team somebody belongs on, and serving against the
+grain of it "creates tension and discomfort … and produces less than the best
+results".
+
+It is kept out of `reasons`, out of `dimensions_hit`, and out of strength, for a
+reason worth stating plainly. Nothing in the teams table describes what a role
+is actually like, so the same four tendencies fire identically for all sixteen
+teams and carry no information about any of them. Counting them would have added
+a dimension and several reasons to every suggestion at once — satisfying the
+corroboration rule above with evidence that says nothing about the team, and
+handing out "Strong match" on the strength of a temperament. A test holds that
+line, and a mutation that files personality as a reason fails it.
+
+Making personality genuinely team-specific needs per-team role attributes that
+do not exist yet.
+
 ## Follow-up ownership and conversation history
 
 Two columns existed that nothing wrote to, leaving two holes: nobody owned a
@@ -423,6 +453,43 @@ would have quietly excluded exactly the person most likely to want it.
 
 Names and dates only. No gifts, no notes: email is not a place to put a
 S.H.A.P.E. profile.
+
+It also carries the one item that is about the tool rather than a person: team
+headcounts that placements have overtaken. See below.
+
+## Headcounts that have gone stale get asked about
+
+`current_headcount` is typed in by hand. Until leaders could work the pipeline
+nobody could be placed, so it never drifted; now every placement moves it a
+little further from the truth, and the gap panel is one of the four things the
+deck promises.
+
+Reporting that drift was only half the job. The note on the gap bars is a
+*disclosure* — it has to be scrolled to, and it looks the same in week ten as in
+week one, so across a pilot it becomes furniture while the number behind it gets
+steadily worse. Nobody was ever asked to correct it.
+
+Two places now ask:
+
+- a **Confirm these headcounts** card on the dashboard, hidden unless something
+  has actually drifted, linking to the screen where the number is edited
+- a section in the **weekly digest**, which can now be the sole reason an email
+  goes out — so the subject line has a third form rather than claiming people
+  are waiting when they are not
+
+Both are restricted to leaders who hold `serve_manage_teams`. A ministry leader
+can place people, and so cause the drift, but cannot edit team capacity; asking
+them to confirm a number they may not change would be an instruction to do
+nothing. They still see the drift note on the bars.
+
+Only teams with real drift are listed. A figure nobody has touched in months is
+fine if nobody has been placed on that team — age alone is not evidence of
+error, and nudging on it would train leaders to ignore the nudge. "Never
+confirmed" is reported as never, not as zero days ago.
+
+The proper fix is upstream: Planning Center knows the actual roster, and
+`docs/planning-center-prepare.md` §7 argues for a read-only headcount as the
+first integration slice, after which this nudge becomes unnecessary.
 
 ## Continue on another device
 

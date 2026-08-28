@@ -12,6 +12,11 @@
  * heart, abilities and experience — so a leader can judge the suggestion rather
  * than trust a number. A suggestion is a conversation starter, never a decision.
  *
+ * Personality is handled separately and on purpose. See `personality_notes()`:
+ * it describes *how* somebody is likely to serve rather than *which* team they
+ * belong on, so it is surfaced once per person alongside the suggestions and is
+ * kept out of ranking and strength entirely.
+ *
  * @package ServeDashboard
  */
 
@@ -143,7 +148,7 @@ final class Matching {
 				$experiences = array_merge( $experiences, (array) $values );
 			}
 
-			foreach ( self::term_overlap( $experiences, $team->name ) as $term ) {
+			foreach ( self::term_overlap( $experiences, $vocabulary ) as $term ) {
 				$reasons[] = array(
 					'dimension' => 'experience',
 					'label'     => sprintf(
@@ -154,6 +159,28 @@ final class Matching {
 				);
 			}
 		}
+
+		/*
+		 * 5. Personality is deliberately absent from this list.
+		 *
+		 * The workbook is explicit that personality governs how and where a
+		 * person exercises a gift, not which team they belong on: two people
+		 * with the same gift of evangelism express it differently if one is
+		 * introverted and the other extroverted.
+		 *
+		 * It is also constant across teams. Nothing in the teams table
+		 * describes what a role is actually like, so the same four tendencies
+		 * would fire identically for every suggestion — carrying no
+		 * information about any of them. Adding it to `$reasons` would inflate
+		 * both the dimension count and the reason count for every team at
+		 * once, which is worse than useless: it would let any team with two
+		 * gift overlaps reach "Strong match" on evidence that says nothing
+		 * about that team, defeating the corroboration rule below.
+		 *
+		 * So it is reported by `personality_notes()`, once per person, as
+		 * context for the conversation. Making it genuinely team-specific
+		 * needs per-team role attributes that do not exist yet.
+		 */
 
 		$claimed    = count( $likely );
 		$dimensions = count( array_unique( array_column( $reasons, 'dimension' ) ) );

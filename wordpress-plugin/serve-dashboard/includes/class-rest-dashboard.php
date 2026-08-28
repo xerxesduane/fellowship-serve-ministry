@@ -408,6 +408,29 @@ final class Rest_Dashboard {
 			);
 		}
 
+		/*
+		 * Teams whose hand-typed headcount has been overtaken by placements.
+		 *
+		 * Only sent to somebody who can actually correct it. A ministry leader
+		 * can place people — and so cause the drift — but cannot edit team
+		 * capacity, so a card asking them to confirm a number they have no
+		 * permission to change would be an instruction to do nothing. They
+		 * still see the drift note on the gap bars themselves.
+		 */
+		$headcount_checks = array();
+		if ( current_user_can( Roles::CAP_MANAGE_TEAMS ) ) {
+			foreach ( Teams::needs_headcount_check( Roles::visible_team_ids() ) as $team ) {
+				$headcount_checks[] = array(
+					'id'          => (int) $team->id,
+					'name'        => $team->name,
+					'current'     => (int) $team->current_headcount,
+					'placedSince' => (int) $team->placed_since,
+					// Null means never confirmed, which is not "today".
+					'daysSince'   => $team->days_since_check,
+				);
+			}
+		}
+
 		$teams = array();
 		foreach ( Teams::all() as $team ) {
 			$teams[] = array(
@@ -440,6 +463,8 @@ final class Rest_Dashboard {
 				// five so a busy week does not push the newest arrival off.
 				'priority'       => self::rows( Submissions::query( array( 'limit' => 6, 'orderby' => 'waiting' ) ) ),
 				'gaps'           => $gaps,
+				// Numbers somebody needs to re-confirm, not teams short of people.
+				'headcountChecks' => $headcount_checks,
 				'followups'      => Metrics::upcoming_followups(),
 				// People placed a while ago that nobody has looked in on.
 				'settling'       => Submissions::settling_in(),
@@ -534,6 +559,12 @@ final class Rest_Dashboard {
 				'shape'          => self::shape_dimensions( $profile, $submission ),
 				'redacted'       => ! empty( $profile['_redacted'] ),
 				'matches'        => Matching::for_submission( $submission, $profile ),
+				/*
+				 * Sent once, not per match. Personality shapes how a person
+				 * serves rather than which team they belong on, so it sits
+				 * beside the suggestions instead of inside each one.
+				 */
+				'personalityNotes' => Matching::personality_notes( $profile ),
 				'placements'     => array_map(
 					static fn( $p ) => array(
 						'teamId'   => (int) $p->team_id,

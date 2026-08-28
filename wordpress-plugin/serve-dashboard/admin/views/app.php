@@ -207,6 +207,31 @@ $nav = array(
 								<div data-serve="gaps"><?php self::skeleton_rows( 4 ); ?></div>
 							</div>
 
+							<?php
+							/*
+							 * The gaps above are worked out from a number
+							 * somebody types in by hand. Now that people can
+							 * actually be placed, that number goes stale — and
+							 * the note on the bars discloses the drift without
+							 * ever asking anybody to correct it, which over a
+							 * pilot means a quietly worsening figure nobody
+							 * owns. This card is the ask.
+							 *
+							 * Only rendered for leaders who can edit team
+							 * capacity; the server sends the list to nobody
+							 * else.
+							 */
+							?>
+							<div class="serve-card" data-serve="headcount-card" hidden>
+								<div class="serve-card__head">
+									<h2><?php esc_html_e( 'Confirm these headcounts', 'serve-dashboard' ); ?></h2>
+								</div>
+								<p class="serve-card__hint">
+									<?php esc_html_e( 'People have been placed since these were last confirmed, so the gaps above are overstated until somebody checks them.', 'serve-dashboard' ); ?>
+								</p>
+								<div data-serve="headcount-checks"></div>
+							</div>
+
 							<div class="serve-card">
 								<div class="serve-card__head">
 									<h2><?php esc_html_e( 'Quick follow-ups', 'serve-dashboard' ); ?></h2>

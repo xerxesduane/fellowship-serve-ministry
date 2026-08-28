@@ -257,6 +257,47 @@ function renderGaps(gaps) {
 	}).join('');
 }
 
+/**
+ * Teams whose typed-in headcount has been overtaken by placements.
+ *
+ * The note on the gap bars states the drift. This is the only thing in the
+ * dashboard that asks somebody to go and correct it, which is the whole
+ * difference between an error that is disclosed and one that gets fixed.
+ *
+ * Its own card rather than a line on the gaps panel: folding it in would make
+ * it one more piece of grey text on the thing it is a warning about, and the
+ * warning has been ignorable precisely because it looked like part of the
+ * furniture. Hidden when nothing has drifted, and never populated for leaders
+ * who cannot edit capacity — the server does not send them the list.
+ */
+function renderHeadcountChecks(items) {
+	const card = $('headcount-card');
+	if (!card) {
+		return;
+	}
+
+	if (!items || !items.length) {
+		card.hidden = true;
+		return;
+	}
+
+	card.hidden = false;
+	$('headcount-checks').innerHTML = items.map((item) => {
+		// null is "never confirmed", which is emphatically not "0 days ago".
+		const when = item.daysSince === null
+			? 'never confirmed'
+			: `confirmed ${item.daysSince} day${item.daysSince === 1 ? '' : 's'} ago`;
+
+		return `<div class="serve-fu serve-fu--settling">
+			<span class="serve-fu__open">
+				<span class="serve-fu__name">${esc(item.name)}</span>
+				<span class="serve-fu__when is-attention">${esc(item.placedSince)} placed since · ${esc(when)}</span>
+			</span>
+			<a class="serve-btn serve-btn--secondary serve-btn--sm" href="${esc(CONFIG.teamsUrl)}">Confirm</a>
+		</div>`;
+	}).join('');
+}
+
 function renderFollowups(items) {
 	if (!items.length) {
 		$('followups').innerHTML = emptyState({
@@ -466,6 +507,29 @@ const drawer = {
 					${match.opening_note ? `<p class="serve-match__context">${esc(match.opening_note)}</p>` : ''}
 				</div>`).join('')
 			: `<p class="serve-note serve-note--muted">No team suggestions are available for this profile. That is not a problem — it means the conversation starts open.</p>`;
+
+		/*
+		 * How this person is likely to serve, whichever team it turns out to be.
+		 *
+		 * The four personality couplets have been collected and displayed since
+		 * the beginning and nothing ever interpreted them, while the deck lists
+		 * personality among the five things matching considers.
+		 *
+		 * Shown once, under the suggestions rather than inside each one, and
+		 * headed so it cannot be read as evidence for a particular team: the
+		 * same four tendencies apply to all of them. Repeating the block per
+		 * team would imply it told you something about the choice between them.
+		 */
+		const personality = (person.personalityNotes && person.personalityNotes.length)
+			? `<div class="serve-personality">
+					<span class="serve-personality__head">However the conversation goes, how they are likely to serve</span>
+					${person.personalityNotes.map((item) => `
+						<p class="serve-personality__item">
+							<strong>${esc(item.tendency)}.</strong> ${esc(item.note)}
+						</p>`).join('')}
+					<p class="serve-card__hint">Temperament shapes how a role is best arranged, not whether somebody is suited to it. There is no wrong answer here.</p>
+				</div>`
+			: '';
 
 		const safeguarding = person.safeguarding.relevant
 			? `<p class="serve-note ${person.safeguarding.cleared ? 'serve-note--info' : 'serve-note--warn'}">
@@ -966,6 +1030,7 @@ function loadDashboard() {
 
 			renderMetrics(data.metrics);
 			renderGaps(data.gaps);
+			renderHeadcountChecks(data.headcountChecks);
 			renderFollowups(data.followups);
 			renderSettling(data.settling);
 			renderGifts(data.gifts);

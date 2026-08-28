@@ -231,6 +231,105 @@ final class Teams {
 	}
 
 	/**
+	 * How many placements make a headcount worth re-checking.
+	 *
+	 * One. A figure that is wrong by one is wrong, and during a pilot with a
+	 * single team and a handful of profiles one placement is a meaningful
+	 * share of the total. Set higher only if the weekly nudge becomes noise at
+	 * real volume.
+	 */
+	private const DRIFT_NUDGE_AT = 1;
+
+	/**
+	 * Teams whose headcount somebody now needs to look at.
+	 *
+	 * `placed_since_check()` states the drift and `gaps()` carries it to the
+	 * panel, but nothing so far has asked anybody to do something about it.
+	 * The inline note is only read by whoever scrolls to it, and it looks
+	 * exactly the same in week ten as in week one — so across a pilot it
+	 * becomes wallpaper while the figure it qualifies drifts further from the
+	 * truth. Disclosing a stale number is not the same as getting it fixed.
+	 *
+	 * Only teams with actual drift are returned. A figure nobody has touched
+	 * in months is perfectly fine if nobody has been placed on that team; age
+	 * alone is not evidence of error, and nudging on it would train leaders to
+	 * ignore the nudge.
+	 *
+	 * @param int[]|null $team_ids Restrict to these team ids. Null means every
+	 *                             team, matching `Roles::visible_team_ids()`,
+	 *                             which returns null for an unrestricted user.
+	 * @return array<int,object> Team rows carrying placed_since and
+	 *                           days_since_check, worst drift first.
+	 */
+	public static function needs_headcount_check( ?array $team_ids = null ): array {
+		$since = self::placed_since_check();
+
+		if ( ! $since ) {
+			return array();
+		}
+
+		$out = array();
+
+		foreach ( self::all() as $team ) {
+			$id = (int) $team->id;
+
+			if ( null !== $team_ids && ! in_array( $id, $team_ids, true ) ) {
+				continue;
+			}
+
+			$drift = $since[ $id ] ?? 0;
+
+			if ( $drift < self::DRIFT_NUDGE_AT ) {
+				continue;
+			}
+
+			$team->placed_since     = $drift;
+			$team->days_since_check = self::days_since_check( $team );
+
+			$out[] = $team;
+		}
+
+		/*
+		 * Worst drift first, then the longest unchecked. Deliberately not by
+		 * gap size: this list is about the accuracy of a number, not about
+		 * which team is shortest of people.
+		 */
+		usort(
+			$out,
+			static function ( $a, $b ) {
+				if ( $a->placed_since !== $b->placed_since ) {
+					return $b->placed_since <=> $a->placed_since;
+				}
+
+				return ( $b->days_since_check ?? PHP_INT_MAX ) <=> ( $a->days_since_check ?? PHP_INT_MAX );
+			}
+		);
+
+		return $out;
+	}
+
+	/**
+	 * Whole days since anybody confirmed this team's headcount.
+	 *
+	 * Null when it has never been confirmed — which is not zero days, and must
+	 * not be rendered as "checked today".
+	 */
+	private static function days_since_check( object $team ): ?int {
+		if ( empty( $team->headcount_checked_at ) ) {
+			return null;
+		}
+
+		// Stored by `save()` as UTC via current_time( 'mysql', true ).
+		$checked = strtotime( (string) $team->headcount_checked_at . ' UTC' );
+
+		if ( ! $checked ) {
+			return null;
+		}
+
+		return max( 0, (int) floor( ( time() - $checked ) / DAY_IN_SECONDS ) );
+	}
+
+	/**
 	 * Save the editable fields of one team.
 	 *
 	 * @param array<string,mixed> $data Raw, unsanitised input.

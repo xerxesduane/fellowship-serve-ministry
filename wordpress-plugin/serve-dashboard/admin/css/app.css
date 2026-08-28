@@ -1475,3 +1475,109 @@ button.serve-metric:hover {
 	font-size: .8125rem;
 	white-space: nowrap;
 }
+
+/*
+ * How somebody is likely to serve, under the team suggestions.
+ *
+ * Visually separated from the match cards above it, because it is about the
+ * person rather than about any of the teams and must not be mistaken for
+ * evidence for one of them.
+ */
+.serve-personality {
+	margin-top: var(--serve-space-4);
+	padding: var(--serve-space-3);
+	border: 1px dashed var(--serve-border);
+	border-radius: var(--serve-radius-sm);
+	background: var(--serve-sand);
+}
+
+.serve-personality__head {
+	display: block;
+	margin-bottom: var(--serve-space-2);
+	font-size: .75rem;
+	font-weight: 700;
+	letter-spacing: .02em;
+	text-transform: uppercase;
+	color: var(--serve-text-muted);
+}
+
+.serve-personality__item {
+	margin: 0 0 var(--serve-space-2);
+	font-size: .8125rem;
+	line-height: 1.5;
+}
+
+.serve-personality__item:last-of-type {
+	margin-bottom: 0;
+}
+
+/* ── Plain explanations for people who have not been trained ───────────── */
+
+/*
+ * The stage legend. Closed by default, so it is free for anybody who already
+ * knows and one click for anybody who does not.
+ */
+.serve-legend {
+	margin-top: var(--serve-space-3);
+	font-size: .8125rem;
+}
+
+.serve-legend > summary {
+	cursor: pointer;
+	padding: var(--serve-space-2) 0;
+	font-weight: 600;
+	color: var(--serve-text-muted);
+}
+
+.serve-legend > summary:hover {
+	color: var(--serve-text);
+}
+
+.serve-legend__list {
+	display: grid;
+	gap: var(--serve-space-2);
+	margin: 0 0 var(--serve-space-2);
+	padding: var(--serve-space-3);
+	border-radius: var(--serve-radius-sm);
+	background: var(--serve-sand);
+}
+
+.serve-legend__list dt {
+	font-weight: 700;
+}
+
+.serve-legend__list dd {
+	margin: 0;
+	color: var(--serve-text-muted);
+	line-height: 1.45;
+}
+
+/* Two columns once there is room; the definitions are short. */
+@media (min-width: 768px) {
+	.serve-legend__list {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--serve-space-2) var(--serve-space-5);
+	}
+}
+
+/* Short, readable statements — used on the support view. */
+/*
+ * App-scoped so it outranks `.serve-app ul`, which zeroes padding and clears
+ * the marker at 0,1,1 — a bare `.serve-plainlist` loses to it and renders as
+ * unindented, unbulleted text.
+ */
+.serve-app .serve-plainlist {
+	margin: var(--serve-space-2) 0 0;
+	padding-left: var(--serve-space-5);
+	list-style: disc;
+	font-size: .875rem;
+	line-height: 1.55;
+}
+
+.serve-plainlist li {
+	margin-bottom: var(--serve-space-2);
+}
+
+.serve-plainlist li:last-child {
+	margin-bottom: 0;
+}

@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Serve_Test;
 
+use Serve_Dashboard\Rest_Dashboard;
 use Serve_Dashboard\Roles;
 use Serve_Dashboard\Schema;
 use Serve_Dashboard\Submissions;
@@ -217,5 +218,61 @@ test(
 		// The plain date ordering is unchanged, and is what it used to do.
 		$by_date = Submissions::query( array( 'orderby' => 'next_action_at', 'limit' => 200 ) );
 		$a->ok( $position( $by_date, $older ) < $position( $by_date, $fresh ), 'sorting by date still sorts by date' );
+	}
+);
+
+/*
+ * The dashboard payload's contract for stale headcounts.
+ *
+ * The browser prints "never confirmed" when `daysSince` is null and
+ * "confirmed N days ago" otherwise. If this ever arrived as 0 instead of null
+ * the card would state that a number nobody has ever checked was checked today
+ * — precisely the class of quiet falsehood the whole feature exists to remove
+ * — and no server-side test would have noticed.
+ */
+test(
+	'stale headcounts reach the browser in the shape it expects, and only for those who can act',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$team_id = $f->set_team_capacity( 'events', 12, 5 );
+		$team    = Schema::table( 'teams' );
+		$wpdb->query( $wpdb->prepare( "UPDATE {$team} SET headcount_checked_at = NULL WHERE id = %d", $team_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+		$id = $f->verified_submission( array( 'suggested_teams' => array( 'events' ) ) );
+		Submissions::set_status( $id, Schema::STATUS_PLACED, $team_id );
+
+		$data = Rest_Dashboard::dashboard()->get_data();
+
+		$a->ok( isset( $data['headcountChecks'] ), 'the payload carries the list' );
+
+		$row = null;
+		foreach ( $data['headcountChecks'] as $candidate ) {
+			if ( (int) $candidate['id'] === $team_id ) {
+				$row = $candidate;
+			}
+		}
+
+		$a->ok( null !== $row, 'the drifted team is in it' );
+		$a->same( 'Events', $row['name'], 'named' );
+		$a->same( 5, $row['current'], 'with the figure as recorded' );
+		$a->same( 1, $row['placedSince'], 'and how far out it is' );
+		// Not 0, and not a string: the browser branches on identity with null.
+		$a->same( null, $row['daysSince'], 'never confirmed travels as null' );
+
+		/*
+		 * A ministry leader leading this very team still gets an empty list.
+		 * They caused the drift and cannot correct it. Made leader of the team
+		 * on purpose — without that the scope is empty and this would pass
+		 * whether the capability were checked or not.
+		 */
+		$leader = $f->user( Roles::ROLE_LEADER );
+		$f->lead_team( $leader, 'events' );
+		wp_set_current_user( $leader );
+
+		$a->not( current_user_can( Roles::CAP_MANAGE_TEAMS ), 'the leader cannot edit capacity' );
+		$a->same( array( $team_id ), Roles::visible_team_ids(), 'but does lead the drifted team' );
+		$a->same( 0, count( Rest_Dashboard::dashboard()->get_data()['headcountChecks'] ), 'and is sent nothing to confirm' );
 	}
 );
