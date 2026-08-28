@@ -110,7 +110,8 @@ body.serve-app-fullscreen {
  * Strips WordPress's own button chrome from the bare <button> elements this app
  * uses as rows, links and toggles.
  *
- * `.serve-btn` is excluded because it brings its own chrome, and the exclusion
+ * `.serve-btn` and `.serve-card` are excluded because they bring their own
+ * chrome, and the exclusion
  * is the point: as a blanket `.serve-app button` this rule outranked
  * `.serve-btn--secondary` on specificity — 0,1,1 against 0,1,0 — so its
  * `background: none; border: 0` won, and every Send, Save and Confirm button in
@@ -118,7 +119,7 @@ body.serve-app-fullscreen {
  * correctly, which is why it survived: it looked like a design choice rather
  * than a button that had lost its outline.
  */
-.serve-app button:not(.serve-btn) {
+.serve-app button:not(.serve-btn):not(.serve-card) {
 	font: inherit;
 	color: inherit;
 	background: none;
@@ -1870,4 +1871,34 @@ button.serve-metric:hover {
 	letter-spacing: .06em;
 	text-transform: uppercase;
 	color: var(--serve-teal-dark);
+}
+
+/*
+ * The hidden attribute must beat a class that sets display.
+ *
+ * `[hidden]` works through a user-agent rule of specificity (0,0,1), so any
+ * class setting `display` outranks it and the element stays on screen with its
+ * attribute set. The calm "nothing is waiting on you today" card did exactly
+ * that: `.serve-today-clear { display: flex }` kept it visible above a list of
+ * six people who were, in fact, waiting — the attribute was correct and the
+ * page still lied. Nothing in the PHP suite can see that, and it only showed up
+ * in a real render.
+ *
+ * One of the few places `!important` earns its keep: the whole purpose of this
+ * declaration is that nothing may override it.
+ */
+.serve-app [hidden] {
+	display: none !important;
+}
+
+/*
+ * Three of the four metric tiles are buttons, because tapping them filters the
+ * list; the fourth is a div because "profiles completed" filters nothing. The
+ * blanket button reset stripped the card background and border from the three,
+ * so the row had one tile with chrome and three without — visible on every
+ * dashboard since the tiles became buttons, and invisible to a PHP test suite.
+ */
+.serve-app .serve-metric {
+	background: var(--serve-surface);
+	border: 1px solid var(--serve-border);
 }
