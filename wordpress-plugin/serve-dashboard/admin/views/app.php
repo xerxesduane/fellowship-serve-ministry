@@ -40,6 +40,18 @@ $nav = array(
 		'icon'  => 'clock',
 		'badge' => true,
 	),
+	/*
+	 * Reporting friction used to be a card wedged under the dashboard's right
+	 * column, which put a form nobody was looking for in the way of the lists
+	 * everybody was. It is its own place now, reachable from the sidebar on
+	 * every view — which keeps it as close to hand as it was before, without
+	 * spending dashboard space on it.
+	 */
+	array(
+		'key'   => 'support',
+		'label' => __( 'Contact support', 'serve-dashboard' ),
+		'icon'  => 'tool',
+	),
 );
 ?>
 <div class="serve-app" id="serve-app" data-view="dashboard">
@@ -193,6 +205,7 @@ $nav = array(
 							<p class="serve-card__hint">
 								<?php esc_html_e( 'Anyone nobody has spoken to yet comes first. A suggested team is a conversation starter, not a decision.', 'serve-dashboard' ); ?>
 							</p>
+							<?php self::stage_legend(); ?>
 							<div data-serve="priority"><?php self::skeleton_rows( 5 ); ?></div>
 						</div>
 
@@ -259,40 +272,6 @@ $nav = array(
 								<div data-serve="settling"></div>
 							</div>
 
-							<?php
-							/*
-							 * The pilot is supposed to surface friction, and the
-							 * figures cannot: they count what happened, not
-							 * whether it made sense. Kept in reach rather than
-							 * buried behind a menu, because the moment somebody
-							 * hits the problem is the only moment they will say
-							 * anything about it.
-							 */
-							?>
-							<div class="serve-card">
-								<div class="serve-card__head">
-									<h2><?php esc_html_e( 'Something not working?', 'serve-dashboard' ); ?></h2>
-								</div>
-								<p class="serve-card__hint">
-									<?php esc_html_e( 'Say so while it is fresh. This goes to whoever is running the pilot, is about the tool rather than about a person, and nobody is judged by it.', 'serve-dashboard' ); ?>
-								</p>
-
-								<form class="serve-stageform" data-friction-form>
-									<label for="serve-friction-area"><?php esc_html_e( 'What happened', 'serve-dashboard' ); ?></label>
-									<select id="serve-friction-area" data-friction-area>
-										<?php foreach ( Friction::areas() as $value => $label ) : ?>
-											<option value="<?php echo esc_attr( $value ); ?>"><?php echo esc_html( $label ); ?></option>
-										<?php endforeach; ?>
-									</select>
-
-									<label for="serve-friction-body"><?php esc_html_e( 'Tell us a little more', 'serve-dashboard' ); ?></label>
-									<textarea id="serve-friction-body" rows="3" maxlength="1000" data-friction-body
-										placeholder="<?php esc_attr_e( 'e.g. it suggested Worship for someone whose gifts are all pastoral', 'serve-dashboard' ); ?>"></textarea>
-
-									<button type="submit" class="serve-btn serve-btn--secondary"><?php esc_html_e( 'Send it', 'serve-dashboard' ); ?></button>
-									<p class="serve-note serve-note--warn" data-friction-error hidden></p>
-								</form>
-							</div>
 						</div>
 					</div>
 
@@ -328,9 +307,62 @@ $nav = array(
 						<div class="serve-card__head">
 							<h2 data-serve="people-title"><?php esc_html_e( 'People', 'serve-dashboard' ); ?></h2>
 						</div>
+						<?php self::stage_legend(); ?>
 						<div class="serve-filters" data-serve="filters"></div>
 						<div data-serve="people"><?php self::skeleton_rows( 8 ); ?></div>
 						<div class="serve-pager" data-serve="pager"></div>
+					</div>
+				</section>
+
+				<section class="serve-view" data-serve-region="support" hidden>
+					<div class="serve-card serve-card--primary">
+						<div class="serve-card__head">
+							<h2><?php esc_html_e( 'Something not working? Tell us', 'serve-dashboard' ); ?></h2>
+						</div>
+						<p class="serve-card__hint">
+							<?php esc_html_e( 'You do not need to know what went wrong or how to describe it. If something was confusing, looked incorrect, or simply did not do what you expected, that is worth reporting exactly as you experienced it.', 'serve-dashboard' ); ?>
+						</p>
+
+						<form class="serve-stageform" data-friction-form>
+							<label for="serve-friction-area"><?php esc_html_e( 'What happened', 'serve-dashboard' ); ?></label>
+							<select id="serve-friction-area" data-friction-area>
+								<?php foreach ( Friction::areas() as $value => $label ) : ?>
+									<option value="<?php echo esc_attr( $value ); ?>"><?php echo esc_html( $label ); ?></option>
+								<?php endforeach; ?>
+							</select>
+
+							<label for="serve-friction-body"><?php esc_html_e( 'Tell us a little more', 'serve-dashboard' ); ?></label>
+							<textarea id="serve-friction-body" rows="4" maxlength="1000" data-friction-body
+								placeholder="<?php esc_attr_e( 'e.g. it suggested Worship for someone whose gifts are all pastoral', 'serve-dashboard' ); ?>"></textarea>
+
+							<button type="submit" class="serve-btn serve-btn--secondary"><?php esc_html_e( 'Send it', 'serve-dashboard' ); ?></button>
+							<p class="serve-note serve-note--warn" data-friction-error hidden></p>
+						</form>
+					</div>
+
+					<div class="serve-card">
+						<div class="serve-card__head">
+							<h2><?php esc_html_e( 'What happens to what you send', 'serve-dashboard' ); ?></h2>
+						</div>
+						<ul class="serve-plainlist">
+							<li><?php esc_html_e( 'It goes to whoever is running the pilot, not to the person whose profile you were looking at.', 'serve-dashboard' ); ?></li>
+							<li><?php esc_html_e( 'It is about the tool, never about a person, and nobody is judged by it.', 'serve-dashboard' ); ?></li>
+							<?php
+							/*
+							 * Stated exactly. The audit trail records that a
+							 * report was left and by whom; the wording is
+							 * deliberately kept out of it. Promising that
+							 * nothing at all is recorded would be a false
+							 * reassurance, and the one a leader would feel
+							 * misled by if they ever looked.
+							 */
+							?>
+							<li><?php esc_html_e( 'The audit trail records that you left a report, but not a word of what it said.', 'serve-dashboard' ); ?></li>
+							<li><?php esc_html_e( 'It is read under “How the pilot is going” in Settings, and it is the main way the dashboard gets better.', 'serve-dashboard' ); ?></li>
+						</ul>
+						<p class="serve-card__hint">
+							<?php esc_html_e( 'Anything that needs pastoral care, or is about a person rather than the software, belongs in a conversation instead.', 'serve-dashboard' ); ?>
+						</p>
 					</div>
 				</section>
 			</div>

@@ -82,6 +82,31 @@ final class Schema {
 		);
 	}
 
+	/**
+	 * What each stage actually means, in words.
+	 *
+	 * The labels are short enough to fit in a badge and short enough to be
+	 * guessed at wrongly: "Submitted" could as easily mean a form was sent to
+	 * the person as by them, and nothing on screen said which. A leader who has
+	 * not been trained on the vocabulary should not have to ask.
+	 *
+	 * Keyed by the same constants as `status_labels()`, so the two cannot drift
+	 * apart without it being obvious.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function status_descriptions(): array {
+		return array(
+			self::STATUS_SUBMITTED           => __( 'They finished the questions. Nobody has spoken to them yet.', 'serve-dashboard' ),
+			self::STATUS_CONTACTED           => __( 'Somebody has reached out. Waiting to hear back, or to fix a time.', 'serve-dashboard' ),
+			self::STATUS_CONVERSATION_BOOKED => __( 'A conversation is arranged and has not happened yet.', 'serve-dashboard' ),
+			self::STATUS_TRIAL_SERVE         => __( 'Trying a team out, before either side commits.', 'serve-dashboard' ),
+			self::STATUS_PLACED              => __( 'Serving on a team now.', 'serve-dashboard' ),
+			self::STATUS_PAUSED              => __( 'Not this season. They asked to be picked up again later.', 'serve-dashboard' ),
+			self::STATUS_DECLINED            => __( 'They decided against it for now. That is a complete answer, not a failure.', 'serve-dashboard' ),
+		);
+	}
+
 	public static function table( string $name ): string {
 		global $wpdb;
 

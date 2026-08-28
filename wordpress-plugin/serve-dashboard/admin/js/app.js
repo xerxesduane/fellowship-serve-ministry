@@ -178,20 +178,45 @@ function personRow(person) {
 			<span class="serve-row__name">${esc(person.name)}</span>
 			<span class="serve-row__meta">${esc(person.gifts.join(', ') || '—')}${flags}</span>
 		</span>
-		<span class="serve-row__col">${esc(person.suggestedTeams.join(', ') || '—')}</span>
-		<span class="serve-row__col">${due}</span>
+		<span class="serve-row__col serve-row__col--teams">${esc(person.suggestedTeams.join(', ') || '—')}</span>
+		<span class="serve-row__col serve-row__col--due">${due}</span>
 		<span class="serve-row__aside">
 			${badge(person.status, person.statusLabel)}
 		</span>
 	</button>`;
 }
 
+/**
+ * Column titles for a list of people.
+ *
+ * Without these the four columns were unlabelled and you had to already know
+ * the product to read them: a date with no title could be when somebody
+ * applied, and the badge on the right had no name at all. Plain words, in the
+ * same vocabulary the leader guide uses — "stage" is what that guide calls the
+ * thing you move somebody along.
+ *
+ * The empty cell over the avatar keeps the titles on the same tracks as the
+ * cells they describe. Hidden cells stay in the markup and are hidden by the
+ * same rules as the row cells, so the two can never fall out of step.
+ */
+function rowsHead() {
+	return `<div class="serve-rows__head" aria-hidden="true">
+		<span></span>
+		<span>Name and gifts</span>
+		<span class="serve-row__col serve-row__col--teams">Suggested teams</span>
+		<span class="serve-row__col serve-row__col--due">Next step due</span>
+		<span class="serve-rows__head-aside">Stage</span>
+	</div>`;
+}
+
 function rowsOrEmpty(people, empty) {
+	// No titles over an empty state: there are no columns to title, and a bare
+	// header strip above "nothing to do" reads as something failing to load.
 	if (!people.length) {
 		return emptyState(empty);
 	}
 
-	return `<div class="serve-rows">${people.map(personRow).join('')}</div>`;
+	return `<div class="serve-rows">${rowsHead()}${people.map(personRow).join('')}</div>`;
 }
 
 /* ── Dashboard regions ─────────────────────────────────────────────────── */
@@ -899,7 +924,14 @@ const matching = {
 
 				container.innerHTML = `
 					<p class="serve-card__hint">${esc(gapLine)}</p>
-					<div class="serve-rows">${data.candidates.map((c) => `
+					<div class="serve-rows serve-rows--compact">
+					<div class="serve-rows__head" aria-hidden="true">
+						<span></span>
+						<span>Name and why they might fit</span>
+						<span class="serve-row__col serve-row__col--due">Stage</span>
+						<span class="serve-rows__head-aside">Strength of evidence</span>
+					</div>
+					${data.candidates.map((c) => `
 						<button type="button" class="serve-row" data-person="${esc(c.id)}">
 							<span class="serve-avatar serve-avatar--sm" aria-hidden="true">${esc(c.initials)}</span>
 							<span class="serve-row__body">
@@ -910,7 +942,7 @@ const matching = {
 									${c.alreadySuggested ? '' : '<span class="serve-flag serve-flag--stale">not auto-suggested</span>'}
 								</span>
 							</span>
-							<span class="serve-row__col">${esc(c.statusLabel)}</span>
+							<span class="serve-row__col serve-row__col--due">${esc(c.statusLabel)}</span>
 							<span class="serve-row__aside">
 								<span class="serve-badge serve-badge--${c.match.strength === 'strong' ? 'ready' : 'progress'}">
 									<span class="serve-badge__glyph" aria-hidden="true">${c.match.strength === 'strong' ? '●' : '◐'}</span>${esc(c.match.strength_label)}

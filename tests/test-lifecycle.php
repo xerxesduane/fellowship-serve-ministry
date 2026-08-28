@@ -238,6 +238,167 @@ test(
 	}
 );
 
+/*
+ * Reporting the drift was only half of it.
+ *
+ * `placed_since_check()` states that a headcount is out of date and the gap
+ * panel carries the figure, but nothing asked anybody to correct it. A note on
+ * a panel has to be visited to be read, and it looks the same in week ten as
+ * in week one — so over a pilot it becomes furniture while the number behind
+ * the "team gaps" the deck promises drifts further from the truth. These cover
+ * the nudge that closes that loop.
+ */
+test(
+	'a team whose headcount has been overtaken is put forward to be confirmed',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$team_id = $f->set_team_capacity( 'production', 9, 5 );
+		$team    = Schema::table( 'teams' );
+
+		/*
+		 * A fortnight ago, nothing placed since. Set with an hour of slack:
+		 * an exact multiple of 24 hours floors to a day less whenever PHP's
+		 * clock trails the database's by a fraction of a second, which is a
+		 * test that fails once a fortnight for no reason.
+		 */
+		$wpdb->query( $wpdb->prepare( "UPDATE {$team} SET headcount_checked_at = DATE_SUB( UTC_TIMESTAMP(), INTERVAL 337 HOUR ) WHERE id = %d", $team_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		$listed = static function ( array $rows ) use ( $team_id ) {
+			foreach ( $rows as $row ) {
+				if ( (int) $row->id === $team_id ) {
+					return $row;
+				}
+			}
+
+			return null;
+		};
+
+		$a->same( null, $listed( Teams::needs_headcount_check() ), 'an old figure with no placements is not stale, it is just old' );
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+		$id = $f->verified_submission( array( 'suggested_teams' => array( 'production' ) ) );
+		Submissions::set_status( $id, Schema::STATUS_PLACED, $team_id );
+
+		$row = $listed( Teams::needs_headcount_check() );
+
+		$a->ok( null !== $row, 'one placement is enough to ask for a re-check' );
+		$a->same( 1, (int) $row->placed_since, 'and it says how far out the number is' );
+		$a->same( 14, (int) $row->days_since_check, 'and how long since anybody looked' );
+
+		// Confirming it takes the team straight back off the list.
+		Teams::save(
+			$team_id,
+			array( 'target_headcount' => 9, 'current_headcount' => 6, 'min_headcount' => 0, 'requires_safeguarding' => 0, 'is_active' => 1, 'leader_user_id' => 0 )
+		);
+
+		$a->same( null, $listed( Teams::needs_headcount_check() ), 'confirming clears the ask' );
+	}
+);
+
+test(
+	'a headcount nobody has ever confirmed is reported as never, not as today',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$team_id = $f->set_team_capacity( 'administration', 6, 2 );
+		$team    = Schema::table( 'teams' );
+
+		$wpdb->query( $wpdb->prepare( "UPDATE {$team} SET headcount_checked_at = NULL WHERE id = %d", $team_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+		$id = $f->verified_submission( array( 'suggested_teams' => array( 'administration' ) ) );
+		Submissions::set_status( $id, Schema::STATUS_PLACED, $team_id );
+
+		$row = null;
+		foreach ( Teams::needs_headcount_check() as $candidate ) {
+			if ( (int) $candidate->id === $team_id ) {
+				$row = $candidate;
+			}
+		}
+
+		$a->ok( null !== $row, 'it is on the list' );
+		// Zero days would read as "checked today", which is the opposite of true.
+		$a->same( null, $row->days_since_check, 'never confirmed is null, not zero' );
+
+		// And the scoping argument is honoured: a list that does not include
+		// this team excludes it, which is what keeps a leader from being asked
+		// about teams they do not lead.
+		$a->same( 0, count( Teams::needs_headcount_check( array() ) ), 'an empty scope asks about nothing' );
+		$a->same( 1, count( Teams::needs_headcount_check( array( $team_id ) ) ), 'and a scope of one asks about one' );
+	}
+);
+
+test(
+	'the weekly digest asks whoever can fix a headcount, and nobody else',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$team_id = $f->set_team_capacity( 'livestream-team', 7, 3 );
+		$team    = Schema::table( 'teams' );
+		// 30 days plus an hour, for the reason given in the test above.
+		$wpdb->query( $wpdb->prepare( "UPDATE {$team} SET headcount_checked_at = DATE_SUB( UTC_TIMESTAMP(), INTERVAL 721 HOUR ) WHERE id = %d", $team_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		$pastor = $f->user( Roles::ROLE_PASTOR );
+		wp_set_current_user( $pastor );
+
+		$id = $f->verified_submission( array( 'suggested_teams' => array( 'livestream-team' ) ) );
+		Submissions::set_status( $id, Schema::STATUS_PLACED, $team_id );
+
+		$digest = Digest::build();
+
+		$a->contains( 'Livestream Team', $digest['body'], 'the drifted team is named' );
+		$a->contains( 'out of date', $digest['body'], 'and described as out of date' );
+		$a->contains( '3 recorded, 1 placed since', $digest['body'], 'with the numbers that make it actionable' );
+		$a->contains( 'confirmed 30 days ago', $digest['body'], 'and how long it has been' );
+		$a->ok( $digest['total'] >= 1, 'and it is enough on its own to send an email' );
+
+		/*
+		 * A ministry leader can place people, and so cause this drift, but
+		 * cannot edit team capacity. Asking them to confirm a number they have
+		 * no permission to change would be an instruction to do nothing.
+		 *
+		 * The leader is made leader *of the drifted team* on purpose. Without
+		 * that they lead nothing, `visible_team_ids()` returns an empty scope,
+		 * and the digest comes back clean whether the capability is checked or
+		 * not — a test that passes for the wrong reason and would sit here
+		 * green through the removal of the very gate it claims to cover.
+		 */
+		$leader = $f->user( Roles::ROLE_LEADER );
+		$f->lead_team( $leader, 'livestream-team' );
+		wp_set_current_user( $leader );
+
+		$a->not( current_user_can( Roles::CAP_MANAGE_TEAMS ), 'a leader cannot edit team capacity' );
+		$a->same( array( $team_id ), Roles::visible_team_ids(), 'but does lead the team that drifted' );
+
+		$leader_digest = Digest::build();
+
+		$a->lacks( 'out of date', $leader_digest['body'], 'and is still not asked to confirm its headcount' );
+	}
+);
+
+/*
+ * The stage badges are explained to the leader from `status_descriptions()`.
+ * A status with no description renders an empty definition under its name —
+ * visible only to whoever happens to open the legend, and only for the one
+ * stage that was missed. Adding a status without describing it is exactly the
+ * kind of omission that ships.
+ */
+test(
+	'every pipeline stage is explained in plain words',
+	function ( Assert $a, Fixtures $f ) {
+		$labels       = Schema::status_labels();
+		$descriptions = Schema::status_descriptions();
+
+		$a->ok( count( $labels ) > 0, 'there are stages to describe' );
+		$a->same( array_keys( $labels ), array_keys( $descriptions ), 'described in the same order, with nothing missing or extra' );
+
+		foreach ( $descriptions as $status => $text ) {
+			$a->ok( strlen( trim( $text ) ) > 10, "the {$status} stage says something useful" );
+		}
+	}
+);
+
 test(
 	'both scheduled jobs are booked',
 	function ( Assert $a, Fixtures $f ) {
