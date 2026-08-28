@@ -64,13 +64,26 @@ Beneath them:
 - **Quick follow-ups** — what is due today or overdue.
 - **Settling in** — people you placed a while ago that nobody has been back to.
 
+The dashboard is in two parts. **Needs you now** is the top one: people nobody
+has spoken to, and anything overdue or due today. **Context** is everything
+below it — team gaps, headcounts, settling in, the spread of gifts — and the
+heading says so: nothing there is waiting on you today. If the first part is
+empty you will see one line telling you so, rather than two empty boxes.
+
 Every list of people has its columns titled along the top — **Name and gifts**,
 **Suggested teams**, **Next step due**, **Stage**. Narrow screens drop the
 middle columns rather than squeezing them; the date survives longer than the
 suggested team, because "Overdue" is something you act on.
 
+Each person's stage now says where they are, not just what it is called —
+*Contacted, 2 of 5*, with the first two of five marks filled. **Paused** and
+**Declined** show no marks at all: they are real answers, but they are not
+places on the journey, and showing them as "2 of 5" would be untrue.
+
 If a stage name is not obvious, open **What do these stages mean?** just above
-the list. It explains all seven in a sentence each, and you can leave it closed.
+the list. It explains all seven in a sentence each, grouped under the same three
+words the SERVE presentation uses — Discover, Connect, Serve — so the tool and
+the deck describe the same journey. You can leave it closed.
 
 ### Suggested teams, and the ones marked *not on their profile*
 

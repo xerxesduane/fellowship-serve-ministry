@@ -358,3 +358,23 @@ button.restart-inline { min-height: 44px; padding: 0 12px; }
 .ministry-why li { margin-bottom: 5px; }
 .ministry-why li:last-child { margin-bottom: 0; }
 .ministry-caveat { margin: 20px 0 0; padding: 14px 16px; border-radius: 14px; background: #fff8e9; color: var(--navy); font-size: 13px; line-height: 1.55; }
+
+/* Folded reasons, and the folded ministry guide. */
+.ministry-more { margin-top: 8px; font-size: 13px; }
+.ministry-more > summary { cursor: pointer; color: var(--teal); font-weight: 700; }
+.ministry-more > summary:hover { color: var(--navy); }
+.ministry-more .ministry-why { margin-top: 6px; }
+
+.ministry-table-fold { padding: 0 clamp(24px, 5vw, 52px) 26px; }
+.ministry-table-fold > summary { padding: 18px 0; cursor: pointer; color: var(--teal); font-weight: 780; }
+.ministry-table-fold > summary:hover { color: var(--navy); }
+.ministry-table-fold .ministry-table-desktop { padding: 0 0 8px; }
+
+/* Printing a profile should not hide half of it behind a disclosure. */
+@media print {
+  .ministry-more, .ministry-table-fold { display: block; }
+  .ministry-more > summary, .ministry-table-fold > summary { display: none; }
+  .ministry-more[open], .ministry-table-fold[open] { display: block; }
+  details { display: block; }
+  details > *:not(summary) { display: revert !important; }
+}

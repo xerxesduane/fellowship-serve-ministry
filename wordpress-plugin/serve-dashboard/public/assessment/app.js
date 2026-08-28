@@ -410,9 +410,22 @@ function requestSuggestions(profile) {
 
 function ministryRecommendations(profile) {
   if (serverSuggestions) {
+    /*
+     * Two reasons visible, the rest folded away.
+     *
+     * Five teams at four reasons each was twenty bullet points, and the section
+     * measured 1,427px on its own. Two is enough to judge whether a suggestion
+     * is worth a conversation, which is all this page is for; the remainder is
+     * a <details> so nothing is lost and it needs no JavaScript to open.
+     */
     const cards = serverSuggestions.map((item, index) => {
-      const why = item.reasons.length
-        ? `<ul class="ministry-why">${item.reasons.slice(0, 4).map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>`
+      const shown = item.reasons.slice(0, 2);
+      const rest = item.reasons.slice(2);
+
+      const list = (reasons) => `<ul class="ministry-why">${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>`;
+
+      const why = shown.length
+        ? `${list(shown)}${rest.length ? `<details class="ministry-more"><summary>${rest.length} more ${rest.length === 1 ? "reason" : "reasons"}</summary>${list(rest)}</details>` : ""}`
         : "<p>A flexible place to explore your S.H.A.P.E. with a ministry leader.</p>";
 
       return `<li><span>${index + 1}</span><div><h3>${escapeHtml(item.team)}</h3><p class="ministry-strength">${escapeHtml(item.strengthLabel)}</p>${why}</div></li>`;
@@ -434,7 +447,18 @@ function ministryRecommendations(profile) {
 function ministryTable() {
   const rows = ministryGiftTable.map((row) => `<tr><th scope="row">${escapeHtml(row.ministry)}</th><td>${escapeHtml(row.gifts.join(", "))}</td></tr>`).join("");
   const mobile = ministryGiftTable.map((row) => `<section><h3>${escapeHtml(row.ministry)}</h3><p>${escapeHtml(row.gifts.join(", "))}</p></section>`).join("");
-  return `<article class="ministry-table-section"><header class="ministry-table-heading"><div class="ministry-table-icon">${icon("compass", 26)}</div><div><p class="eyebrow">Ministry guide</p><h2>Explore more places where your gifts may contribute.</h2><p>This table is a reflective guide, not a prescription. Prayerfully consider where your gifts may align, while giving priority to personal conviction and the Holy Spirit’s leading.</p></div></header><div class="ministry-table-desktop"><table><caption class="sr-only">Fellowship Dubai ministry and spiritual gift guide</caption><thead><tr><th scope="col">Ministry</th><th scope="col">Spiritual gifts that strengthen it</th></tr></thead><tbody>${rows}</tbody></table></div><div class="ministry-table-mobile">${mobile}</div></article>`;
+  /*
+   * Collapsed by default.
+   *
+   * This table was the answer to "where might my gifts fit" before the
+   * suggestions above were personalised. Now it sits directly beneath a ranked
+   * list built from everything the person told us, competing with it, and
+   * costing 1,132px and sixteen rows of scroll to do so. The heading stays
+   * visible because it says something the ranking does not — that this is a
+   * reflective guide and conviction comes first — and the table itself is one
+   * click away rather than gone.
+   */
+  return `<article class="ministry-table-section"><header class="ministry-table-heading"><div class="ministry-table-icon">${icon("compass", 26)}</div><div><p class="eyebrow">Ministry guide</p><h2>Explore more places where your gifts may contribute.</h2><p>This table is a reflective guide, not a prescription. Prayerfully consider where your gifts may align, while giving priority to personal conviction and the Holy Spirit’s leading.</p></div></header><details class="ministry-table-fold"><summary>Show all sixteen teams and the gifts that strengthen them</summary><div class="ministry-table-desktop"><table><caption class="sr-only">Fellowship Dubai ministry and spiritual gift guide</caption><thead><tr><th scope="col">Ministry</th><th scope="col">Spiritual gifts that strengthen it</th></tr></thead><tbody>${rows}</tbody></table></div><div class="ministry-table-mobile">${mobile}</div></details></article>`;
 }
 
 /*

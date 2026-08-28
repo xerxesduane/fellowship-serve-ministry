@@ -113,20 +113,44 @@ function icon(name) {
  * Carries a glyph and its label, never colour alone — a red pill and a green
  * pill are the same pill to a colourblind reader.
  */
-function badge(status, label) {
-	const map = {
-		submitted: ['ready', '●'],
-		contacted: ['progress', '◐'],
-		conversation_booked: ['progress', '◐'],
-		trial_serve: ['progress', '◑'],
-		placed: ['placed', '✓'],
-		paused: ['quiet', '⏸'],
-		declined: ['quiet', '—']
-	};
-	const [tone, glyph] = map[status] || ['quiet', '●'];
+/**
+ * Where somebody is on the serving journey.
+ *
+ * This was seven pills told apart by hue and a glyph. A pipeline is ordered —
+ * Submitted, Contacted, Conversation booked, Trial serve, Placed — and a
+ * coloured label carries none of that: you had to already know the vocabulary
+ * to read it, which is why the stage legend had to be added above the list.
+ *
+ * The number does the work now. "2 of 5" survives colour-blindness, a greyscale
+ * print, and a leader on their first week, and the filled track is a second,
+ * redundant encoding rather than the only one.
+ *
+ * Paused and Declined get no track. They are real outcomes but they are not
+ * positions, and rendering Paused as "2 of 5" would state something false.
+ */
+function stageIndicator(status, label) {
+	const path = CONFIG.stagePath || [];
+	const index = path.indexOf(status);
 
-	return `<span class="serve-badge serve-badge--${esc(tone)}">
-		<span class="serve-badge__glyph" aria-hidden="true">${glyph}</span>${esc(label)}</span>`;
+	if (index === -1) {
+		const glyph = status === 'declined' ? '—' : '⏸';
+
+		return `<span class="serve-stage serve-stage--off">
+			<span class="serve-stage__off"><span aria-hidden="true">${glyph}</span>${esc(label)}</span>
+			<span class="screen-reader-text">Stage: ${esc(label)}, not on the serving path</span>
+		</span>`;
+	}
+
+	const step = index + 1;
+	const steps = path
+		.map((_, i) => `<span class="serve-stage__step${i < step ? ' is-done' : ''}"></span>`)
+		.join('');
+
+	return `<span class="serve-stage">
+		<span class="serve-stage__label">${esc(label)} <span class="serve-stage__count">${step} of ${path.length}</span></span>
+		<span class="serve-stage__track" aria-hidden="true">${steps}</span>
+		<span class="screen-reader-text">Stage: ${esc(label)}, step ${step} of ${path.length}</span>
+	</span>`;
 }
 
 /** Conversation history, newest first. */
@@ -167,21 +191,40 @@ function personRow(person) {
 		person.isStale ? `<span class="serve-flag serve-flag--stale">${esc('stale')}</span>` : ''
 	].join('');
 
+	const dueTone = person.isOverdue ? 'is-attention' : (person.isDueToday ? 'is-soon' : '');
+	const dueText = person.isOverdue ? 'Overdue' : (person.isDueToday ? 'Today' : person.nextActionLabel);
+
 	const due = person.nextActionLabel
-		? `<span class="serve-fu__when ${person.isOverdue ? 'is-attention' : (person.isDueToday ? 'is-soon' : '')}">${
-			esc(person.isOverdue ? 'Overdue' : (person.isDueToday ? 'Today' : person.nextActionLabel))}</span>`
+		? `<span class="serve-fu__when ${dueTone}">${esc(dueText)}</span>`
+		: '';
+
+	/*
+	 * The same thing again, for narrow screens.
+	 *
+	 * Below 768px the row has three tracks and the date column is hidden, so
+	 * "Overdue" — the most actionable word on the row — disappeared, leaving
+	 * only the coral left-border to carry it. A leader working from a phone
+	 * between meetings is exactly who needs it. Rendered into the meta line
+	 * instead, where there is room.
+	 *
+	 * Two copies, never both visible: display:none removes an element from the
+	 * accessibility tree as well as the page, so whichever one is hidden is
+	 * also the one screen readers skip, and the row is never read out twice.
+	 */
+	const dueInline = person.nextActionLabel
+		? `<span class="serve-row__due-inline serve-fu__when ${dueTone}">${esc(dueText)}</span>`
 		: '';
 
 	return `<button type="button" class="serve-row ${person.isOverdue ? 'is-overdue' : ''}" data-person="${esc(person.id)}">
 		<span class="serve-avatar serve-avatar--sm" aria-hidden="true">${esc(person.initials)}</span>
 		<span class="serve-row__body">
 			<span class="serve-row__name">${esc(person.name)}</span>
-			<span class="serve-row__meta">${esc(person.gifts.join(', ') || '—')}${flags}</span>
+			<span class="serve-row__meta">${esc(person.gifts.join(', ') || '—')}${flags}${dueInline}</span>
 		</span>
 		<span class="serve-row__col serve-row__col--teams">${esc(person.suggestedTeams.join(', ') || '—')}</span>
 		<span class="serve-row__col serve-row__col--due">${due}</span>
 		<span class="serve-row__aside">
-			${badge(person.status, person.statusLabel)}
+			${stageIndicator(person.status, person.statusLabel)}
 		</span>
 	</button>`;
 }
@@ -761,8 +804,11 @@ const drawer = {
 
 			<div class="serve-section">
 				<h3>Journey status</h3>
-				<div style="margin-top:var(--serve-space-3);display:flex;gap:var(--serve-space-2);flex-wrap:wrap">
-					${badge(person.status, person.statusLabel)}
+				<div class="serve-journey">
+					${(CONFIG.stagePhases || {})[person.status]
+						? `<span class="serve-phase__tag">${esc(CONFIG.stagePhases[person.status])}</span>`
+						: ''}
+					${stageIndicator(person.status, person.statusLabel)}
 					${person.isStale ? '<span class="serve-flag serve-flag--stale">profile is stale</span>' : ''}
 				</div>
 				${person.tenureMonths !== null ? `<p class="serve-card__hint">Expects to be in the UAE about ${esc(person.tenureMonths)} more months.</p>` : ''}
@@ -1072,6 +1118,19 @@ function loadDashboard() {
 			document.querySelectorAll('[data-serve="user-initials"]').forEach((el) => {
 				el.textContent = (first || '?').trim().charAt(0).toUpperCase();
 			});
+
+			/*
+			 * "Needs you now" holds two lists. When both are empty the band
+			 * would be two empty states stacked under the loudest heading on
+			 * the page, so it collapses to a single quiet line instead.
+			 */
+			const nothingToday = !data.priority.length && !data.followups.length;
+			const todayGrid = $('today-grid');
+			const todayClear = $('today-clear');
+			if (todayGrid && todayClear) {
+				todayGrid.hidden = nothingToday;
+				todayClear.hidden = !nothingToday;
+			}
 
 			renderMetrics(data.metrics);
 			renderGaps(data.gaps);

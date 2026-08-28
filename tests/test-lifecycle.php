@@ -586,3 +586,71 @@ test(
 		}
 	}
 );
+
+/*
+ * The stage vocabulary has three lists over it now — the ordered path, the two
+ * outcomes beside it, and the deck's three phases — and every one of them is a
+ * separate place a new status can be forgotten. Forgetting is silent: a stage
+ * missing from the path draws as an off-path chip, and one missing from the
+ * phases disappears from the legend entirely. Neither throws.
+ */
+test(
+	'every pipeline stage is on the path or explicitly beside it',
+	function ( Assert $a, Fixtures $f ) {
+		$all  = array_keys( Schema::status_labels() );
+		$path = Schema::stage_path();
+		$off  = Schema::stage_off_path();
+
+		$a->same( 5, count( $path ), 'five stages are positions on the journey' );
+		$a->same( 2, count( $off ), 'and two sit beside it' );
+
+		$a->same(
+			array(),
+			array_values( array_diff( $all, array_merge( $path, $off ) ) ),
+			'no stage is missing from both lists'
+		);
+		$a->same(
+			array(),
+			array_values( array_intersect( $path, $off ) ),
+			'and none is claimed by both'
+		);
+
+		// The order is the journey, not alphabetical or insertion order.
+		$a->same(
+			array( 'submitted', 'contacted', 'conversation_booked', 'trial_serve', 'placed' ),
+			$path,
+			'the path runs in the order a person actually travels it'
+		);
+	}
+);
+
+test(
+	'every stage is explained under one of the three deck phases',
+	function ( Assert $a, Fixtures $f ) {
+		$phases = Schema::stage_phases();
+
+		$a->ok( isset( $phases['discover'], $phases['connect'], $phases['serve'] ), 'Discover, Connect and Serve are all named' );
+		$a->same( array(), $phases['discover']['stages'], 'Discover holds no stage: it happens before the dashboard sees anybody' );
+
+		$grouped = array();
+		foreach ( $phases as $phase ) {
+			$a->ok( '' !== trim( $phase['label'] ), 'each phase is named' );
+			$a->ok( strlen( trim( $phase['note'] ) ) > 10, 'and says what it is for' );
+			$grouped = array_merge( $grouped, $phase['stages'] );
+		}
+
+		$all = array_keys( Schema::status_labels() );
+
+		$a->same(
+			array(),
+			array_values( array_diff( $all, $grouped ) ),
+			'no stage is left out of the legend'
+		);
+		$a->same( count( $all ), count( $grouped ), 'and none appears in two phases' );
+
+		// The lookup the drawer uses agrees with the grouping.
+		$a->same( 'Connect', Schema::phase_of( Schema::STATUS_CONTACTED ), 'Contacted is Connect' );
+		$a->same( 'Serve', Schema::phase_of( Schema::STATUS_PLACED ), 'Placed is Serve' );
+		$a->same( '', Schema::phase_of( 'not-a-status' ), 'and an unknown status claims no phase' );
+	}
+);

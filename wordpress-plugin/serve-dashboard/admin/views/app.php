@@ -194,7 +194,42 @@ $nav = array(
 						<?php endfor; ?>
 					</div>
 
-					<div class="serve-grid">
+					<?php
+					/*
+					 * Two bands, because six cards of equal weight are not a
+					 * priority order.
+					 *
+					 * A leader used to land on a metrics row and six cards with
+					 * nothing saying which to read first, on a product whose
+					 * deck promises they "see the next best action in one
+					 * place". The hierarchy is made of headings and order
+					 * rather than colour or size: it costs nothing, it reads
+					 * correctly to a screen reader as document structure, and
+					 * it cannot fail the way a colour-coded scheme can.
+					 */
+					?>
+					<div class="serve-band">
+						<h2 class="serve-band__title"><?php esc_html_e( 'Needs you now', 'serve-dashboard' ); ?></h2>
+						<p class="serve-band__hint"><?php esc_html_e( 'In the order a leader would work them.', 'serve-dashboard' ); ?></p>
+						<span class="serve-band__rule" aria-hidden="true"></span>
+					</div>
+
+					<?php
+					/*
+					 * Shown only when both cards below are empty. Two empty
+					 * cards under "Needs you now" would make the most
+					 * prominent thing on the page a pair of holes.
+					 */
+					?>
+					<div class="serve-card serve-today-clear" data-serve="today-clear" hidden>
+						<span class="serve-today-clear__icon" aria-hidden="true"><?php self::icon( 'check' ); ?></span>
+						<div>
+							<h3><?php esc_html_e( 'Nothing is waiting on you today', 'serve-dashboard' ); ?></h3>
+							<p><?php esc_html_e( 'Every follow-up is current and everyone who has finished the journey has been spoken to. The context below is there when you want it.', 'serve-dashboard' ); ?></p>
+						</div>
+					</div>
+
+					<div class="serve-grid" data-serve="today-grid">
 						<div class="serve-card serve-card--primary">
 							<div class="serve-card__head">
 								<h2><?php esc_html_e( 'People ready for a next step', 'serve-dashboard' ); ?></h2>
@@ -210,15 +245,42 @@ $nav = array(
 						</div>
 
 						<div class="serve-col">
+							<?php
+							/*
+							 * Overdue conversations lead the band. They were
+							 * third in the right-hand rail, under two cards
+							 * about capacity, on a dashboard whose first
+							 * promised benefit is "bring overdue and upcoming
+							 * conversations into view".
+							 */
+							?>
 							<div class="serve-card">
 								<div class="serve-card__head">
-									<h2><?php esc_html_e( 'Serving team gaps', 'serve-dashboard' ); ?></h2>
+									<h2><?php esc_html_e( 'Overdue and due today', 'serve-dashboard' ); ?></h2>
 								</div>
-								<p class="serve-card__hint">
-									<?php esc_html_e( 'Context for a conversation. A gap is not a reason to place someone.', 'serve-dashboard' ); ?>
-								</p>
-								<div data-serve="gaps"><?php self::skeleton_rows( 4 ); ?></div>
+								<div data-serve="followups"><?php self::skeleton_rows( 3 ); ?></div>
 							</div>
+						</div>
+					</div>
+
+					<div class="serve-band">
+						<h2 class="serve-band__title"><?php esc_html_e( 'Context', 'serve-dashboard' ); ?></h2>
+						<p class="serve-band__hint"><?php esc_html_e( 'Background. Nothing here is waiting on you today.', 'serve-dashboard' ); ?></p>
+						<span class="serve-band__rule" aria-hidden="true"></span>
+					</div>
+
+					<div class="serve-grid">
+						<div class="serve-card serve-card--primary">
+							<div class="serve-card__head">
+								<h2><?php esc_html_e( 'Serving team gaps', 'serve-dashboard' ); ?></h2>
+							</div>
+							<p class="serve-card__hint">
+								<?php esc_html_e( 'Context for a conversation. A gap is not a reason to place someone.', 'serve-dashboard' ); ?>
+							</p>
+							<div data-serve="gaps"><?php self::skeleton_rows( 4 ); ?></div>
+						</div>
+
+						<div class="serve-col">
 
 							<?php
 							/*
@@ -243,13 +305,6 @@ $nav = array(
 									<?php esc_html_e( 'People have been placed since these were last confirmed, so the gaps above are overstated until somebody checks them.', 'serve-dashboard' ); ?>
 								</p>
 								<div data-serve="headcount-checks"></div>
-							</div>
-
-							<div class="serve-card">
-								<div class="serve-card__head">
-									<h2><?php esc_html_e( 'Quick follow-ups', 'serve-dashboard' ); ?></h2>
-								</div>
-								<div data-serve="followups"><?php self::skeleton_rows( 3 ); ?></div>
 							</div>
 
 							<?php

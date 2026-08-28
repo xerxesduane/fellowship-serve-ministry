@@ -679,6 +679,99 @@ answers. A missing endpoint, a failed fetch or an empty response leaves a
 correct, if narrower, results page rather than an error where the person's
 profile should be. The catch is deliberately silent.
 
+## The dashboard says what to do first, and the stages say where you are
+
+Five changes, all of them about what a leader can read rather than what the
+software can do.
+
+### One priority order instead of six equal cards
+
+A leader landed on a metrics row and six cards — People ready, Team gaps,
+Confirm headcounts, Quick follow-ups, Settling in, Gifts — at roughly equal
+visual weight, on a product whose deck promises they "see the next best action
+in one place". Nothing said where to start, and *Quick follow-ups* sat third in
+the right-hand rail underneath two cards about capacity, on a dashboard whose
+first stated benefit is bringing overdue conversations into view.
+
+Two bands now: **Needs you now** (people nobody has spoken to, and overdue or
+due today) and **Context** (gaps, headcounts, settling in, gifts — labelled
+"Nothing here is waiting on you today"). The hierarchy is made of headings and
+order, not colour or size: it costs nothing, it reads to a screen reader as
+document structure, and it cannot fail the way a colour-coded scheme can.
+
+When both lists in the first band are empty it collapses to one quiet line.
+Two empty states stacked under the loudest heading on the page would have made
+the most prominent thing on the dashboard a pair of holes.
+
+### Stage as a position, not a colour
+
+Seven statuses were drawn as pills told apart by hue and a glyph. A pipeline is
+ordered, and a coloured label carries none of that — you had to already know the
+vocabulary, which is why a legend had to be added above the list in 1.16.0.
+
+    Contacted  2 of 5      ▬▬ ▬▬ ── ── ──
+
+The number does the work, so it survives colour-blindness, a greyscale print and
+a leader's first week; the filled track is a second, redundant encoding rather
+than the only one.
+
+**Paused and Declined get no track.** They are real outcomes but they are not
+positions, and rendering Paused as "2 of 5" would state something false. They
+get a dashed chip instead, which also signals they are a different kind of thing.
+
+The order comes from `Schema::stage_path()` rather than from the ordering of
+`status_labels()`. A UI that draws "step 2 of 5" from an array's insertion order
+breaks silently the day somebody inserts a stage; a test now fails instead.
+
+### Discover, Connect, Serve — the deck's own words
+
+Slide 3 of the presentation is nothing but those three words, and the dashboard
+had never used them. That is a real cost rather than a cosmetic one: leadership
+approved a pilot described in three phases, then opened a tool that talks about
+seven statuses, and nothing on screen said the two describe the same thing.
+
+The stage legend is grouped under them now. Discover deliberately holds no
+stage — it is the assessment itself, finished before anybody appears in this
+dashboard — and saying so is more useful than pretending a status covers it. The
+grouping also shows what a flat list of seven could not: that Paused and Declined
+are a different kind of thing from the five that are positions.
+
+### The results page stopped hiding evidence
+
+The person's results page ran to **7,354px — over ten screens**. Two things came
+out of it.
+
+The suggestion cards showed four reasons each. That was not a summary: the old
+code sliced at four and **silently discarded the rest**, so a team supported by
+seven reasons showed four and gave no hint the other three existed. Two are shown
+now and the remainder folds into a `<details>` — a real disclosure, needing no
+JavaScript, losing nothing.
+
+The sixteen-row ministry gift table was the answer to "where might my gifts fit"
+*before* the suggestions above it were personalised. It now sits directly beneath
+a ranked list built from everything the person told us, competing with it, and
+charging 1,132px for the privilege. Folded, with its heading left visible because
+it says something the ranking does not — that this is a reflective guide and
+conviction comes first.
+
+| | Before | After |
+|---|---|---|
+| Page height | 7,354px (10.2 screens) | 6,271px (8.7 screens) |
+| Ministry guide | 1,132px, 16 rows | 410px, folded |
+| Reasons carried | 20, capped at 4 per team | 26, none discarded |
+| Reasons shown | 20 | 10, rest one click away |
+
+### The most actionable word survived a narrow screen
+
+Below 768px the row has three tracks and the date column is hidden, so
+**"Overdue" disappeared** — leaving only a coral left-border to carry it. A
+leader working from a phone between meetings is exactly who needs it. It is
+rendered into the row's meta line as well, where there is room.
+
+Two copies, never both visible: `display: none` removes an element from the
+accessibility tree as well as the page, so whichever is hidden is also the one a
+screen reader skips, and the row is never announced twice.
+
 ## Reading it without being trained on it
 
 Three things assumed knowledge the person using it did not have.

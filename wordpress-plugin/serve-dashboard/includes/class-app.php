@@ -93,6 +93,13 @@ final class App {
 			'statuses'   => Schema::status_labels(),
 			'safeguardStatuses' => Safeguarding::status_labels(),
 			'inviteResponses'   => Invitation::responses(),
+			// The journey, in order, and the two outcomes that sit outside it.
+			'stagePhases'       => array_map(
+				static fn( $status ) => Schema::phase_of( (string) $status ),
+				array_combine( array_keys( Schema::status_labels() ), array_keys( Schema::status_labels() ) )
+			),
+			'stagePath'         => Schema::stage_path(),
+			'stageOffPath'      => Schema::stage_off_path(),
 			'gatedStatuses'     => array_values(
 				array_filter( array_keys( Schema::status_labels() ), array( Safeguarding::class, 'is_gated_status' ) )
 			),
@@ -187,15 +194,35 @@ final class App {
 
 		echo '<details class="serve-legend"><summary>'
 			. esc_html__( 'What do these stages mean?', 'serve-dashboard' )
-			. '</summary><dl class="serve-legend__list">';
+			. '</summary>';
 
-		foreach ( $labels as $key => $label ) {
-			echo '<div><dt>' . esc_html( $label ) . '</dt><dd>'
-				. esc_html( $descriptions[ $key ] ?? '' )
-				. '</dd></div>';
+		/*
+		 * Grouped under Discover, Connect and Serve — the three words slide 3
+		 * of the deck is built on, which the dashboard had never used. Grouping
+		 * also does something a flat list of seven could not: it shows that
+		 * Paused and Declined are a different kind of thing from the five that
+		 * are positions on a path.
+		 */
+		foreach ( Schema::stage_phases() as $phase ) {
+			echo '<div class="serve-phase">';
+			echo '<p class="serve-phase__head"><span class="serve-phase__name">'
+				. esc_html( $phase['label'] ) . '</span> '
+				. esc_html( $phase['note'] ) . '</p>';
+
+			if ( $phase['stages'] ) {
+				echo '<dl class="serve-legend__list">';
+				foreach ( $phase['stages'] as $key ) {
+					echo '<div><dt>' . esc_html( $labels[ $key ] ?? $key ) . '</dt><dd>'
+						. esc_html( $descriptions[ $key ] ?? '' )
+						. '</dd></div>';
+				}
+				echo '</dl>';
+			}
+
+			echo '</div>';
 		}
 
-		echo '</dl></details>';
+		echo '</details>';
 	}
 
 	public static function render(): void {

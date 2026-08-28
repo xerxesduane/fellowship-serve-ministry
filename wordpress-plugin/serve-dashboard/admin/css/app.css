@@ -1675,3 +1675,199 @@ button.serve-metric:hover {
 .serve-plainlist li:last-child {
 	margin-bottom: 0;
 }
+
+/*
+ * The due state, inline in the row body, for widths where the date column is
+ * not shown. Mobile-first: visible by default, hidden once its own column
+ * appears at 768px so the row never states it twice.
+ */
+.serve-row__due-inline {
+	display: inline-flex;
+}
+
+@media (min-width: 768px) {
+	.serve-row__due-inline {
+		display: none;
+	}
+}
+
+/* ── Stage: a position on the journey, not a colour ─────────────────────── */
+
+.serve-stage {
+	display: inline-flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 4px;
+}
+
+.serve-stage__label {
+	font-size: .75rem;
+	font-weight: 700;
+	white-space: nowrap;
+	color: var(--serve-text);
+}
+
+/* The number is what carries the meaning, so it must not read as decoration. */
+.serve-stage__count {
+	font-weight: 500;
+	color: var(--serve-text-muted);
+}
+
+.serve-stage__track {
+	display: flex;
+	gap: 3px;
+}
+
+.serve-stage__step {
+	width: 14px;
+	height: 4px;
+	border-radius: 2px;
+	background: var(--serve-border-strong);
+}
+
+.serve-stage__step.is-done {
+	background: var(--serve-teal);
+}
+
+/* Off the path entirely: no track, because "2 of 5" would be a lie. */
+.serve-stage--off .serve-stage__label {
+	color: var(--serve-text-muted);
+}
+
+.serve-stage__off {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 2px 9px;
+	border: 1px dashed var(--serve-border-strong);
+	border-radius: var(--serve-radius-pill);
+	font-size: .75rem;
+	font-weight: 700;
+	white-space: nowrap;
+	color: var(--serve-text-muted);
+}
+
+/* The filled track is the redundant encoding; give it an edge when asked. */
+@media (prefers-contrast: more) {
+	.serve-stage__step {
+		outline: 1px solid var(--serve-text);
+	}
+}
+
+/*
+ * "Journey status" in the drawer. Was an inline style; the stage indicator is
+ * right-aligned by default, which is wrong here where it leads a row.
+ */
+.serve-journey {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--serve-space-3);
+	margin-top: var(--serve-space-3);
+}
+
+.serve-journey .serve-stage {
+	align-items: flex-start;
+}
+
+/* ── Bands: hierarchy from typography and order, not colour ─────────────── */
+
+.serve-band {
+	display: flex;
+	align-items: baseline;
+	gap: var(--serve-space-3);
+	margin: var(--serve-space-6) 0 var(--serve-space-3);
+}
+
+.serve-band:first-of-type {
+	margin-top: var(--serve-space-4);
+}
+
+.serve-band__title {
+	margin: 0;
+	font-size: .8125rem;
+	font-weight: 800;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+	color: var(--serve-text);
+}
+
+.serve-band__hint {
+	margin: 0;
+	font-size: .8125rem;
+	color: var(--serve-text-muted);
+}
+
+/* Decorative: the heading already separates the bands for a screen reader. */
+.serve-band__rule {
+	flex: 1;
+	height: 1px;
+	background: var(--serve-border);
+}
+
+/*
+ * The calm state. Deliberately quiet — a leader with nothing outstanding should
+ * not be met by something that looks like an alert.
+ */
+.serve-today-clear {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--serve-space-3);
+}
+
+.serve-today-clear__icon {
+	display: grid;
+	place-items: center;
+	flex: 0 0 auto;
+	width: 36px;
+	height: 36px;
+	border-radius: var(--serve-radius-sm);
+	background: var(--serve-success-soft);
+	color: var(--serve-success);
+}
+
+.serve-today-clear h3 {
+	margin: 0;
+	font-size: 1rem;
+}
+
+.serve-today-clear p {
+	margin: var(--serve-space-1) 0 0;
+	font-size: .8125rem;
+	line-height: 1.5;
+	color: var(--serve-text-muted);
+}
+
+/* ── Discover / Connect / Serve, the deck's own three words ─────────────── */
+
+.serve-phase + .serve-phase {
+	margin-top: var(--serve-space-4);
+}
+
+.serve-phase__head {
+	margin: 0 0 var(--serve-space-2);
+	font-size: .8125rem;
+	line-height: 1.5;
+	color: var(--serve-text-muted);
+}
+
+.serve-phase__name {
+	font-weight: 800;
+	letter-spacing: .05em;
+	text-transform: uppercase;
+	color: var(--serve-teal-dark);
+}
+
+/* The same word, as a marker beside a person's stage in the drawer. */
+.serve-phase__tag {
+	display: inline-flex;
+	align-items: center;
+	padding: 3px 10px;
+	border-radius: var(--serve-radius-pill);
+	background: var(--serve-sand);
+	font-size: .6875rem;
+	font-weight: 800;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+	color: var(--serve-teal-dark);
+}

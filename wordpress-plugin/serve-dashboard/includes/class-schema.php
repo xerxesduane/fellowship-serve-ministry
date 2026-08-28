@@ -70,6 +70,101 @@ final class Schema {
 	 *
 	 * @return array<string,string>
 	 */
+	/**
+	 * The stages that are positions on the serving journey, in order.
+	 *
+	 * `status_labels()` happens to list these first, but nothing enforced that,
+	 * and a UI that draws "step 2 of 5" from an array's ordering breaks silently
+	 * the day somebody inserts a stage. Named here so the order is a decision
+	 * rather than a coincidence.
+	 *
+	 * @return string[]
+	 */
+	public static function stage_path(): array {
+		return array(
+			self::STATUS_SUBMITTED,
+			self::STATUS_CONTACTED,
+			self::STATUS_CONVERSATION_BOOKED,
+			self::STATUS_TRIAL_SERVE,
+			self::STATUS_PLACED,
+		);
+	}
+
+	/**
+	 * Stages that are not points on the path.
+	 *
+	 * Paused and Declined are real outcomes, and neither is a position. Drawing
+	 * either as "2 of 5" would state something untrue, so they are drawn
+	 * differently — see the stage indicator in admin/js/app.js.
+	 *
+	 * @return string[]
+	 */
+	public static function stage_off_path(): array {
+		return array( self::STATUS_PAUSED, self::STATUS_DECLINED );
+	}
+
+	/**
+	 * The deck's three phases, and which stages sit in each.
+	 *
+	 * Discover, Connect, Serve is the spine of the presentation this was built
+	 * from — slide 3 is nothing else — and the dashboard had never used the
+	 * words. That is a real cost, not a cosmetic one: leadership approved a
+	 * pilot described in three phases and then opened a tool that talks about
+	 * seven statuses instead, so the two do not obviously describe the same
+	 * thing.
+	 *
+	 * Discover holds no stage on purpose. It is the assessment itself, which is
+	 * finished before a person appears in this dashboard at all, and saying so
+	 * is more useful than pretending a status covers it.
+	 *
+	 * @return array<string,array{label:string,note:string,stages:string[]}>
+	 */
+	public static function stage_phases(): array {
+		return array(
+			'discover' => array(
+				'label'  => __( 'Discover', 'serve-dashboard' ),
+				'note'   => __( 'Already done. They completed the S.H.A.P.E. journey before appearing here.', 'serve-dashboard' ),
+				'stages' => array(),
+			),
+			'connect'  => array(
+				'label'  => __( 'Connect', 'serve-dashboard' ),
+				'note'   => __( 'Where a leader does the work: noticing, reaching out, and having the conversation.', 'serve-dashboard' ),
+				'stages' => array(
+					self::STATUS_SUBMITTED,
+					self::STATUS_CONTACTED,
+					self::STATUS_CONVERSATION_BOOKED,
+				),
+			),
+			'serve'    => array(
+				'label'  => __( 'Serve', 'serve-dashboard' ),
+				'note'   => __( 'Trying a team, then joining one. The point of everything above it.', 'serve-dashboard' ),
+				'stages' => array(
+					self::STATUS_TRIAL_SERVE,
+					self::STATUS_PLACED,
+				),
+			),
+			'aside'    => array(
+				'label'  => __( 'Not on the path', 'serve-dashboard' ),
+				'note'   => __( 'Both are complete answers, and neither is a failure.', 'serve-dashboard' ),
+				'stages' => array(
+					self::STATUS_PAUSED,
+					self::STATUS_DECLINED,
+				),
+			),
+		);
+	}
+
+	/** Which phase a stage belongs to, or an empty string. */
+	public static function phase_of( string $status ): string {
+		foreach ( self::stage_phases() as $phase ) {
+			if ( in_array( $status, $phase['stages'], true ) ) {
+				return (string) $phase['label'];
+			}
+		}
+
+		return '';
+	}
+
 	public static function status_labels(): array {
 		return array(
 			self::STATUS_SUBMITTED           => __( 'Submitted', 'serve-dashboard' ),
