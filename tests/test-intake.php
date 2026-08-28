@@ -14,6 +14,7 @@ declare(strict_types=1);
 
 namespace Serve_Test;
 
+use Serve_Dashboard\Matching;
 use Serve_Dashboard\Privacy;
 use Serve_Dashboard\Schema;
 
@@ -81,7 +82,10 @@ function post_submission( array $payload, ?Fixtures $fixtures = null ): \WP_REST
 		 * enough runs — passing today and failing on Thursday for no visible
 		 * reason. A fresh CI database would never have shown it.
 		 */
-		delete_transient( 'serve_rl_' . ( Privacy::hash_ip() ?: 'unknown' ) );
+		$hash = Privacy::hash_ip() ?: 'unknown';
+		foreach ( array( 'submit', 'preview' ) as $bucket ) {
+			delete_transient( 'serve_rl_' . $bucket . '_' . $hash );
+		}
 		remove_filter( 'serve_dashboard_client_ip', $filter );
 	}
 }
@@ -189,5 +193,288 @@ test(
 		$a->not( isset( $stored['contact'] ), 'no contact block in profile_json' );
 		// The payload deliberately carried a different address in that block.
 		$a->lacks( 'leaked@serve.test', (string) $row->profile_json, 'and nothing from it leaked through' );
+	}
+);
+
+/*
+ * The public suggestion preview.
+ *
+ * The assessment showed a person its own top three, ranked on spiritual-gift
+ * name overlap in the browser, while their leader saw every team ranked across
+ * all five dimensions. Two answers to the same question, and the person's was
+ * the one printed on the profile they downloaded. This endpoint lets the
+ * assessment ask the same code the dashboard uses.
+ *
+ * It is unauthenticated, so what it must not do matters as much as what it does.
+ */
+function serve_preview( array $profile ) {
+	$request = new \WP_REST_Request( 'POST', '/serve/v1/suggestions' );
+	$request->set_header( 'content-type', 'application/json' );
+	$request->set_body( (string) wp_json_encode( array( 'profile' => $profile ) ) );
+
+	return rest_get_server()->dispatch( $request );
+}
+
+test(
+	'a person can be shown the same ranking their leader will see',
+	function ( Assert $a, Fixtures $f ) {
+		// Logged out: this is the public assessment, not the dashboard.
+		wp_set_current_user( 0 );
+
+		$profile = array(
+			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+			'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+			'personality'    => array( 'Be Introverted', 'Prefer Routine' ),
+		);
+
+		$response = serve_preview( $profile );
+		$a->same( 200, $response->get_status(), 'the endpoint answers a logged-out caller' );
+
+		$data = $response->get_data();
+		$a->ok( ! empty( $data['suggestions'] ), 'and returns suggestions' );
+
+		$teams = array_column( $data['suggestions'], 'team' );
+		$a->same( 'Administration', $teams[0], 'ranked on all the evidence, not just gifts' );
+
+		// The same answer the dashboard gives for the same profile.
+		$ranked = array_column( Matching::rank_profile( $profile ), 'team_name' );
+		$a->same( $ranked, $teams, 'identical to what a leader is shown' );
+
+		// Reasons quote the person back to themselves; personality travels too.
+		$a->contains( 'Counting ability', implode( ' | ', $data['suggestions'][0]['reasons'] ), 'with readable reasons' );
+		$a->same( 2, count( $data['personality'] ), 'and the personality notes' );
+	}
+);
+
+test(
+	'the preview stores nothing and is given no way to identify anybody',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+		wp_set_current_user( 0 );
+
+		$before_submissions = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Schema::table( 'submissions' ) );
+		$before_audit       = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Schema::table( 'audit' ) );
+
+		$secret = 'Particular-' . wp_generate_password( 10, false );
+
+		$response = serve_preview(
+			array(
+				'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+				// Things the browser might send that this must simply drop.
+				'displayName'    => $secret,
+				'email'          => $secret . '@example.com',
+				'availability'   => array( 'priority' => $secret ),
+			)
+		);
+
+		$a->same( 200, $response->get_status(), 'it still answers' );
+
+		$a->same(
+			$before_submissions,
+			(int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Schema::table( 'submissions' ) ),
+			'no submission row is created'
+		);
+		$a->same(
+			$before_audit,
+			(int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Schema::table( 'audit' ) ),
+			'and nothing is written to the audit trail'
+		);
+
+		// Nothing it was handed comes back out, and nothing it ignored is quoted.
+		$a->lacks( $secret, (string) wp_json_encode( $response->get_data() ), 'and it echoes none of it back' );
+	}
+);
+
+test(
+	'reading your own results cannot use up your one chance to submit',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( 0 );
+
+		/*
+		 * Previews and submissions shared one counter in the first version of
+		 * this endpoint. Six views of a results page — trivially reached by
+		 * reloading — spent the five-submission allowance, and the person was
+		 * then refused when they tried to share the profile. The cheap
+		 * repeatable request must not be able to lock somebody out of the
+		 * important one.
+		 *
+		 * Asserted behaviourally, by actually submitting afterwards. The first
+		 * version of this test checked the value of a transient it named
+		 * itself, and passed against a build where the buckets were merged
+		 * again under a third name — it was reading a key nothing used. What
+		 * matters is not where the counters live but that a person who read
+		 * their results can still share their profile.
+		 */
+		$ip     = '198.51.100.251';
+		$filter = static fn() => $ip;
+		add_filter( 'serve_dashboard_client_ip', $filter );
+
+		try {
+			$hash = \Serve_Dashboard\Privacy::hash_ip() ?: 'unknown';
+			foreach ( array( 'submit', 'preview', 'shared' ) as $bucket ) {
+				delete_transient( 'serve_rl_' . $bucket . '_' . $hash );
+			}
+
+			$profile = array( 'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ) );
+
+			// More previews than the submission allowance, from one address.
+			for ( $i = 0; $i < 8; $i++ ) {
+				$a->same( 200, serve_preview( $profile )->get_status(), "preview {$i} is allowed" );
+			}
+
+			$email   = 'lockout-' . wp_generate_password( 8, false ) . '@serve.test';
+			$request = new \WP_REST_Request( 'POST', '/serve/v1/submissions' );
+			$request->set_header( 'content-type', 'application/json' );
+			$request->set_body( (string) wp_json_encode( intake_payload( array( 'email' => $email ) ) ) );
+			$response = rest_do_request( $request );
+
+			// Adopted by address, as post_submission() does: the endpoint does
+			// not return an id, and a row left behind sits in a leader's queue.
+			global $wpdb;
+			$table = Schema::table( 'submissions' );
+			$id    = (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE email = %s", $email ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			if ( $id ) {
+				$f->adopt( $id );
+			}
+
+			$a->not( 429 === $response->get_status(), 'the submission is not throttled' );
+			$a->lacks( 'rate_limited', error_code( $response ), 'and not refused for reading their results' );
+		} finally {
+			$hash = \Serve_Dashboard\Privacy::hash_ip() ?: 'unknown';
+			foreach ( array( 'submit', 'preview', 'shared' ) as $bucket ) {
+				delete_transient( 'serve_rl_' . $bucket . '_' . $hash );
+			}
+			remove_filter( 'serve_dashboard_client_ip', $filter );
+		}
+	}
+);
+
+test(
+	'an oversized profile is refused rather than walked',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( 0 );
+
+		$hash = \Serve_Dashboard\Privacy::hash_ip() ?: 'unknown';
+		delete_transient( 'serve_rl_preview_' . $hash );
+
+		// Comfortably past the 64KB ceiling.
+		$response = serve_preview(
+			array(
+				'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+				'abilities'      => array_fill( 0, 4000, str_repeat( 'a', 40 ) ),
+			)
+		);
+
+		$a->same( 413, $response->get_status(), 'it is refused on size' );
+		$a->same( 'serve_profile_too_large', error_code( $response ), 'and says why' );
+
+		delete_transient( 'serve_rl_preview_' . $hash );
+	}
+);
+
+test(
+	'showing a person more teams does not widen who can see them',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The constraint on this whole change. The results page now shows the
+		 * server's ranking, which is wider than the three the assessment picked.
+		 * `recommendedMinistries` still carries those three, because the server
+		 * builds `suggested_teams` from that field and the placement rows built
+		 * from *it* are what decide which leaders may open somebody.
+		 *
+		 * If the ranking were written back into that field instead, every leader
+		 * whose team happened to match would silently gain access to a profile
+		 * they were never meant to open. This asserts the seam holds even when
+		 * the browser posts a profile carrying both.
+		 */
+		$email = 'displayonly-' . wp_generate_password( 8, false ) . '@serve.test';
+
+		$response = post_submission(
+			intake_payload(
+				array(
+					'email'   => $email,
+					'profile' => array(
+						'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+						'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+
+						// What the assessment itself picked: the one team it named.
+						'recommendedMinistries' => array(
+							array( 'ministry' => 'Prayer', 'matchedGifts' => array( 'Mercy' ) ),
+						),
+
+						/*
+						 * What the results page displayed, as the browser would
+						 * have received it. Administration leads this ranking and
+						 * the assessment never named it.
+						 */
+						'rankedTeams' => array(
+							array( 'team' => 'Administration' ),
+							array( 'team' => 'Serve' ),
+							array( 'team' => 'Welcome' ),
+						),
+					),
+				)
+			),
+			$f
+		);
+
+		$a->same( 201, $response->get_status(), 'the profile is accepted' );
+
+		global $wpdb;
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT id, suggested_teams FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
+				$email
+			)
+		);
+		$a->ok( null !== $row, 'and stored' );
+
+		$a->same(
+			array( 'prayer' ),
+			\Serve_Dashboard\Submissions::decode_list( $row->suggested_teams ),
+			'suggested_teams still records only what the assessment named'
+		);
+
+		/*
+		 * And the reason it holds, which is stronger than this change being
+		 * careful: sanitize_profile() is a whitelist, so a ranking field the
+		 * browser invents never reaches storage at all and cannot be read by
+		 * anything downstream. Asserted directly, because the outcome above
+		 * stays correct even when that guarantee is removed — the first version
+		 * of this test could not tell the difference.
+		 */
+		$stored = json_decode( (string) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT profile_json FROM ' . Schema::table( 'submissions' ) . ' WHERE id = %d',
+				(int) $row->id
+			)
+		), true );
+
+		$a->not( isset( $stored['rankedTeams'] ), 'the displayed ranking is not stored' );
+		$a->lacks( 'Administration', (string) wp_json_encode( $stored ), 'nor is any team from it' );
+
+		$placement_teams = $wpdb->get_col(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT team_id FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d',
+				(int) $row->id
+			)
+		);
+		$prayer = \Serve_Dashboard\Teams::get_by_slug( 'prayer' );
+		$a->same(
+			array( (int) $prayer->id ),
+			array_map( 'intval', (array) $placement_teams ),
+			'and one placement row exists, for that team alone'
+		);
+
+		// A leader of the team the ranking put first still cannot open them.
+		$leader = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		$admin_team = $f->lead_team( $leader, 'administration' );
+		wp_set_current_user( $leader );
+
+		$a->same( array( $admin_team ), \Serve_Dashboard\Roles::visible_team_ids(), 'the leader leads Administration' );
+		$a->not( \Serve_Dashboard\Roles::can_view_submission( (int) $row->id ), 'and still cannot open the profile' );
 	}
 );

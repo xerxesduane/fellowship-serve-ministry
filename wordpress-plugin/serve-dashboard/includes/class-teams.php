@@ -441,7 +441,7 @@ final class Teams {
 			$already   = in_array( $team->slug, $suggested, true );
 
 			$profile = Submissions::profile( $row, false );
-			$match   = Matching::explain( $row, $team, $profile );
+			$match   = Matching::explain( $team, $profile );
 
 			// Nothing to say about them and nobody suggested them: not a
 			// candidate, and padding the list with names would make the list

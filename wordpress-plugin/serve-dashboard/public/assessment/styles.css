@@ -337,3 +337,24 @@ button.restart-inline { min-height: 44px; padding: 0 12px; }
   border-radius: 0 0 8px 0; font-size: 14px; text-decoration: none;
 }
 .skip-to-content:focus { left: 0; }
+
+/*
+ * The server-ranked suggestions.
+ *
+ * The gift-only list was always three, so the grid was three columns. The
+ * ranking returns up to five, plus any team the assessment named, so the
+ * columns fit themselves to however many arrived. The mobile rule below still
+ * collapses them to one.
+ */
+/*
+ * Cards hug their own content instead of stretching to the tallest in the row.
+ * With three one-line cards that never showed; with a ranked list where one team
+ * has four reasons and another has one, the short card gained about 230px of
+ * empty space.
+ */
+.ministry-recommendations { grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); align-items: start; }
+.ministry-strength { margin: 0 0 8px !important; color: var(--teal) !important; font-size: 11px !important; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.ministry-why { margin: 0; padding-left: 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.ministry-why li { margin-bottom: 5px; }
+.ministry-why li:last-child { margin-bottom: 0; }
+.ministry-caveat { margin: 20px 0 0; padding: 14px 16px; border-radius: 14px; background: #fff8e9; color: var(--navy); font-size: 13px; line-height: 1.55; }

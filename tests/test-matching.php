@@ -113,7 +113,7 @@ test(
 			'personality'    => array( 'Be Extroverted', 'Be Self-expressive', 'Prefer Variety', 'Be Cooperative' ),
 		);
 
-		$match = Matching::explain( $submission, $team, $profile );
+		$match = Matching::explain( $team, $profile );
 
 		$a->same( 2, (int) $match['gift_overlap'], 'both gifts are recognised' );
 		$a->same( 1, (int) $match['dimensions_hit'], 'gifts are the only dimension, personality did not become a second' );
@@ -263,8 +263,8 @@ test(
 		$mens   = Teams::get_by_slug( 'grow-men-connect' );
 		$womens = Teams::get_by_slug( 'grow-women-connect' );
 
-		$a->same( 0, count( Matching::explain( $submission, $mens, $profile )['reasons'] ), 'no reason for the men' );
-		$a->same( 1, count( Matching::explain( $submission, $womens, $profile )['reasons'] ), 'and one for the women' );
+		$a->same( 0, count( Matching::explain( $mens, $profile )['reasons'] ), 'no reason for the men' );
+		$a->same( 1, count( Matching::explain( $womens, $profile )['reasons'] ), 'and one for the women' );
 	}
 );
 
@@ -563,8 +563,8 @@ test(
 		foreach ( array( 'prayer', 'administration' ) as $slug ) {
 			$team = Teams::get_by_slug( $slug );
 
-			$one  = Matching::explain( Submissions::get( $mono ), $team, $profile );
-			$many = Matching::explain( Submissions::get( $poly ), $team, $profile );
+			$one  = Matching::explain( $team, $profile );
+			$many = Matching::explain( $team, $profile );
 
 			$a->same(
 				count( $one['reasons'] ),
@@ -585,7 +585,7 @@ test(
 
 		// And nothing claims it as a reason on a team that has no language need.
 		$labels = array_column(
-			Matching::explain( Submissions::get( $poly ), Teams::get_by_slug( 'administration' ), $profile )['reasons'],
+			Matching::explain( Teams::get_by_slug( 'administration' ), $profile )['reasons'],
 			'label'
 		);
 		foreach ( $labels as $label ) {

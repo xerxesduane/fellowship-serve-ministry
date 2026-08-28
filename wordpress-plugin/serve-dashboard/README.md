@@ -243,6 +243,20 @@ proven:
 Also on that endpoint: mandatory consent, honeypot, 5 submissions per IP per
 hour, and a field-by-field payload whitelist.
 
+**`POST /serve/v1/suggestions`** is the other public endpoint, and is public for
+the same reason: the person filling in the assessment is not a WordPress user. It
+is safe to be public because it is a pure calculation. It stores nothing, writes
+nothing, logs nothing, reads no other person's data, and returns only team names
+with the person's own words quoted back. It needs no name, email or phone and is
+given none — the browser sends five profile sections and the handler reads only
+those. It is bounded at 64KB and rate limited.
+
+Its limiter is a **separate bucket** from submissions. Sharing one was the first
+version, and six views of a results page — trivially reached by reloading — spent
+the five-submission allowance and then refused the person when they tried to
+share their profile. The cheap repeatable request must never be able to lock
+somebody out of the important one.
+
 ### The leader dashboard — authenticated and scoped
 
 Verified from an anonymous client:
@@ -621,6 +635,50 @@ Rerouting it to the top-ranked team would also start naming safeguarded teams in
 first contact, which deserves its own decision rather than arriving as a side
 effect of this one.
 
+## The person and the leader now see the same answer
+
+Ranking every team fixed what a *leader* saw and left the *person* where they
+were. The assessment computed its own top three in the browser, on spiritual-gift
+name overlap alone, and that is what their results page showed and what the
+profile they downloaded said. So the two of them could sit down holding different
+lists, and a conversation could open with "it said Worship" about a suggestion
+the leader could not see.
+
+The results page now asks the server. `POST /serve/v1/suggestions` takes a
+finished profile and returns the same ranking, with the same reasons, that the
+dashboard shows — from the same `Matching::rank_profile()`. A second ranking
+written in JavaScript would have drifted from the first within a release, and the
+reasons a leader reads have to be the reasons the person was given.
+
+`Matching::explain()` takes a profile rather than a submission row to make that
+possible. It had taken the row for exactly one reason — the multilingual
+"Speaks X, Y" line — and removing that (see above) left the parameter vestigial,
+which is what turned the ranking into a pure function of answers and teams.
+
+### Display-only, and why that is the whole point
+
+The person is shown a wider list. Nothing about who can see them changes.
+
+`suggested_teams` still records only what the assessment named, because the
+placement rows built from it are what decide which leaders may open a profile.
+Widening a suggestion list must not widen access to people. The seam holds
+without this change having to be careful about it: `sanitize_profile()` is a
+whitelist, so a ranking field the browser invents never reaches storage and
+cannot be read by anything downstream. A test asserts both — that the displayed
+ranking is not stored, and that a leader of the top-ranked team still cannot open
+the profile.
+
+Somebody suggested a team whose leader cannot see them is still reachable: the
+team-first view widened to any evidence in 1.17.0, so that leader finds them from
+their own end.
+
+### Failure is the old behaviour, not an error
+
+The page renders its gift-only list first and replaces it only if the request
+answers. A missing endpoint, a failed fetch or an empty response leaves a
+correct, if narrower, results page rather than an error where the person's
+profile should be. The catch is deliberately silent.
+
 ## Reading it without being trained on it
 
 Three things assumed knowledge the person using it did not have.
@@ -674,13 +732,14 @@ that you left a report, and not a word of what it said.
   frequency, conflict handling, permissions, API limits and the join identifiers
   all have to be agreed first — that is the deck's own "Prepare" phase. The
   boundary class marks where it will go.
-- **Retiring `recommendMinistries()`.** The suggestions a leader sees are now
-  ranked server-side across every team, but the assessment still computes its own
-  gift-only top three in the browser to show the person at the end of their
-  journey, and that is what their downloaded profile says. Two rankings exist,
-  deliberately and visibly — the drawer flags which teams the person has seen.
-  Unifying them means the assessment asking the server what it thinks, which is a
-  change to the public journey rather than to the dashboard.
+- **Retiring `recommendMinistries()` entirely.** The person is now shown the
+  server's ranking, but the browser still computes its gift-only top three —
+  because that is what `suggested_teams` is built from, and therefore what the
+  placement rows and every leader's visibility depend on. It has stopped being
+  the answer anybody reads and become an input to access control, which is a
+  strange job for it. Removing it means deciding what should build those rows
+  instead, and that is the visibility decision this change deliberately did not
+  make.
 - **Team-specific personality fit.** Personality is interpreted per person (see
   above) but cannot be team-specific: `keywords` describes what a team's work is
   about, not what temperament the role suits, and those are different questions.

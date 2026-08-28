@@ -146,7 +146,17 @@ export function buildProfile(answers) {
   };
 }
 
-export function profileToText(answers, profile) {
+/**
+ * The profile as text, for copying, emailing and printing.
+ *
+ * `ranked` is the server's ranking when the results page managed to fetch it.
+ * It is passed in rather than read from the profile because the profile object
+ * is what gets submitted, and `recommendedMinistries` has to keep meaning "what
+ * the assessment itself picked" — the server builds the placement rows that
+ * decide which leaders may open somebody from exactly that field, and showing a
+ * person a wider list must not quietly widen who can see them.
+ */
+export function profileToText(answers, profile, ranked = null) {
   const lines = [
     "MY S.H.A.P.E. PROFILE - FELLOWSHIP DUBAI",
     answers.profile.name ? `Name: ${answers.profile.name}` : "",
@@ -160,7 +170,9 @@ export function profileToText(answers, profile) {
     "EXPERIENCES",
     ...Object.entries(profile.experiences).map(([label, values]) => `${label}: ${values.join(", ") || "None selected"}`),
     `AVAILABILITY\nService priority: ${profile.availability.priority}\nTime per week: ${profile.availability.hours}\nBest times: ${profile.availability.timing.join(", ") || "Not specified"}`,
-    `TOP MINISTRY MATCHES\n${profile.recommendedMinistries.map((item, index) => `${index + 1}. ${item.ministry}${item.matchedGifts.length ? ` — ${item.matchedGifts.join(", ")}` : ""}`).join("\n")}`,
+    ranked && ranked.length
+      ? `WHERE YOUR S.H.A.P.E. POINTS\n${ranked.map((item, index) => `${index + 1}. ${item.team} (${item.strengthLabel})${item.reasons.length ? `\n   ${item.reasons.slice(0, 4).join("\n   ")}` : ""}`).join("\n")}`
+      : `TOP MINISTRY MATCHES\n${profile.recommendedMinistries.map((item, index) => `${index + 1}. ${item.ministry}${item.matchedGifts.length ? ` — ${item.matchedGifts.join(", ")}` : ""}`).join("\n")}`,
     `RECOMMENDED NEXT STEP\n${profile.recommendedNextStep}`,
   ];
   return lines.filter((line) => line !== "").join("\n\n");

@@ -60,14 +60,22 @@ final class Matching {
 	}
 
 	/**
-	 * Build the explained suggestion for one submission against one team.
+	 * Build the explained suggestion for one profile against one team.
 	 *
-	 * @param object              $submission Row from the submissions table.
-	 * @param object              $team       Row from the teams table.
-	 * @param array<string,mixed> $profile    Decoded profile (may be redacted).
+	 * Takes a profile rather than a submission row, and that is the whole
+	 * reason a person can now be shown the same reasoning their leader sees:
+	 * the evidence is a pure function of what somebody answered and what a team
+	 * is about, so it can be worked out before a submission exists at all.
+	 *
+	 * It used to take the row as well, for the one reason that read it — the
+	 * multilingual "Speaks X, Y" line, which turned out not to be evidence for
+	 * any particular team. Removing that left the parameter vestigial.
+	 *
+	 * @param object              $team    Row from the teams table.
+	 * @param array<string,mixed> $profile Decoded profile (may be redacted).
 	 * @return array<string,mixed>
 	 */
-	public static function explain( object $submission, object $team, array $profile ): array {
+	public static function explain( object $team, array $profile ): array {
 		$team_gifts = array_map( 'strtolower', Teams::gift_list( $team ) );
 		$vocabulary = self::vocabulary( $team );
 		$reasons    = array();
@@ -305,12 +313,32 @@ final class Matching {
 	 * @return array<int,array<string,mixed>>
 	 */
 	public static function rank( object $submission, array $profile, ?int $limit = null ): array {
-		$limit    = $limit ?? self::suggestion_limit();
-		$from_assessment = array_map( 'strval', Submissions::decode_list( $submission->suggested_teams ) );
+		return self::rank_profile(
+			$profile,
+			$limit,
+			Submissions::decode_list( $submission->suggested_teams )
+		);
+	}
+
+	/**
+	 * The ranking itself, from a profile alone.
+	 *
+	 * Separated so the public assessment can show a person the same ranked
+	 * teams, with the same reasons, that their leader will see — computed by
+	 * this one implementation rather than a second one written in JavaScript
+	 * that would drift from it within a release.
+	 *
+	 * @param array<string,mixed> $profile
+	 * @param string[]            $from_assessment Slugs the assessment named, if known.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function rank_profile( array $profile, ?int $limit = null, array $from_assessment = array() ): array {
+		$limit           = $limit ?? self::suggestion_limit();
+		$from_assessment = array_map( 'strval', $from_assessment );
 
 		$ranked = array();
 		foreach ( Teams::all() as $team ) {
-			$match                    = self::explain( $submission, $team, $profile );
+			$match                    = self::explain( $team, $profile );
 			$match['from_assessment'] = in_array( (string) $team->slug, $from_assessment, true );
 
 			$ranked[] = $match;

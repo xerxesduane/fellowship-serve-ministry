@@ -25,6 +25,19 @@ final class Rest {
 	private const RATE_LIMIT  = 5;
 	private const RATE_WINDOW = HOUR_IN_SECONDS;
 
+	/*
+	 * Suggestion previews allowed per IP per window.
+	 *
+	 * Higher than the submission limit and deliberately so: a preview writes
+	 * nothing and reveals nothing about anybody else, and somebody re-reading
+	 * their own results page must not be locked out of it. Still limited,
+	 * because it is unauthenticated and does real work.
+	 */
+	private const PREVIEW_LIMIT = 60;
+
+	/** Largest profile a preview will consider, in bytes of JSON. */
+	private const PREVIEW_MAX_BYTES = 64 * 1024;
+
 	public static function register(): void {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
 	}
@@ -108,6 +121,39 @@ final class Rest {
 						'type'     => 'string',
 					),
 					'note'     => array( 'type' => 'string' ),
+				),
+			)
+		);
+
+		/*
+		 * What teams a finished profile points to, before it is shared.
+		 *
+		 * The assessment used to show a person its own top three, ranked on
+		 * spiritual-gift name overlap in the browser, while their leader saw
+		 * every team ranked across all five S.H.A.P.E. dimensions. Two
+		 * different answers to the same question, and the person's was the one
+		 * printed on the profile they downloaded — so a conversation could open
+		 * with "it said Worship" about a suggestion the leader could not see.
+		 *
+		 * Public, because the person filling in the assessment is not a
+		 * WordPress user. Safe to be public because it is a pure calculation:
+		 * it stores nothing, writes nothing, logs nothing, reads no other
+		 * person's data, and returns only team names with the person's own
+		 * words quoted back as the reasons. It needs no name, email or phone
+		 * and is given none.
+		 */
+		register_rest_route(
+			self::NAMESPACE,
+			'/suggestions',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'preview_suggestions' ),
+				'permission_callback' => '__return_true',
+				'args'                => array(
+					'profile' => array(
+						'required' => true,
+						'type'     => 'object',
+					),
 				),
 			)
 		);
@@ -456,17 +502,96 @@ final class Rest {
 		return array_values( array_unique( array_filter( $slugs ) ) );
 	}
 
-	private static function rate_key(): string {
-		return 'serve_rl_' . ( Privacy::hash_ip() ?: 'unknown' );
+	/**
+	 * Rank a profile without storing it.
+	 *
+	 * @param \WP_REST_Request $request
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public static function preview_suggestions( \WP_REST_Request $request ) {
+		$limited = self::check_rate_limit( self::PREVIEW_LIMIT, 'preview' );
+		if ( is_wp_error( $limited ) ) {
+			return $limited;
+		}
+
+		$profile = $request->get_param( 'profile' );
+
+		if ( ! is_array( $profile ) ) {
+			return new \WP_Error(
+				'serve_bad_profile',
+				__( 'That profile could not be read.', 'serve-dashboard' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		/*
+		 * Bounded before anything else looks at it. An unauthenticated endpoint
+		 * that walks every value in a structure it was handed needs a size it
+		 * refuses beyond, or a large enough payload becomes the attack.
+		 */
+		if ( strlen( (string) wp_json_encode( $profile ) ) > self::PREVIEW_MAX_BYTES ) {
+			return new \WP_Error(
+				'serve_profile_too_large',
+				__( 'That profile is larger than this can consider.', 'serve-dashboard' ),
+				array( 'status' => 413 )
+			);
+		}
+
+		self::bump_rate_limit( 'preview' );
+
+		/*
+		 * Only the sections matching actually reads. Anything else the browser
+		 * happened to include — a name, an email, a note to self — is dropped
+		 * here rather than being walked, quoted back, or reaching a log.
+		 */
+		$considered = array(
+			'spiritualGifts' => $profile['spiritualGifts'] ?? array(),
+			'heart'          => $profile['heart'] ?? array(),
+			'abilities'      => $profile['abilities'] ?? array(),
+			'experiences'    => $profile['experiences'] ?? array(),
+			'personality'    => $profile['personality'] ?? array(),
+		);
+
+		$out = array();
+		foreach ( Matching::rank_profile( $considered ) as $match ) {
+			$out[] = array(
+				'team'          => $match['team_name'],
+				'strength'      => $match['strength'],
+				'strengthLabel' => $match['strength_label'],
+				'reasons'       => array_column( $match['reasons'], 'label' ),
+				'caveat'        => $match['caveat'],
+			);
+		}
+
+		return new \WP_REST_Response(
+			array(
+				'suggestions' => $out,
+				'personality' => Matching::personality_notes( $considered ),
+			)
+		);
+	}
+
+	/**
+	 * One counter per kind of request, not one shared by all of them.
+	 *
+	 * Previews and submissions counted against the same bucket in the first
+	 * version of the preview endpoint, so somebody who re-read their own
+	 * results page a handful of times spent their submission allowance and was
+	 * then refused when they tried to share the profile. The cheap, repeatable
+	 * request must not be able to lock somebody out of the important one.
+	 */
+	private static function rate_key( string $bucket = 'submit' ): string {
+		return 'serve_rl_' . $bucket . '_' . ( Privacy::hash_ip() ?: 'unknown' );
 	}
 
 	/**
 	 * @return true|\WP_Error
 	 */
-	private static function check_rate_limit() {
-		$count = (int) get_transient( self::rate_key() );
+	private static function check_rate_limit( ?int $ceiling = null, string $bucket = 'submit' ) {
+		$ceiling = $ceiling ?? self::RATE_LIMIT;
+		$count   = (int) get_transient( self::rate_key( $bucket ) );
 
-		if ( $count >= self::RATE_LIMIT ) {
+		if ( $count >= $ceiling ) {
 			return new \WP_Error(
 				'serve_rate_limited',
 				__( 'That is a lot of submissions from one place. Please try again later.', 'serve-dashboard' ),
@@ -477,8 +602,8 @@ final class Rest {
 		return true;
 	}
 
-	private static function bump_rate_limit(): void {
-		$key   = self::rate_key();
+	private static function bump_rate_limit( string $bucket = 'submit' ): void {
+		$key   = self::rate_key( $bucket );
 		$count = (int) get_transient( $key );
 
 		set_transient( $key, $count + 1, self::RATE_WINDOW );
