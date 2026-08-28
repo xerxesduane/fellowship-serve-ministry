@@ -59,9 +59,38 @@ Beneath them:
 
 - **People ready for a next step** — the main list. Click anybody to open them.
 - **Serving team gaps** — where teams are short. Context only.
+- **Confirm these headcounts** — only if you can edit teams, and only when a
+  number has gone out of date. See *The rhythm*.
 - **Quick follow-ups** — what is due today or overdue.
 - **Settling in** — people you placed a while ago that nobody has been back to.
-- **Something not working?** — see the last section. Please use it.
+
+Every list of people has its columns titled along the top — **Name and gifts**,
+**Suggested teams**, **Next step due**, **Stage**. Narrow screens drop the
+middle columns rather than squeezing them; the date survives longer than the
+suggested team, because "Overdue" is something you act on.
+
+If a stage name is not obvious, open **What do these stages mean?** just above
+the list. It explains all seven in a sentence each, and you can leave it closed.
+
+### Suggested teams, and the ones marked *not on their profile*
+
+Opening somebody shows the teams their answers point to, best-evidenced first,
+with the reasons underneath. These come from weighing every team against
+everything they told us — gifts, passions, abilities and past experience — not
+just their spiritual gifts.
+
+At the end of the assessment the person was shown their own top three, worked out
+from spiritual gifts alone, and that is what the profile they downloaded says.
+Any team here that was not one of those three is marked **not on their profile**.
+It is not a lesser suggestion — often it is the better one — it simply means they
+have not seen it, so start there rather than assuming they are expecting it.
+
+A team is suggested because of something they actually wrote. If a suggestion
+looks wrong, the words behind it are editable: see **What it is about** on the
+Teams screen, and please also say so under Contact support.
+
+**Contact support** is in the left-hand menu, on every screen. See the last
+section. Please use it.
 
 ---
 
@@ -153,6 +182,21 @@ nudge, not a deadline.
 it is actually going. Somebody put on a team and never spoken to again is how a
 willing volunteer quietly stops turning up. Press **Spoke to them** when you
 have.
+
+**Whenever a headcount is flagged — pastors and administrators.** How many
+people are on each team is a number somebody types in by hand; nothing counts
+it for us. Every time a person is placed, that number is one further out of
+date, and the *Serving team gaps* figures are computed from it — so a stale
+number makes every team look shorter of people than it is.
+
+When that has happened you will see a **Confirm these headcounts** card, and a
+section in the Monday email naming the teams and how far out each one is. Open
+the Teams screen, correct the numbers, and save. Saving counts as confirming,
+whether or not the number moved.
+
+This is a real job with a real owner, not a tidiness exercise. If nobody does
+it, the gap figures drift for the whole pilot and quietly stop being true. It
+takes about a minute.
 
 ---
 

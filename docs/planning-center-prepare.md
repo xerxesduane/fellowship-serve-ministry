@@ -156,9 +156,12 @@ Three options:
 `current_headcount` is typed in by hand and means everyone serving on a team,
 most of whom never completed an assessment. PCO knows the actual roster.
 
-If PCO becomes the owner, the gap panel stops being an estimate and the
-"placed since this was last checked" drift indicator added in 1.12.0 becomes
-unnecessary. That is probably the single highest-value read in any integration,
+If PCO becomes the owner, the gap panel stops being an estimate, and both of
+the workarounds around it become unnecessary: the "placed since this was last
+checked" drift indicator added in 1.12.0, and the confirm-the-headcount nudge
+added in 1.15.0 because disclosing the drift was not the same as anybody
+correcting it. Two rounds of compensating for a hand-typed field is itself an
+argument for who should own it. That is probably the single highest-value read in any integration,
 and it is read-only, one-directional, and involves no personal data leaving.
 
 **Worth considering as a first slice on its own**, before anything harder.

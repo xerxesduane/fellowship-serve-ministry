@@ -178,20 +178,45 @@ function personRow(person) {
 			<span class="serve-row__name">${esc(person.name)}</span>
 			<span class="serve-row__meta">${esc(person.gifts.join(', ') || '—')}${flags}</span>
 		</span>
-		<span class="serve-row__col">${esc(person.suggestedTeams.join(', ') || '—')}</span>
-		<span class="serve-row__col">${due}</span>
+		<span class="serve-row__col serve-row__col--teams">${esc(person.suggestedTeams.join(', ') || '—')}</span>
+		<span class="serve-row__col serve-row__col--due">${due}</span>
 		<span class="serve-row__aside">
 			${badge(person.status, person.statusLabel)}
 		</span>
 	</button>`;
 }
 
+/**
+ * Column titles for a list of people.
+ *
+ * Without these the four columns were unlabelled and you had to already know
+ * the product to read them: a date with no title could be when somebody
+ * applied, and the badge on the right had no name at all. Plain words, in the
+ * same vocabulary the leader guide uses — "stage" is what that guide calls the
+ * thing you move somebody along.
+ *
+ * The empty cell over the avatar keeps the titles on the same tracks as the
+ * cells they describe. Hidden cells stay in the markup and are hidden by the
+ * same rules as the row cells, so the two can never fall out of step.
+ */
+function rowsHead() {
+	return `<div class="serve-rows__head" aria-hidden="true">
+		<span></span>
+		<span>Name and gifts</span>
+		<span class="serve-row__col serve-row__col--teams">Suggested teams</span>
+		<span class="serve-row__col serve-row__col--due">Next step due</span>
+		<span class="serve-rows__head-aside">Stage</span>
+	</div>`;
+}
+
 function rowsOrEmpty(people, empty) {
+	// No titles over an empty state: there are no columns to title, and a bare
+	// header strip above "nothing to do" reads as something failing to load.
 	if (!people.length) {
 		return emptyState(empty);
 	}
 
-	return `<div class="serve-rows">${people.map(personRow).join('')}</div>`;
+	return `<div class="serve-rows">${rowsHead()}${people.map(personRow).join('')}</div>`;
 }
 
 /* ── Dashboard regions ─────────────────────────────────────────────────── */
@@ -253,6 +278,47 @@ function renderGaps(gaps) {
 			${stale}
 			<span class="screen-reader-text">${esc(gap.current)} of ${esc(gap.target)} places filled${
 				since > 0 ? `, and ${since} placed since this figure was last checked` : ''}</span>
+		</div>`;
+	}).join('');
+}
+
+/**
+ * Teams whose typed-in headcount has been overtaken by placements.
+ *
+ * The note on the gap bars states the drift. This is the only thing in the
+ * dashboard that asks somebody to go and correct it, which is the whole
+ * difference between an error that is disclosed and one that gets fixed.
+ *
+ * Its own card rather than a line on the gaps panel: folding it in would make
+ * it one more piece of grey text on the thing it is a warning about, and the
+ * warning has been ignorable precisely because it looked like part of the
+ * furniture. Hidden when nothing has drifted, and never populated for leaders
+ * who cannot edit capacity — the server does not send them the list.
+ */
+function renderHeadcountChecks(items) {
+	const card = $('headcount-card');
+	if (!card) {
+		return;
+	}
+
+	if (!items || !items.length) {
+		card.hidden = true;
+		return;
+	}
+
+	card.hidden = false;
+	$('headcount-checks').innerHTML = items.map((item) => {
+		// null is "never confirmed", which is emphatically not "0 days ago".
+		const when = item.daysSince === null
+			? 'never confirmed'
+			: `confirmed ${item.daysSince} day${item.daysSince === 1 ? '' : 's'} ago`;
+
+		return `<div class="serve-fu serve-fu--settling">
+			<span class="serve-fu__open">
+				<span class="serve-fu__name">${esc(item.name)}</span>
+				<span class="serve-fu__when is-attention">${esc(item.placedSince)} placed since · ${esc(when)}</span>
+			</span>
+			<a class="serve-btn serve-btn--secondary serve-btn--sm" href="${esc(CONFIG.teamsUrl)}">Confirm</a>
 		</div>`;
 	}).join('');
 }
@@ -445,11 +511,23 @@ const drawer = {
 			</div>`;
 		}).join('');
 
+		/*
+		 * Suggestions now come from ranking every team, not from the three the
+		 * assessment picked on spiritual gifts alone — so some of these are
+		 * teams the person has never seen. Their own downloaded profile lists
+		 * the assessment's picks, and a leader opening a conversation needs to
+		 * know which of these the person is already expecting. Flagged on the
+		 * ones they have not seen rather than on the ones they have: the new
+		 * suggestions are the smaller set and the ones that need the caveat.
+		 */
 		const matches = person.matches.length
 			? person.matches.map((match) => `
 				<div class="serve-match">
 					<div class="serve-match__head">
-						<span class="serve-match__name">${esc(match.team_name)}</span>
+						<span class="serve-match__name">${esc(match.team_name)}${
+							match.from_assessment
+								? ''
+								: '<span class="serve-flag serve-flag--stale">not on their profile</span>'}</span>
 						<span class="serve-badge serve-badge--${match.strength === 'strong' ? 'ready' : 'progress'}">
 							<span class="serve-badge__glyph" aria-hidden="true">${match.strength === 'strong' ? '●' : '◐'}</span>
 							${esc(match.strength_label)}
@@ -466,6 +544,29 @@ const drawer = {
 					${match.opening_note ? `<p class="serve-match__context">${esc(match.opening_note)}</p>` : ''}
 				</div>`).join('')
 			: `<p class="serve-note serve-note--muted">No team suggestions are available for this profile. That is not a problem — it means the conversation starts open.</p>`;
+
+		/*
+		 * How this person is likely to serve, whichever team it turns out to be.
+		 *
+		 * The four personality couplets have been collected and displayed since
+		 * the beginning and nothing ever interpreted them, while the deck lists
+		 * personality among the five things matching considers.
+		 *
+		 * Shown once, under the suggestions rather than inside each one, and
+		 * headed so it cannot be read as evidence for a particular team: the
+		 * same four tendencies apply to all of them. Repeating the block per
+		 * team would imply it told you something about the choice between them.
+		 */
+		const personality = (person.personalityNotes && person.personalityNotes.length)
+			? `<div class="serve-personality">
+					<span class="serve-personality__head">However the conversation goes, how they are likely to serve</span>
+					${person.personalityNotes.map((item) => `
+						<p class="serve-personality__item">
+							<strong>${esc(item.tendency)}.</strong> ${esc(item.note)}
+						</p>`).join('')}
+					<p class="serve-card__hint">Temperament shapes how a role is best arranged, not whether somebody is suited to it. There is no wrong answer here.</p>
+				</div>`
+			: '';
 
 		const safeguarding = person.safeguarding.relevant
 			? `<p class="serve-note ${person.safeguarding.cleared ? 'serve-note--info' : 'serve-note--warn'}">
@@ -681,11 +782,12 @@ const drawer = {
 
 			<div class="serve-section">
 				<h3>Suggested teams</h3>
-				<p class="serve-card__hint">A suggestion is a starting point. The leader confirms, and the person chooses.</p>
+				<p class="serve-card__hint">A suggestion is a starting point. The leader confirms, and the person chooses. Anything marked <em>not on their profile</em> came from their wider answers, so they have not seen it yet.</p>
 				${person.matches.find((m) => m.caveat)
 					? `<p class="serve-note serve-note--warn">${esc(person.matches.find((m) => m.caveat).caveat)}</p>`
 					: ''}
 				${matches}
+				${personality}
 			</div>
 
 			<div class="serve-section">
@@ -835,7 +937,14 @@ const matching = {
 
 				container.innerHTML = `
 					<p class="serve-card__hint">${esc(gapLine)}</p>
-					<div class="serve-rows">${data.candidates.map((c) => `
+					<div class="serve-rows serve-rows--compact">
+					<div class="serve-rows__head" aria-hidden="true">
+						<span></span>
+						<span>Name and why they might fit</span>
+						<span class="serve-row__col serve-row__col--due">Stage</span>
+						<span class="serve-rows__head-aside">Strength of evidence</span>
+					</div>
+					${data.candidates.map((c) => `
 						<button type="button" class="serve-row" data-person="${esc(c.id)}">
 							<span class="serve-avatar serve-avatar--sm" aria-hidden="true">${esc(c.initials)}</span>
 							<span class="serve-row__body">
@@ -846,7 +955,7 @@ const matching = {
 									${c.alreadySuggested ? '' : '<span class="serve-flag serve-flag--stale">not auto-suggested</span>'}
 								</span>
 							</span>
-							<span class="serve-row__col">${esc(c.statusLabel)}</span>
+							<span class="serve-row__col serve-row__col--due">${esc(c.statusLabel)}</span>
 							<span class="serve-row__aside">
 								<span class="serve-badge serve-badge--${c.match.strength === 'strong' ? 'ready' : 'progress'}">
 									<span class="serve-badge__glyph" aria-hidden="true">${c.match.strength === 'strong' ? '●' : '◐'}</span>${esc(c.match.strength_label)}
@@ -966,6 +1075,7 @@ function loadDashboard() {
 
 			renderMetrics(data.metrics);
 			renderGaps(data.gaps);
+			renderHeadcountChecks(data.headcountChecks);
 			renderFollowups(data.followups);
 			renderSettling(data.settling);
 			renderGifts(data.gifts);

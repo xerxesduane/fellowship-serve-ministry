@@ -143,7 +143,24 @@ final class Digest {
 			array_filter( $waiting, static fn( $row ) => empty( $row->assigned_user_id ) )
 		);
 
-		$total = count( $past_due ) + count( $unclaimed );
+		/*
+		 * Headcounts that placements have overtaken.
+		 *
+		 * This is the one item in the digest that is about the tool rather than
+		 * about a person, and it is here because the dashboard alone could not
+		 * fix it: the drift note lives on a panel, and a panel has to be
+		 * visited. Nobody was ever asked to correct the number, so across a
+		 * pilot it would quietly get worse while the gap figures the deck
+		 * promises got less true.
+		 *
+		 * Restricted to leaders who can edit team capacity. Everyone else would
+		 * be asked to fix something they have no permission to touch.
+		 */
+		$headcount = current_user_can( Roles::CAP_MANAGE_TEAMS )
+			? Teams::needs_headcount_check( Roles::visible_team_ids() )
+			: array();
+
+		$total = count( $past_due ) + count( $unclaimed ) + count( $headcount );
 
 		$lines = array( __( 'Here is where things stand with the people in your care this week.', 'serve-dashboard' ), '' );
 
@@ -172,6 +189,24 @@ final class Digest {
 			$lines[] = '';
 		}
 
+		if ( $headcount ) {
+			$lines[] = sprintf(
+				/* translators: %d: number of teams whose headcount is out of date. */
+				_n(
+					'%d team headcount is out of date — people have been placed since it was last confirmed:',
+					'%d team headcounts are out of date — people have been placed since they were last confirmed:',
+					count( $headcount ),
+					'serve-dashboard'
+				),
+				count( $headcount )
+			);
+			$lines = array_merge( $lines, self::headcount_lines( $headcount ) );
+			$lines[] = '';
+			$lines[] = __( 'Correct them here:', 'serve-dashboard' );
+			$lines[] = admin_url( 'admin.php?page=' . Admin::PAGE_TEAMS );
+			$lines[] = '';
+		}
+
 		$lines[] = __( 'Open the dashboard:', 'serve-dashboard' );
 		$lines[] = admin_url( 'admin.php?page=' . Admin::PAGE_DASHBOARD );
 		$lines[] = '';
@@ -179,15 +214,89 @@ final class Digest {
 
 		return array(
 			'total'   => $total,
-			'subject' => 0 === count( $past_due )
-				? __( 'SERVE: people waiting for a conversation', 'serve-dashboard' )
-				: sprintf(
-					/* translators: %d: number of overdue follow-ups. */
-					_n( 'SERVE: %d follow-up overdue', 'SERVE: %d follow-ups overdue', count( $past_due ), 'serve-dashboard' ),
-					count( $past_due )
-				),
+			'subject' => self::subject( count( $past_due ), count( $unclaimed ), count( $headcount ) ),
 			'body'    => implode( "\n", $lines ),
 		);
+	}
+
+	/**
+	 * Subject line, naming whichever thing is most pressing.
+	 *
+	 * Overdue people first, then people waiting, then the headcount nudge. The
+	 * third case exists because the nudge can now be the only reason an email
+	 * goes out, and "people waiting for a conversation" would then be simply
+	 * untrue — a subject line that cries wolf teaches leaders to stop opening
+	 * the digest at all.
+	 */
+	private static function subject( int $past_due, int $unclaimed, int $headcount ): string {
+		if ( $past_due > 0 ) {
+			return sprintf(
+				/* translators: %d: number of overdue follow-ups. */
+				_n( 'SERVE: %d follow-up overdue', 'SERVE: %d follow-ups overdue', $past_due, 'serve-dashboard' ),
+				$past_due
+			);
+		}
+
+		if ( $unclaimed > 0 ) {
+			return __( 'SERVE: people waiting for a conversation', 'serve-dashboard' );
+		}
+
+		return sprintf(
+			/* translators: %d: number of teams whose headcount needs confirming. */
+			_n(
+				'SERVE: %d team headcount needs confirming',
+				'SERVE: %d team headcounts need confirming',
+				$headcount,
+				'serve-dashboard'
+			),
+			$headcount
+		);
+	}
+
+	/**
+	 * One line per team whose number has been overtaken.
+	 *
+	 * Team names and counts only. No names of the people placed: this is an
+	 * administrative correction, and the digest's rule that email is not a
+	 * place to put profile detail applies here too.
+	 *
+	 * @param array<int,object> $teams
+	 * @return string[]
+	 */
+	private static function headcount_lines( array $teams ): array {
+		$lines = array();
+
+		foreach ( array_slice( $teams, 0, self::MAX_NAMES ) as $team ) {
+			$days = $team->days_since_check;
+
+			$when = null === $days
+				? __( 'never confirmed', 'serve-dashboard' )
+				: sprintf(
+					/* translators: %d: whole days since the headcount was confirmed. */
+					_n( 'confirmed %d day ago', 'confirmed %d days ago', $days, 'serve-dashboard' ),
+					$days
+				);
+
+			$lines[] = sprintf(
+				/* translators: 1: team name, 2: recorded headcount, 3: placements since, 4: when it was last confirmed. */
+				__( '  - %1$s: %2$d recorded, %3$d placed since (%4$s)', 'serve-dashboard' ),
+				$team->name,
+				(int) $team->current_headcount,
+				(int) $team->placed_since,
+				$when
+			);
+		}
+
+		$extra = count( $teams ) - self::MAX_NAMES;
+		if ( $extra > 0 ) {
+			$lines[] = sprintf(
+				/* translators: %d: number of additional teams not listed. */
+				_n( '  ...and %d more', '  ...and %d more', $extra, 'serve-dashboard' ),
+				$extra
+			);
+		}
+
+		return $lines;
 	}
 
 	/**

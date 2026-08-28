@@ -170,6 +170,34 @@ final class App {
 	 * Render the shell. Content is drawn by the JS module; this provides the
 	 * landmarks, the no-JS message, and the server-rendered brand block.
 	 */
+	/**
+	 * Collapsed explanation of the stage badges.
+	 *
+	 * Closed by default so it costs a returning leader nothing, and a plain
+	 * <details> rather than a scripted panel so it works before the app has
+	 * booted and keeps its keyboard behaviour for free.
+	 *
+	 * Emitted in both list views from here rather than written out twice: the
+	 * same question gets asked wherever the badges are, and two copies of the
+	 * wording is two things to keep in step.
+	 */
+	public static function stage_legend(): void {
+		$labels       = Schema::status_labels();
+		$descriptions = Schema::status_descriptions();
+
+		echo '<details class="serve-legend"><summary>'
+			. esc_html__( 'What do these stages mean?', 'serve-dashboard' )
+			. '</summary><dl class="serve-legend__list">';
+
+		foreach ( $labels as $key => $label ) {
+			echo '<div><dt>' . esc_html( $label ) . '</dt><dd>'
+				. esc_html( $descriptions[ $key ] ?? '' )
+				. '</dd></div>';
+		}
+
+		echo '</dl></details>';
+	}
+
 	public static function render(): void {
 		if ( ! current_user_can( Roles::CAP_VIEW_DASHBOARD ) ) {
 			wp_die( esc_html__( 'You do not have access to the SERVE dashboard.', 'serve-dashboard' ) );

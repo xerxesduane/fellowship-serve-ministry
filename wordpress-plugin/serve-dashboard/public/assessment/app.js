@@ -352,7 +352,81 @@ function profileSection(letter, title, body) {
   return `<article class="profile-section"><header><span>${letter}</span><h2>${escapeHtml(title)}</h2></header><div class="profile-section-body">${body}</div></article>`;
 }
 
+/*
+ * Teams the finished profile points to, as the server ranks them.
+ *
+ * The list below this used to be the only answer a person got: the top three by
+ * spiritual-gift name overlap, worked out in this file. Their leader saw every
+ * team ranked across all five S.H.A.P.E. dimensions — so the two of them could
+ * open a conversation holding different lists, and the person's was the one
+ * printed on the profile they downloaded.
+ *
+ * Asked of the server rather than reimplemented here. A second ranking written
+ * in JavaScript would drift from the first within a release, and the reasons a
+ * leader reads have to be the reasons the person was given.
+ *
+ * Held in module state rather than threaded through render(): the results page
+ * renders synchronously and this arrives later.
+ */
+let serverSuggestions = null;
+let suggestionsAsked = false;
+
+function requestSuggestions(profile) {
+  if (suggestionsAsked || !SERVE_CONFIG.suggestUrl) return;
+  suggestionsAsked = true;
+
+  /*
+   * Only the sections that carry answers. The server ignores anything else, but
+   * there is no reason to put a name, an email or a phone number on the wire
+   * for a calculation that does not use them.
+   */
+  const payload = {
+    spiritualGifts: profile.spiritualGifts,
+    heart: profile.heart,
+    abilities: profile.abilities,
+    experiences: profile.experiences,
+    personality: profile.personality,
+  };
+
+  fetch(SERVE_CONFIG.suggestUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile: payload }),
+  })
+    .then((response) => (response.ok ? response.json() : null))
+    .then((data) => {
+      if (!data || !Array.isArray(data.suggestions) || !data.suggestions.length) return;
+      serverSuggestions = data.suggestions;
+      render({ animate: false });
+    })
+    .catch(() => {
+      /*
+       * Deliberately silent. The gift-only list is already on screen and is a
+       * true statement about their gifts; replacing a working results page with
+       * an error because a refinement did not load would be the worse outcome.
+       */
+    });
+}
+
 function ministryRecommendations(profile) {
+  if (serverSuggestions) {
+    const cards = serverSuggestions.map((item, index) => {
+      const why = item.reasons.length
+        ? `<ul class="ministry-why">${item.reasons.slice(0, 4).map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>`
+        : "<p>A flexible place to explore your S.H.A.P.E. with a ministry leader.</p>";
+
+      return `<li><span>${index + 1}</span><div><h3>${escapeHtml(item.team)}</h3><p class="ministry-strength">${escapeHtml(item.strengthLabel)}</p>${why}</div></li>`;
+    }).join("");
+
+    const caveat = serverSuggestions.find((item) => item.caveat);
+
+    return `<article class="recommendations-section"><header><p class="eyebrow">Personalized starting points</p><h2>Where your S.H.A.P.E. points</h2><p>Weighed across everything you told us — your gifts, what you care about, what you can do, and what you have lived through. Conversation starters, not a final assignment.</p></header>${
+      caveat ? `<p class="ministry-caveat">${escapeHtml(caveat.caveat)}</p>` : ""
+    }<ol class="ministry-recommendations">${cards}</ol></article>`;
+  }
+
+  requestSuggestions(profile);
+
   const cards = profile.recommendedMinistries.map((item, index) => `<li><span>${index + 1}</span><div><h3>${escapeHtml(item.ministry)}</h3><p>${item.matchedGifts.length ? `Strong alignment with ${escapeHtml(item.matchedGifts.join(", "))}.` : "A flexible place to explore your S.H.A.P.E. with a ministry leader."}</p></div></li>`).join("");
   return `<article class="recommendations-section"><header><p class="eyebrow">Personalized starting points</p><h2>Your top 3 ministry matches</h2><p>These suggestions are based on your likely and possible spiritual gifts. Use them as conversation starters, not a final assignment.</p></header><ol class="ministry-recommendations">${cards}</ol></article>`;
 }
@@ -391,7 +465,7 @@ function saveProfile(profile) {
 function profilePage() {
   const profile = buildProfile(answers);
   saveProfile(profile);
-  const text = `${profileToText(answers, profile)}\n\nCURRENT SERVING OPPORTUNITIES\n${SERVING_FORM}`;
+  const text = `${profileToText(answers, profile, serverSuggestions)}\n\nCURRENT SERVING OPPORTUNITIES\n${SERVING_FORM}`;
   const mailto = `mailto:${encodeURIComponent(answers.profile.email || "")}?subject=${encodeURIComponent(`${answers.profile.name || "My"} S.H.A.P.E. Profile`)}&body=${encodeURIComponent(text)}`;
   return `<section class="profile-page"><header class="profile-hero"><p class="eyebrow">Fellowship Dubai · Complete profile</p><h1>${answers.profile.name ? `${escapeHtml(answers.profile.name)}’s` : "My"} S.H.A.P.E. Profile</h1><p>A clear starting point for prayer, reflection, and exploring current serving opportunities.</p><div class="profile-contact"><span>${escapeHtml(answers.profile.email || "Email not provided")}</span><span>${escapeHtml(answers.profile.phone || "Phone not provided")}</span></div><div class="profile-actions no-print"><button type="button" data-action="copy">${icon("clipboard", 17)}${copied ? "Copied" : "Copy My Profile"}</button><button type="button" data-action="print">${icon("printer", 17)}Download / Print PDF</button><a href="${escapeHtml(mailto)}">${icon("mail", 17)}Email / Share My Profile</a><a href="${SERVING_FORM}" target="_blank" rel="noopener noreferrer">Begin Serving ${icon("external", 16)}</a></div></header>
     ${profileSection("S", "Spiritual Gifts", giftGroup("Likely gifts", profile.spiritualGifts.likely) + giftGroup("Possible gifts", profile.spiritualGifts.possible) + giftGroup("Unlikely gifts", profile.spiritualGifts.unlikely, true))}
@@ -499,7 +573,7 @@ function render({ focusSearch = "", animate = true } = {}) {
 
 async function copyProfile() {
   const profile = buildProfile(answers);
-  const text = `${profileToText(answers, profile)}\n\nCURRENT SERVING OPPORTUNITIES\n${SERVING_FORM}`;
+  const text = `${profileToText(answers, profile, serverSuggestions)}\n\nCURRENT SERVING OPPORTUNITIES\n${SERVING_FORM}`;
   try {
     await navigator.clipboard.writeText(text);
   } catch {

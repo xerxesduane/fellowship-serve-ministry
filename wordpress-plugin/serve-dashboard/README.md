@@ -243,6 +243,20 @@ proven:
 Also on that endpoint: mandatory consent, honeypot, 5 submissions per IP per
 hour, and a field-by-field payload whitelist.
 
+**`POST /serve/v1/suggestions`** is the other public endpoint, and is public for
+the same reason: the person filling in the assessment is not a WordPress user. It
+is safe to be public because it is a pure calculation. It stores nothing, writes
+nothing, logs nothing, reads no other person's data, and returns only team names
+with the person's own words quoted back. It needs no name, email or phone and is
+given none — the browser sends five profile sections and the handler reads only
+those. It is bounded at 64KB and rate limited.
+
+Its limiter is a **separate bucket** from submissions. Sharing one was the first
+version, and six views of a results page — trivially reached by reloading — spent
+the five-submission allowance and then refused the person when they tried to
+share their profile. The cheap repeatable request must never be able to lock
+somebody out of the important one.
+
 ### The leader dashboard — authenticated and scoped
 
 Verified from an anonymous client:
@@ -385,6 +399,36 @@ team:
 Ranking is by distinct dimensions supported, then by selectivity, then by reason
 count. Team need is deliberately absent from the ordering.
 
+### Personality is read, and deliberately not counted
+
+The assessment has collected the four personality couplets since the beginning
+and the profile has always displayed them, but nothing interpreted them — while
+the presentation lists personality among the five things matching considers.
+
+It is now interpreted, in the one direction the data honestly supports. Each
+tendency produces a note about *how* the person is likely to serve, shown once
+per person under the suggestions:
+
+> **Be Introverted.** Gains energy from quiet reflection and listens well. Depth
+> with a few people may suit better than a busy front-of-house role.
+
+That is the workbook's own position: personality governs the manner in which a
+gift is exercised, not which team somebody belongs on, and serving against the
+grain of it "creates tension and discomfort … and produces less than the best
+results".
+
+It is kept out of `reasons`, out of `dimensions_hit`, and out of strength, for a
+reason worth stating plainly. Nothing in the teams table describes what a role
+is actually like, so the same four tendencies fire identically for all sixteen
+teams and carry no information about any of them. Counting them would have added
+a dimension and several reasons to every suggestion at once — satisfying the
+corroboration rule above with evidence that says nothing about the team, and
+handing out "Strong match" on the strength of a temperament. A test holds that
+line, and a mutation that files personality as a reason fails it.
+
+Making personality genuinely team-specific needs per-team role attributes that
+do not exist yet.
+
 ## Follow-up ownership and conversation history
 
 Two columns existed that nothing wrote to, leaving two holes: nobody owned a
@@ -424,6 +468,43 @@ would have quietly excluded exactly the person most likely to want it.
 Names and dates only. No gifts, no notes: email is not a place to put a
 S.H.A.P.E. profile.
 
+It also carries the one item that is about the tool rather than a person: team
+headcounts that placements have overtaken. See below.
+
+## Headcounts that have gone stale get asked about
+
+`current_headcount` is typed in by hand. Until leaders could work the pipeline
+nobody could be placed, so it never drifted; now every placement moves it a
+little further from the truth, and the gap panel is one of the four things the
+deck promises.
+
+Reporting that drift was only half the job. The note on the gap bars is a
+*disclosure* — it has to be scrolled to, and it looks the same in week ten as in
+week one, so across a pilot it becomes furniture while the number behind it gets
+steadily worse. Nobody was ever asked to correct it.
+
+Two places now ask:
+
+- a **Confirm these headcounts** card on the dashboard, hidden unless something
+  has actually drifted, linking to the screen where the number is edited
+- a section in the **weekly digest**, which can now be the sole reason an email
+  goes out — so the subject line has a third form rather than claiming people
+  are waiting when they are not
+
+Both are restricted to leaders who hold `serve_manage_teams`. A ministry leader
+can place people, and so cause the drift, but cannot edit team capacity; asking
+them to confirm a number they may not change would be an instruction to do
+nothing. They still see the drift note on the bars.
+
+Only teams with real drift are listed. A figure nobody has touched in months is
+fine if nobody has been placed on that team — age alone is not evidence of
+error, and nudging on it would train leaders to ignore the nudge. "Never
+confirmed" is reported as never, not as zero days ago.
+
+The proper fix is upstream: Planning Center knows the actual roster, and
+`docs/planning-center-prepare.md` §7 argues for a read-only headcount as the
+first integration slice, after which this nudge becomes unnecessary.
+
 ## Continue on another device
 
 Nineteen steps and `localStorage` only meant someone starting on a phone at
@@ -453,17 +534,216 @@ dashboard uses. UTF-8 BOM so non-Latin names open correctly in Excel.
 **Experiences and conversation notes are never exported at any capability level** —
 a spreadsheet is the easiest thing in the world to forward to the wrong person.
 
+## Suggestions now come from every team, not three chosen on gifts
+
+The suggested teams on a profile were whichever three `recommendMinistries()`
+picked in the browser at the end of the assessment. That function ranks on
+spiritual-gift name overlap and nothing else. `Matching::explain()` — which
+reads heart, abilities and experience as well — then decorated that
+already-narrowed set.
+
+So the other four dimensions could reorder three teams chosen on gifts, and
+could never put forward a team the gift ranking had missed. The team-first view
+had the same defect from the other side: its candidate list pre-filtered on gift
+overlap, so somebody whose fit was a passion or a past job was invisible from
+both directions at once.
+
+`Matching::rank()` now explains **every active team** and orders them on
+evidence. A real example from the development data — hospitality and
+encouragement, stated passions "Newcomers" and "Young families", speaks Tagalog
+and English:
+
+| | Before (assessment's three) | After (ranked) |
+|---|---|---|
+| 1 | Welcome | GROW - Small Group — 3 dimensions |
+| 2 | Fellowship Kids | Newcomers Pathway — 3 dimensions |
+| 3 | — | GROW - Young Adults — 3 dimensions |
+| … | | Fellowship Kids, GROW - Women Connect, Welcome |
+
+Her stated passion was the word *Newcomers* and Newcomers Pathway was never
+suggested to her. That is the whole defect in one row.
+
+### Teams needed a vocabulary before this could mean anything
+
+Ranking every team is useless while the non-gift dimensions cannot fire, and
+they almost never could: `explain()` compared a person's own words against the
+team's **name**. "Elementary Children" shares no word with "Fellowship Kids", so
+heart, abilities and experience were dead weight on nearly every team.
+
+Teams now carry `keywords` — the everyday words their work involves — seeded for
+all sixteen and editable under **What it is about** on the Teams screen. Seeded
+matters: this is tuning, not data entry, and nobody has to type anything for the
+change to work. Unlike a headcount, a team's subject matter does not drift every
+time somebody is placed.
+
+Matched on **word boundaries**, not substrings. "men" sits inside "women", so
+substring matching made every passion for women count as evidence for the men's
+ministry — wrong, and the kind of wrong a leader notices before the software
+does.
+
+### Languages are not evidence for a team either
+
+Same reasoning as personality, found the same way. "Speaks Tagalog, English" was
+filed as an abilities reason, and it fired identically for all sixteen teams — so
+every multilingual person gained the abilities dimension everywhere, whether one
+of their actual abilities matched or not. That inflated the dimension count
+ranking sorts on and helped satisfy the two-dimension requirement for "Strong
+match" with evidence that says nothing about the team.
+
+It surfaced only once the demo people were given real languages and unrelated
+teams started climbing their lists — which is the argument for demo data that
+looks like a congregation rather than five copies of one person.
+
+Languages stay in front of the leader: they are part of the Abilities section of
+the profile, their own column in the people list, and a filter on it. In a
+congregation speaking six languages that is worth surfacing, as something read
+about a person rather than as a reason for a team.
+
+### What ordering counts, and what it deliberately does not
+
+Distinct SHAPE dimensions, then readable reasons, then gift selectivity.
+
+Reasons and selectivity were the other way round, which quietly undid the point.
+Selectivity is a gifts-only measure — overlapping gifts over gifts claimed — so
+somebody who marked one gift scored a perfect 1.0 against all five teams sharing
+it, and those five filled the list ahead of a team with five separate reasons
+drawn from their abilities. Gifts would have gone on deciding the suggestions
+while appearing not to.
+
+`strength()` is untouched. "Strong match" still requires two overlapping gifts
+and a second dimension corroborating them, so non-gift evidence can lead the
+list while topping out at "Possible match". Ordering is about which conversation
+to have first; a strength label is a claim about the evidence.
+
+Team need still never enters the ordering, and a test opens a 39-person hole in
+an unsupported team to prove the order does not budge.
+
+### Two things this deliberately does not change
+
+**`suggested_teams` still records only what the person was shown.** That column
+is the record of what their downloaded profile says, and the placement rows built
+from it at submission time are what scope a ministry leader's visibility.
+Widening suggestions must not widen who can see whom — so a leader of a team
+newly suggested for somebody still cannot open that profile, and a test asserts
+it by re-reading the row and counting the placement rows. Suggestions that the
+assessment did not make are flagged **not on their profile** in the drawer, so a
+leader knows whether the person is expecting the team being discussed.
+
+**The invitation draft still names the assessment's pick.** It is the team on the
+person's own profile, which is the coherent thing for a first email to mention.
+Rerouting it to the top-ranked team would also start naming safeguarded teams in
+first contact, which deserves its own decision rather than arriving as a side
+effect of this one.
+
+## The person and the leader now see the same answer
+
+Ranking every team fixed what a *leader* saw and left the *person* where they
+were. The assessment computed its own top three in the browser, on spiritual-gift
+name overlap alone, and that is what their results page showed and what the
+profile they downloaded said. So the two of them could sit down holding different
+lists, and a conversation could open with "it said Worship" about a suggestion
+the leader could not see.
+
+The results page now asks the server. `POST /serve/v1/suggestions` takes a
+finished profile and returns the same ranking, with the same reasons, that the
+dashboard shows — from the same `Matching::rank_profile()`. A second ranking
+written in JavaScript would have drifted from the first within a release, and the
+reasons a leader reads have to be the reasons the person was given.
+
+`Matching::explain()` takes a profile rather than a submission row to make that
+possible. It had taken the row for exactly one reason — the multilingual
+"Speaks X, Y" line — and removing that (see above) left the parameter vestigial,
+which is what turned the ranking into a pure function of answers and teams.
+
+### Display-only, and why that is the whole point
+
+The person is shown a wider list. Nothing about who can see them changes.
+
+`suggested_teams` still records only what the assessment named, because the
+placement rows built from it are what decide which leaders may open a profile.
+Widening a suggestion list must not widen access to people. The seam holds
+without this change having to be careful about it: `sanitize_profile()` is a
+whitelist, so a ranking field the browser invents never reaches storage and
+cannot be read by anything downstream. A test asserts both — that the displayed
+ranking is not stored, and that a leader of the top-ranked team still cannot open
+the profile.
+
+Somebody suggested a team whose leader cannot see them is still reachable: the
+team-first view widened to any evidence in 1.17.0, so that leader finds them from
+their own end.
+
+### Failure is the old behaviour, not an error
+
+The page renders its gift-only list first and replaces it only if the request
+answers. A missing endpoint, a failed fetch or an empty response leaves a
+correct, if narrower, results page rather than an error where the person's
+profile should be. The catch is deliberately silent.
+
+## Reading it without being trained on it
+
+Three things assumed knowledge the person using it did not have.
+
+**The columns had no titles.** Four columns of data with nothing above them: the
+date could as easily have been when somebody applied as when their next
+conversation is due, and the badge on the right had no name at all. Every list
+now carries titles — *Name and gifts*, *Suggested teams*, *Next step due*,
+*Stage* — in the same vocabulary the leader guide uses.
+
+They are one grid, not two. The header strip and every row are CSS subgrids of
+the list, because a header with its own grid and the same declaration still
+drifts: `auto` and `fr` tracks resolve against each grid's own contents, so the
+empty cell over the avatar collapsed to nothing and *Stage* measured narrower
+than the badge it labels. Titles that do not line up are worse than none.
+
+Fixing this surfaced a layout defect. The track count has to equal the number of
+*visible* cells, and from 768px to 1279px there were four tracks and five cells
+on show — so the status badge dropped onto a second line at every common laptop
+width. Columns now appear one tier at a time, each paired with the track it
+needs, and the date outlives the suggested team when only one can fit.
+
+**The stage names are jargon.** *Submitted*, *Trial serve* and *Contacted* are
+guessable and guessable wrongly. A collapsed *What do these stages mean?*
+explains all seven in a sentence each, rendered from `Schema::status_descriptions()`
+beside the labels so the two cannot drift; a test fails if a stage gains a label
+without a description.
+
+**Every button in the app had lost its edges.** Found while checking the above,
+and the same defect twice over. `.serve-app button` and `.serve-app ul` are
+resets for the bare elements this app uses as rows and lists, and both score
+0,1,1 — one class and one type — which outranks the 0,1,0 of `.serve-btn` and
+any list class. So `background: none; border: 0` won on every Send, Save and
+Confirm button in the dashboard, and `list-style: none; padding: 0` won on every
+prose list. The buttons still read correctly and still worked, which is exactly
+why it survived: a labelled control with no outline looks like a design choice
+rather than a button that has lost its chrome. The resets now exclude the
+classes that bring their own.
+
+**Reporting a problem was a form in the way.** "Something not working?" was a
+card wedged under the dashboard's right-hand column — a form nobody was looking
+for, occupying space in front of the lists everybody was. It is now its own
+**Contact support** view, reachable from the sidebar on every screen, which
+keeps it as close to hand while giving it room to say plainly what happens to a
+report. Including the part that is easy to overstate: the audit trail records
+that you left a report, and not a word of what it said.
+
 ## Deliberately not included yet
 
 - **Planning Center data integration.** Field ownership, sync direction and
   frequency, conflict handling, permissions, API limits and the join identifiers
   all have to be agreed first — that is the deck's own "Prepare" phase. The
   boundary class marks where it will go.
-- **A better candidate pool.** Strength and reasons are now normalised and
-  multi-dimensional, and Team matching widens the pool by gift overlap. But the
-  *default* suggested teams on a profile still come from the assessment's
-  gift-only `recommendMinistries()`. Replacing that ranking is the remaining
-  matcher work.
+- **Retiring `recommendMinistries()` entirely.** The person is now shown the
+  server's ranking, but the browser still computes its gift-only top three —
+  because that is what `suggested_teams` is built from, and therefore what the
+  placement rows and every leader's visibility depend on. It has stopped being
+  the answer anybody reads and become an input to access control, which is a
+  strange job for it. Removing it means deciding what should build those rows
+  instead, and that is the visibility decision this change deliberately did not
+  make.
+- **Team-specific personality fit.** Personality is interpreted per person (see
+  above) but cannot be team-specific: `keywords` describes what a team's work is
+  about, not what temperament the role suits, and those are different questions.
+  Answering the second needs a further per-team field.
 - **Bulk actions.** Every pipeline move is one row at a time. The skill flags
   this (low severity) and it is the obvious next affordance at real volume.
 - **Translation of the workbook content.** The plugin's PHP is

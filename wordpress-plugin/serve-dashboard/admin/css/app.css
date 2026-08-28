@@ -106,7 +106,19 @@ body.serve-app-fullscreen {
 	list-style: none;
 }
 
-.serve-app button {
+/*
+ * Strips WordPress's own button chrome from the bare <button> elements this app
+ * uses as rows, links and toggles.
+ *
+ * `.serve-btn` is excluded because it brings its own chrome, and the exclusion
+ * is the point: as a blanket `.serve-app button` this rule outranked
+ * `.serve-btn--secondary` on specificity — 0,1,1 against 0,1,0 — so its
+ * `background: none; border: 0` won, and every Send, Save and Confirm button in
+ * the dashboard rendered as bare text with no edges. The label still read
+ * correctly, which is why it survived: it looked like a design choice rather
+ * than a button that had lost its outline.
+ */
+.serve-app button:not(.serve-btn) {
 	font: inherit;
 	color: inherit;
 	background: none;
@@ -596,21 +608,85 @@ button.serve-metric:hover {
 
 /* ── Person rows ────────────────────────────────────────────────────────── */
 
+/*
+ * The list owns the columns; the header strip and every row are subgrids of it.
+ *
+ * One grid, so a title cannot sit a column out of step with the data beneath
+ * it. Giving the header its own grid with the same template is not enough and
+ * was the first attempt: `auto` and `fr` tracks resolve against each grid's own
+ * contents, so an empty cell over the avatar collapsed to 0 and "Stage"
+ * measured narrower than the badge it labels — same declaration, different
+ * widths, titles visibly adrift.
+ *
+ * The track count must also equal the number of *visible* cells at every width.
+ * It did not: between 768px and 1279px there were four tracks and five cells on
+ * show, so the status badge dropped to a second line at every common laptop
+ * size. The `--teams`/`--due` tiers below keep those in step.
+ */
 .serve-rows {
+	display: grid;
+	grid-template-columns: var(--serve-row-cols);
+	column-gap: var(--serve-space-3);
 	margin-top: var(--serve-space-3);
-	border-top: 1px solid var(--serve-border);
+
+	--serve-row-cols: auto minmax(0, 1fr) auto;
+}
+
+/*
+ * Column titles.
+ *
+ * Aria-hidden on purpose. This is a list of buttons, not a table, so these
+ * labels cannot be programmatically associated with the cells beneath them —
+ * announcing them would imply a relationship the markup does not have. A
+ * screen reader reads each row button's own text, which already runs
+ * "name, gifts, teams, date, stage" in that order.
+ */
+.serve-rows__head {
+	display: grid;
+	grid-column: 1 / -1;
+	grid-template-columns: subgrid;
+	align-items: end;
+	padding-bottom: var(--serve-space-2);
+	border-bottom: 1px solid var(--serve-border-strong);
+	font-size: .6875rem;
+	font-weight: 700;
+	letter-spacing: .04em;
+	text-transform: uppercase;
+	color: var(--serve-text-muted);
+}
+
+/* Sits over the status badge, which is right-aligned. */
+.serve-rows__head-aside {
+	text-align: right;
 }
 
 .serve-row {
 	display: grid;
-	grid-template-columns: auto minmax(0, 1fr) auto;
+	grid-column: 1 / -1;
+	grid-template-columns: subgrid;
 	align-items: center;
-	gap: var(--serve-space-3);
 	width: 100%;
 	min-height: 60px;
 	padding: var(--serve-space-3) 0;
 	border-bottom: 1px solid var(--serve-border);
 	text-align: left;
+}
+
+/*
+ * Where subgrid is missing, fall back to each element sizing its own tracks.
+ * Titles are then approximately rather than exactly aligned — which is what
+ * they were before subgrid was used here, so nothing is worse than it was.
+ */
+@supports not (grid-template-columns: subgrid) {
+	.serve-rows {
+		display: block;
+	}
+
+	.serve-rows__head,
+	.serve-row {
+		grid-template-columns: var(--serve-row-cols);
+		column-gap: var(--serve-space-3);
+	}
 }
 
 .serve-row:hover {
@@ -652,7 +728,12 @@ button.serve-metric:hover {
 	color: var(--serve-text-muted);
 }
 
-/* Desktop-only row columns. */
+/*
+ * Row columns, hidden until there is both room for the cell and a track to put
+ * it in. Revealed in order of how much a leader needs them: when the date and
+ * the suggested team cannot both fit, the date wins — "Overdue" is actionable
+ * and a suggested team is background.
+ */
 .serve-row__col {
 	display: none;
 	font-size: .8125rem;
@@ -893,8 +974,12 @@ button.serve-metric:hover {
 	min-height: 44px;
 	padding: 0 var(--serve-space-4);
 	border-radius: var(--serve-radius-sm);
+	/* Was inherited from the reset above, which no longer matches these. */
+	font-family: inherit;
 	font-size: .9375rem;
 	font-weight: 600;
+	line-height: 1;
+	cursor: pointer;
 	text-decoration: none;
 	border: 1px solid transparent;
 }
@@ -1282,12 +1367,12 @@ button.serve-metric:hover {
 		padding: var(--serve-space-5);
 	}
 
-	/* Show the suggested-team column once there is room for it. */
-	.serve-row {
-		grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) auto;
+	/* A fourth track, and the one cell that goes in it. */
+	.serve-rows {
+		--serve-row-cols: auto minmax(0, 1.4fr) minmax(0, 1fr) auto;
 	}
 
-	.serve-row__col {
+	.serve-row__col--due {
 		display: block;
 	}
 }
@@ -1344,8 +1429,17 @@ button.serve-metric:hover {
 
 /* Wide: give the people table its remaining columns. */
 @media (min-width: 1280px) {
-	.serve-row {
-		grid-template-columns: auto minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+	/*
+	 * The fifth track and the suggested-team cell, together. Compact lists —
+	 * Team matching, whose rows carry one column rather than two — stay at four
+	 * so their badge does not float a track short of the edge.
+	 */
+	.serve-rows:not(.serve-rows--compact) {
+		--serve-row-cols: auto minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+	}
+
+	.serve-rows:not(.serve-rows--compact) .serve-row__col--teams {
+		display: block;
 	}
 }
 
@@ -1474,4 +1568,110 @@ button.serve-metric:hover {
 	min-height: 36px;
 	font-size: .8125rem;
 	white-space: nowrap;
+}
+
+/*
+ * How somebody is likely to serve, under the team suggestions.
+ *
+ * Visually separated from the match cards above it, because it is about the
+ * person rather than about any of the teams and must not be mistaken for
+ * evidence for one of them.
+ */
+.serve-personality {
+	margin-top: var(--serve-space-4);
+	padding: var(--serve-space-3);
+	border: 1px dashed var(--serve-border);
+	border-radius: var(--serve-radius-sm);
+	background: var(--serve-sand);
+}
+
+.serve-personality__head {
+	display: block;
+	margin-bottom: var(--serve-space-2);
+	font-size: .75rem;
+	font-weight: 700;
+	letter-spacing: .02em;
+	text-transform: uppercase;
+	color: var(--serve-text-muted);
+}
+
+.serve-personality__item {
+	margin: 0 0 var(--serve-space-2);
+	font-size: .8125rem;
+	line-height: 1.5;
+}
+
+.serve-personality__item:last-of-type {
+	margin-bottom: 0;
+}
+
+/* ── Plain explanations for people who have not been trained ───────────── */
+
+/*
+ * The stage legend. Closed by default, so it is free for anybody who already
+ * knows and one click for anybody who does not.
+ */
+.serve-legend {
+	margin-top: var(--serve-space-3);
+	font-size: .8125rem;
+}
+
+.serve-legend > summary {
+	cursor: pointer;
+	padding: var(--serve-space-2) 0;
+	font-weight: 600;
+	color: var(--serve-text-muted);
+}
+
+.serve-legend > summary:hover {
+	color: var(--serve-text);
+}
+
+.serve-legend__list {
+	display: grid;
+	gap: var(--serve-space-2);
+	margin: 0 0 var(--serve-space-2);
+	padding: var(--serve-space-3);
+	border-radius: var(--serve-radius-sm);
+	background: var(--serve-sand);
+}
+
+.serve-legend__list dt {
+	font-weight: 700;
+}
+
+.serve-legend__list dd {
+	margin: 0;
+	color: var(--serve-text-muted);
+	line-height: 1.45;
+}
+
+/* Two columns once there is room; the definitions are short. */
+@media (min-width: 768px) {
+	.serve-legend__list {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--serve-space-2) var(--serve-space-5);
+	}
+}
+
+/* Short, readable statements — used on the support view. */
+/*
+ * App-scoped so it outranks `.serve-app ul`, which zeroes padding and clears
+ * the marker at 0,1,1 — a bare `.serve-plainlist` loses to it and renders as
+ * unindented, unbulleted text.
+ */
+.serve-app .serve-plainlist {
+	margin: var(--serve-space-2) 0 0;
+	padding-left: var(--serve-space-5);
+	list-style: disc;
+	font-size: .875rem;
+	line-height: 1.55;
+}
+
+.serve-plainlist li {
+	margin-bottom: var(--serve-space-2);
+}
+
+.serve-plainlist li:last-child {
+	margin-bottom: 0;
 }

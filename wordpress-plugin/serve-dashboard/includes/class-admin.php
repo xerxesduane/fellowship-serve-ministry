@@ -163,6 +163,8 @@ final class Admin {
 		$saved = Teams::save(
 			$id,
 			array(
+				// Unslashed here; Teams::parse_keywords sanitises each word.
+				'keywords'              => wp_unslash( (string) ( $_POST['keywords'] ?? '' ) ),
 				'target_headcount'      => $_POST['target_headcount'] ?? 0,
 				'min_headcount'         => $_POST['min_headcount'] ?? 0,
 				'current_headcount'     => $_POST['current_headcount'] ?? 0,

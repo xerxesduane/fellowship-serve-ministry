@@ -214,6 +214,14 @@ final class Assessment {
 			// cheapest thing that reduces abandonment on a nineteen-step form.
 			'estimate'     => __( 'about 20 minutes', 'serve-dashboard' ),
 			'stepUrl'      => esc_url_raw( rest_url( Rest::NAMESPACE . '/step' ) ),
+			/*
+			 * Lets the results page ask the server which teams the finished
+			 * profile points to, so the person is shown the same ranking, with
+			 * the same reasons, that their leader will see. The page renders its
+			 * own gift-only list first and only replaces it if this answers, so
+			 * a missing or failing endpoint costs nothing.
+			 */
+			'suggestUrl'   => esc_url_raw( rest_url( Rest::NAMESPACE . '/suggestions' ) ),
 		);
 	}
 
