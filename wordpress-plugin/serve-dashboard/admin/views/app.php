@@ -191,7 +191,7 @@ $nav = array(
 								</button>
 							</div>
 							<p class="serve-card__hint">
-								<?php esc_html_e( 'A suggested team is a conversation starter, not a decision.', 'serve-dashboard' ); ?>
+								<?php esc_html_e( 'Anyone nobody has spoken to yet comes first. A suggested team is a conversation starter, not a decision.', 'serve-dashboard' ); ?>
 							</p>
 							<div data-serve="priority"><?php self::skeleton_rows( 5 ); ?></div>
 						</div>

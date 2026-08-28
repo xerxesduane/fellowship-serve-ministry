@@ -177,3 +177,45 @@ test(
 		}
 	}
 );
+
+/*
+ * A brand-new profile has a follow-up date three days out, so ordering the
+ * main list purely by that date buried every new arrival behind the existing
+ * queue — the newest person was always last on a card called "People ready for
+ * a next step", and on a five-row card they were not on it at all.
+ */
+test(
+	'somebody nobody has contacted comes before somebody already in hand',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+		$table = Schema::table( 'submissions' );
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		// Already picked up, and due sooner than the newcomer.
+		$older = $f->verified_submission( array( 'display_name' => 'Older Contacted' ) );
+		Submissions::set_status( $older, Schema::STATUS_CONTACTED );
+		$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET next_action_at = DATE_SUB( UTC_DATE(), INTERVAL 2 DAY ) WHERE id = %d", $older ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		// Nobody has touched this one, and its date is furthest out.
+		$fresh = $f->verified_submission( array( 'display_name' => 'Nobody Has Called' ) );
+		$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET next_action_at = DATE_ADD( UTC_DATE(), INTERVAL 3 DAY ) WHERE id = %d", $fresh ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		$position = static function ( array $rows, int $id ): int {
+			foreach ( array_values( wp_list_pluck( $rows, 'id' ) ) as $index => $row_id ) {
+				if ( (int) $row_id === $id ) {
+					return $index;
+				}
+			}
+
+			return PHP_INT_MAX;
+		};
+
+		$waiting = Submissions::query( array( 'orderby' => 'waiting', 'limit' => 200 ) );
+		$a->ok( $position( $waiting, $fresh ) < $position( $waiting, $older ), 'the untouched profile leads' );
+
+		// The plain date ordering is unchanged, and is what it used to do.
+		$by_date = Submissions::query( array( 'orderby' => 'next_action_at', 'limit' => 200 ) );
+		$a->ok( $position( $by_date, $older ) < $position( $by_date, $fresh ), 'sorting by date still sorts by date' );
+	}
+);

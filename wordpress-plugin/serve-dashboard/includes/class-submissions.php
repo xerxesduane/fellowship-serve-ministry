@@ -286,6 +286,22 @@ final class Submissions {
 			'next_action_at' => 's.next_action_at IS NULL, s.next_action_at ASC',
 			'submitted_at'   => 's.submitted_at DESC',
 			'name'           => 's.display_name ASC',
+
+			/*
+			 * Nobody has spoken to these people yet.
+			 *
+			 * Sorting the main list purely by follow-up date buried every new
+			 * arrival: a fresh profile is given a date three days out, so it
+			 * lands behind everyone already in the queue — the newest person was
+			 * always last on a card called "People ready for a next step", and
+			 * on a five-row card they simply were not on it.
+			 *
+			 * Somebody nobody has contacted is the most ready for a next step
+			 * there is, and being overlooked is the exact thing this product
+			 * exists to prevent. Overdue follow-ups are not lost by this: the
+			 * "Quick follow-ups" card next to it is about nothing else.
+			 */
+			'waiting'        => "( s.status = '" . Schema::STATUS_SUBMITTED . "' ) DESC, s.next_action_at IS NULL, s.next_action_at ASC",
 		);
 		$order = $allowed_order[ $args['orderby'] ] ?? $allowed_order['next_action_at'];
 

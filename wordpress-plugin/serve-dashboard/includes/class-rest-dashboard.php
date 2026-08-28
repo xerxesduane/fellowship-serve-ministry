@@ -436,7 +436,9 @@ final class Rest_Dashboard {
 						Metrics::headline()
 					)
 				),
-				'priority'       => self::rows( Submissions::query( array( 'limit' => 5 ) ) ),
+				// Never-contacted first, then by follow-up date. Six rather than
+				// five so a busy week does not push the newest arrival off.
+				'priority'       => self::rows( Submissions::query( array( 'limit' => 6, 'orderby' => 'waiting' ) ) ),
 				'gaps'           => $gaps,
 				'followups'      => Metrics::upcoming_followups(),
 				// People placed a while ago that nobody has looked in on.
