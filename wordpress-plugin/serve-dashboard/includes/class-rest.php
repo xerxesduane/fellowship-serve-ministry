@@ -540,16 +540,31 @@ final class Rest {
 		self::bump_rate_limit( 'preview' );
 
 		/*
-		 * Only the sections matching actually reads. Anything else the browser
-		 * happened to include — a name, an email, a note to self — is dropped
-		 * here rather than being walked, quoted back, or reaching a log.
+		 * Only the sections matching actually reads, flattened to strings.
+		 *
+		 * Anything else the browser included — a name, an email, a note to self
+		 * — is dropped rather than walked, quoted back or reaching a log. The
+		 * shapes are pinned as well as the keys: an array where a string belongs
+		 * used to reach a string cast and emit a PHP warning for every value, so
+		 * a 200-byte request could grow a log without limit on any site with
+		 * WP_DEBUG_LOG enabled. string_list() keeps scalars and discards the
+		 * rest, exactly as the submission path does.
 		 */
 		$considered = array(
-			'spiritualGifts' => $profile['spiritualGifts'] ?? array(),
-			'heart'          => $profile['heart'] ?? array(),
-			'abilities'      => $profile['abilities'] ?? array(),
-			'experiences'    => $profile['experiences'] ?? array(),
-			'personality'    => $profile['personality'] ?? array(),
+			'spiritualGifts' => array(
+				'likely' => self::string_list( $profile['spiritualGifts']['likely'] ?? array() ),
+			),
+			'heart'          => array(
+				'roles'  => self::string_list( $profile['heart']['roles'] ?? array() ),
+				'people' => self::string_list( $profile['heart']['people'] ?? array() ),
+				'causes' => self::string_list( $profile['heart']['causes'] ?? array() ),
+			),
+			'abilities'      => self::string_list( $profile['abilities'] ?? array() ),
+			'experiences'    => array_map(
+				array( __CLASS__, 'string_list' ),
+				array_filter( (array) ( $profile['experiences'] ?? array() ), 'is_array' )
+			),
+			'personality'    => self::string_list( $profile['personality'] ?? array() ),
 		);
 
 		$out = array();

@@ -478,3 +478,78 @@ test(
 		$a->not( \Serve_Dashboard\Roles::can_view_submission( (int) $row->id ), 'and still cannot open the profile' );
 	}
 );
+
+test(
+	'a hostile profile shape is refused quietly, not logged',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( 0 );
+
+		$hash = \Serve_Dashboard\Privacy::hash_ip() ?: 'unknown';
+		delete_transient( 'serve_rl_preview_' . $hash );
+
+		/*
+		 * Found by probing the endpoint with the payloads nobody designs for.
+		 *
+		 * An array where a string belongs used to reach a string cast, so PHP
+		 * emitted "Array to string conversion" once per value. On any site with
+		 * WP_DEBUG_LOG enabled — which is most of them at some point — a
+		 * 200-byte unauthenticated request could grow the log without limit.
+		 * Cheap, remote, and invisible until the disk filled.
+		 *
+		 * Both layers were fixed: the endpoint pins the shapes it accepts, and
+		 * the matcher skips non-scalars whatever its caller hands it.
+		 */
+		$diagnostics = array();
+		set_error_handler(
+			static function ( $number, $message ) use ( &$diagnostics ) {
+				$diagnostics[] = $message;
+				return true;
+			}
+		);
+
+		try {
+			$shapes = array(
+				'arrays where strings belong' => array(
+					'spiritualGifts' => array( 'likely' => array( array( 'Mercy' ) ) ),
+					'heart'          => array( 'roles' => array( array( 'a' => array( 'b' ) ) ) ),
+					'abilities'      => array( array( 'Counting ability' ) ),
+					'experiences'    => array( 'x' => array( array( 'nested' ) ) ),
+					'personality'    => array( array( 'Be Introverted' ) ),
+				),
+				'scalars of the wrong type'   => array(
+					'spiritualGifts' => 'not-an-array',
+					'heart'          => 42,
+					'abilities'      => true,
+					'experiences'    => null,
+					'personality'    => 3.14,
+				),
+			);
+
+			foreach ( $shapes as $label => $profile ) {
+				delete_transient( 'serve_rl_preview_' . $hash );
+				$diagnostics = array();
+
+				$response = serve_preview( $profile );
+
+				$a->same( 200, $response->get_status(), "{$label}: answered rather than crashing" );
+				$a->same( 0, count( $diagnostics ), "{$label}: and provoked no PHP diagnostic" );
+			}
+
+			// A real profile still works once the guards are in place.
+			delete_transient( 'serve_rl_preview_' . $hash );
+			$diagnostics = array();
+			$good        = serve_preview(
+				array(
+					'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+					'abilities'      => array( 'Counting ability', 'Classifying ability' ),
+				)
+			);
+
+			$a->ok( ! empty( $good->get_data()['suggestions'] ), 'and a valid profile is still ranked' );
+			$a->same( 0, count( $diagnostics ), 'quietly' );
+		} finally {
+			restore_error_handler();
+			delete_transient( 'serve_rl_preview_' . $hash );
+		}
+	}
+);

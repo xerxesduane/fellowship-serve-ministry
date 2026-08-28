@@ -87,7 +87,7 @@ final class Matching {
 		$gift_overlap = array_values(
 			array_filter(
 				$likely,
-				static fn( $gift ) => in_array( strtolower( (string) $gift ), $team_gifts, true )
+				static fn( $gift ) => is_scalar( $gift ) && in_array( strtolower( (string) $gift ), $team_gifts, true )
 			)
 		);
 
@@ -408,6 +408,10 @@ final class Matching {
 		$out = array();
 
 		foreach ( (array) ( $profile['personality'] ?? array() ) as $tendency ) {
+			if ( ! is_scalar( $tendency ) ) {
+				continue;
+			}
+
 			$label = trim( (string) $tendency );
 			$note  = self::personality_note( $label );
 
@@ -559,6 +563,10 @@ final class Matching {
 
 		$patterns = array();
 		foreach ( $vocabulary as $term ) {
+			if ( ! is_scalar( $term ) ) {
+				continue;
+			}
+
 			$term = trim( (string) $term );
 			if ( '' === $term ) {
 				continue;
@@ -569,6 +577,19 @@ final class Matching {
 
 		$hits = array();
 		foreach ( $values as $value ) {
+			/*
+			 * Only scalars. A profile reaching this from storage has been
+			 * through sanitize_profile() and holds strings, but the public
+			 * suggestion endpoint is handed whatever a caller sends: an array
+			 * where a string belongs used to be cast to "Array" — emitting a
+			 * PHP warning per value, so a 200-byte request could fill a log on
+			 * any site with WP_DEBUG_LOG on. Skipped rather than stringified,
+			 * because "Array" is not something a person answered.
+			 */
+			if ( ! is_scalar( $value ) ) {
+				continue;
+			}
+
 			$haystack = (string) $value;
 			foreach ( $patterns as $pattern ) {
 				if ( preg_match( $pattern, $haystack ) ) {
