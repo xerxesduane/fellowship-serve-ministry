@@ -511,11 +511,23 @@ const drawer = {
 			</div>`;
 		}).join('');
 
+		/*
+		 * Suggestions now come from ranking every team, not from the three the
+		 * assessment picked on spiritual gifts alone — so some of these are
+		 * teams the person has never seen. Their own downloaded profile lists
+		 * the assessment's picks, and a leader opening a conversation needs to
+		 * know which of these the person is already expecting. Flagged on the
+		 * ones they have not seen rather than on the ones they have: the new
+		 * suggestions are the smaller set and the ones that need the caveat.
+		 */
 		const matches = person.matches.length
 			? person.matches.map((match) => `
 				<div class="serve-match">
 					<div class="serve-match__head">
-						<span class="serve-match__name">${esc(match.team_name)}</span>
+						<span class="serve-match__name">${esc(match.team_name)}${
+							match.from_assessment
+								? ''
+								: '<span class="serve-flag serve-flag--stale">not on their profile</span>'}</span>
 						<span class="serve-badge serve-badge--${match.strength === 'strong' ? 'ready' : 'progress'}">
 							<span class="serve-badge__glyph" aria-hidden="true">${match.strength === 'strong' ? '●' : '◐'}</span>
 							${esc(match.strength_label)}
@@ -770,11 +782,12 @@ const drawer = {
 
 			<div class="serve-section">
 				<h3>Suggested teams</h3>
-				<p class="serve-card__hint">A suggestion is a starting point. The leader confirms, and the person chooses.</p>
+				<p class="serve-card__hint">A suggestion is a starting point. The leader confirms, and the person chooses. Anything marked <em>not on their profile</em> came from their wider answers, so they have not seen it yet.</p>
 				${person.matches.find((m) => m.caveat)
 					? `<p class="serve-note serve-note--warn">${esc(person.matches.find((m) => m.caveat).caveat)}</p>`
 					: ''}
 				${matches}
+				${personality}
 			</div>
 
 			<div class="serve-section">

@@ -133,3 +133,397 @@ test(
 		$a->same( 4, count( Matching::personality_notes( $profile ) ), 'the notes are still available to the leader' );
 	}
 );
+
+/*
+ * The defect the tests below exist for.
+ *
+ * Which teams got suggested was decided by `recommendMinistries()` in the
+ * browser, which ranks on spiritual-gift name overlap and nothing else.
+ * `explain()` then added heart, abilities and experience to that already-chosen
+ * set — so those dimensions could reorder three teams picked on gifts, and
+ * could never put forward a team the gift ranking had missed. Somebody whose
+ * real fit was a passion or a past job never saw that team from either side:
+ * the team-first list pre-filtered on gift overlap too.
+ */
+test(
+	'a team supported only by abilities is suggested, and leads the list',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		/*
+		 * Mercy overlaps five teams and none of them is Administration, whose
+		 * vocabulary these five abilities do match. Under the old ranking
+		 * Administration could not appear at all: it was not one of the
+		 * assessment's picks, and nothing outside those picks was considered.
+		 */
+		$id         = $f->verified_submission( array( 'suggested_teams' => array( 'welcome' ) ) );
+		$submission = Submissions::get( $id );
+
+		$profile = array(
+			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+			'abilities'      => array(
+				'Counting ability',
+				'Classifying ability',
+				'Evaluating ability',
+				'Editing ability',
+				'Writing ability',
+			),
+		);
+
+		$ranked = Matching::rank( $submission, $profile );
+		$names  = array_column( $ranked, 'team_name' );
+
+		$a->ok( in_array( 'Administration', $names, true ), 'the team its abilities point to is suggested at all' );
+		$a->same( 'Administration', $names[0], 'and is the best-evidenced suggestion' );
+
+		$admin = null;
+		foreach ( $ranked as $match ) {
+			if ( 'Administration' === $match['team_name'] ) {
+				$admin = $match;
+			}
+		}
+
+		$a->same( 0, (int) $admin['gift_overlap'], 'not one spiritual gift overlaps it' );
+		$a->same( 5, count( $admin['reasons'] ), 'five abilities do' );
+		$a->same(
+			array( 'abilities' ),
+			array_values( array_unique( array_column( $admin['reasons'], 'dimension' ) ) ),
+			'all from abilities'
+		);
+
+		// Evidence with no gift behind it never claims to be strong.
+		$a->same( Matching::STRENGTH_POSSIBLE, $admin['strength'], 'offered as possible, not strong' );
+
+		// The person has not seen this one; their profile lists the assessment picks.
+		$a->not( (bool) $admin['from_assessment'], 'flagged as not on their own profile' );
+	}
+);
+
+test(
+	'what the assessment told the person is always carried, and marked as theirs',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		/*
+		 * Prayer is what the assessment named. Nothing in this profile supports
+		 * it, so on evidence alone it would fall off the end. It has to survive
+		 * anyway: it is what the person was told, and a leader who cannot see it
+		 * cannot answer "but it said Prayer".
+		 */
+		$id         = $f->verified_submission( array( 'suggested_teams' => array( 'prayer' ) ) );
+		$submission = Submissions::get( $id );
+
+		$profile = array(
+			'spiritualGifts' => array( 'likely' => array( 'Organization' ) ),
+			'abilities'      => array( 'Counting ability', 'Classifying ability' ),
+		);
+
+		$ranked = Matching::rank( $submission, $profile );
+
+		$prayer = null;
+		foreach ( $ranked as $match ) {
+			if ( 'Prayer' === $match['team_name'] ) {
+				$prayer = $match;
+			}
+		}
+
+		$a->ok( null !== $prayer, 'the assessment pick is present' );
+		$a->ok( (bool) $prayer['from_assessment'], 'and marked as one the person has seen' );
+		$a->same( 0, count( $prayer['reasons'] ), 'even with nothing supporting it' );
+
+		// Sorted on evidence like everything else, not promoted for being theirs.
+		$last = end( $ranked );
+		$a->same( 'Prayer', $last['team_name'], 'ranked on evidence, not privileged' );
+	}
+);
+
+test(
+	'a passion for Women is not evidence for Men Connect',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		/*
+		 * "men" sits inside "women". Matching vocabulary as a substring made
+		 * every passion for women count as evidence for the men's ministry —
+		 * wrong, and the kind of wrong a leader notices before the software
+		 * does. Vocabulary is matched on word boundaries.
+		 */
+		$id         = $f->verified_submission();
+		$submission = Submissions::get( $id );
+
+		$profile = array(
+			'spiritualGifts' => array( 'likely' => array() ),
+			'heart'          => array(
+				'people' => array( 'Women' ),
+				'roles'  => array(),
+				'causes' => array(),
+			),
+		);
+
+		$mens   = Teams::get_by_slug( 'grow-men-connect' );
+		$womens = Teams::get_by_slug( 'grow-women-connect' );
+
+		$a->same( 0, count( Matching::explain( $submission, $mens, $profile )['reasons'] ), 'no reason for the men' );
+		$a->same( 1, count( Matching::explain( $submission, $womens, $profile )['reasons'] ), 'and one for the women' );
+	}
+);
+
+test(
+	'a team being short of people still never improves its ranking',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		$id         = $f->verified_submission( array( 'suggested_teams' => array( 'welcome' ) ) );
+		$submission = Submissions::get( $id );
+
+		$profile = array(
+			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+			'abilities'      => array( 'Counting ability', 'Classifying ability', 'Evaluating ability', 'Editing ability', 'Writing ability' ),
+		);
+
+		$before = array_column( Matching::rank( $submission, $profile ), 'team_name' );
+
+		// Open a large hole in a team the evidence does not support at all.
+		$f->set_team_capacity( 'prayer', 40, 1 );
+
+		$after = array_column( Matching::rank( $submission, $profile ), 'team_name' );
+
+		$a->same( $before, $after, 'the order is identical with a gaping vacancy in play' );
+		$a->same( 'Administration', $after[0], 'evidence still leads' );
+	}
+);
+
+/*
+ * The safety property of this change.
+ *
+ * A ministry leader sees a person because a placement row ties that person to a
+ * team they lead, and those rows are built at submission time from
+ * `suggested_teams`. Ranking every team must touch neither: if a wider set of
+ * suggestions widened the placement rows, it would hand every leader whose team
+ * happened to match a profile they were never meant to open. A suggestion is
+ * advice to whoever can already see the person.
+ */
+test(
+	'suggesting a team to a leader does not let that team see the person',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		$id         = $f->verified_submission( array( 'suggested_teams' => array( 'welcome' ) ) );
+		$submission = Submissions::get( $id );
+
+		$profile = array(
+			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+			'abilities'      => array( 'Counting ability', 'Classifying ability', 'Evaluating ability', 'Editing ability', 'Writing ability' ),
+		);
+
+		$top = array_column( Matching::rank( $submission, $profile ), 'team_name' )[0];
+		$a->same( 'Administration', $top, 'Administration is the top suggestion' );
+
+		/*
+		 * Re-read from the database rather than trusting the object fetched
+		 * before ranking. Checking the in-memory copy is how the first version
+		 * of this test passed while a mutation that rewrote the column sailed
+		 * through: the stale object still said "welcome" no matter what had been
+		 * written underneath it.
+		 */
+		$reread = Submissions::get( $id );
+		$a->same(
+			array( 'welcome' ),
+			Submissions::decode_list( $reread->suggested_teams ),
+			'suggested_teams still records only what they saw'
+		);
+
+		/*
+		 * And the mechanism itself: visibility comes from placement rows, which
+		 * are written once at submission time from suggested_teams. Ranking must
+		 * not add to them.
+		 */
+		global $wpdb;
+		$placement_teams = $wpdb->get_col(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT team_id FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d',
+				$id
+			)
+		);
+		$welcome = Teams::get_by_slug( 'welcome' );
+		$a->same(
+			array( (int) $welcome->id ),
+			array_map( 'intval', (array) $placement_teams ),
+			'and one placement row exists, for the team they were actually shown'
+		);
+
+		$leader     = $f->user( Roles::ROLE_LEADER );
+		$admin_team = $f->lead_team( $leader, 'administration' );
+		wp_set_current_user( $leader );
+
+		$a->same( array( $admin_team ), Roles::visible_team_ids(), 'the leader leads the suggested team' );
+		$a->not( Roles::can_view_submission( $id ), 'and still cannot open the profile' );
+		$a->not(
+			in_array( $id, wp_list_pluck( Submissions::query( array( 'limit' => 200 ) ), 'id' ), false ),
+			'nor find them in any list'
+		);
+	}
+);
+
+test(
+	'the team-first list finds someone whose fit is not in their gifts',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		/*
+		 * The other half of the same defect. A leader starting from Fellowship
+		 * Kids used to see only people already suggested to it or with an
+		 * overlapping likely gift, so a heart for Elementary Children was
+		 * invisible from the team side as well as the person side.
+		 */
+		$team = Teams::get_by_slug( 'fellowship-kids' );
+
+		$id = $f->verified_submission(
+			array(
+				'display_name'    => 'Ifeoma Balogun',
+				'suggested_teams' => array( 'administration' ),
+				'gifts_likely'    => array( 'Organization' ),
+				'profile'         => array(
+					'spiritualGifts' => array( 'likely' => array( 'Organization' ) ),
+					'heart'          => array(
+						'people' => array( 'Elementary Children' ),
+						'roles'  => array(),
+						'causes' => array(),
+					),
+				),
+			)
+		);
+
+		$found = null;
+		foreach ( Teams::candidates( (int) $team->id, 200 ) as $candidate ) {
+			if ( (int) $candidate['id'] === $id ) {
+				$found = $candidate;
+			}
+		}
+
+		$a->ok( null !== $found, 'they are a candidate for the team their heart points to' );
+		$a->not( (bool) $found['alreadySuggested'], 'without the assessment having suggested it' );
+		$a->contains( 'Elementary Children', $found['match']['reasons'][0]['label'], 'their own words quoted as the reason' );
+
+		// Fellowship Kids is safeguarded, so the gate is flagged rather than silent.
+		$a->ok( (bool) $found['needsCheck'], 'and the background check is flagged' );
+	}
+);
+
+test(
+	'a deactivated team is not suggested, even if the assessment named it',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		$id         = $f->verified_submission( array( 'suggested_teams' => array( 'events' ) ) );
+		$submission = Submissions::get( $id );
+		$profile    = array( 'spiritualGifts' => array( 'likely' => array( 'Organization' ) ) );
+
+		$names = array_column( Matching::rank( $submission, $profile ), 'team_name' );
+		$a->ok( in_array( 'Events', $names, true ), 'suggested while the team is running' );
+
+		$events = Teams::get_by_slug( 'events' );
+		$teams  = Schema::table( 'teams' );
+		$wpdb->update( $teams, array( 'is_active' => 0 ), array( 'id' => (int) $events->id ), array( '%d' ), array( '%d' ) );
+
+		try {
+			$after = array_column( Matching::rank( $submission, $profile ), 'team_name' );
+
+			// Suggesting a team the church has closed is worse than a gap in the
+			// history the suggestion came from.
+			$a->not( in_array( 'Events', $after, true ), 'and dropped once the church closes it' );
+		} finally {
+			$wpdb->update( $teams, array( 'is_active' => 1 ), array( 'id' => (int) $events->id ), array( '%d' ), array( '%d' ) );
+		}
+	}
+);
+
+test(
+	'a team keeps its vocabulary through a save that does not mention it',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * Found by the suite doing it. Two seeded teams lost their keywords on
+		 * the first run, because the headcount tests call Teams::save() with the
+		 * capacity fields only and the first version of that method treated a
+		 * missing key as an empty field. A team quietly losing the words that
+		 * make heart, abilities and experience count is invisible: suggestions
+		 * simply narrow back to spiritual gifts for that one team.
+		 */
+		$team   = Teams::get_by_slug( 'production' );
+		$before = Teams::keyword_list( $team );
+
+		$a->ok( count( $before ) > 0, 'the seeded team starts with a vocabulary' );
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		Teams::save(
+			(int) $team->id,
+			array(
+				'target_headcount'      => 4,
+				'min_headcount'         => 1,
+				'current_headcount'     => 2,
+				'requires_safeguarding' => 0,
+				'is_active'             => 1,
+				'leader_user_id'        => 0,
+			)
+		);
+
+		$a->same( $before, Teams::keyword_list( Teams::get_by_slug( 'production' ) ), 'and still has it afterwards' );
+
+		// Submitted-but-blank is a real instruction, and is obeyed.
+		Teams::save(
+			(int) $team->id,
+			array(
+				'keywords'              => '',
+				'target_headcount'      => 4,
+				'min_headcount'         => 1,
+				'current_headcount'     => 2,
+				'requires_safeguarding' => 0,
+				'is_active'             => 1,
+				'leader_user_id'        => 0,
+			)
+		);
+
+		$a->same( array(), Teams::keyword_list( Teams::get_by_slug( 'production' ) ), 'clearing the field on purpose does clear it' );
+
+		// Typed wording is parsed, trimmed and de-duplicated.
+		Teams::save(
+			(int) $team->id,
+			array(
+				'keywords'              => ' audio ,video,  audio , ,lighting ',
+				'target_headcount'      => 4,
+				'min_headcount'         => 1,
+				'current_headcount'     => 2,
+				'requires_safeguarding' => 0,
+				'is_active'             => 1,
+				'leader_user_id'        => 0,
+			)
+		);
+
+		$a->same(
+			array( 'audio', 'video', 'lighting' ),
+			Teams::keyword_list( Teams::get_by_slug( 'production' ) ),
+			'commas separate, blanks and repeats are dropped'
+		);
+
+		// Put the seeded wording back, so this test does not become the thing it
+		// is testing against.
+		Teams::save(
+			(int) $team->id,
+			array(
+				'keywords'              => implode( ', ', $before ),
+				'target_headcount'      => (int) $team->target_headcount,
+				'min_headcount'         => (int) $team->min_headcount,
+				'current_headcount'     => (int) $team->current_headcount,
+				'requires_safeguarding' => (int) $team->requires_safeguarding,
+				'is_active'             => 1,
+				'leader_user_id'        => (int) $team->leader_user_id,
+			)
+		);
+
+		$a->same( $before, Teams::keyword_list( Teams::get_by_slug( 'production' ) ), 'restored for the next run' );
+	}
+);

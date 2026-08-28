@@ -41,10 +41,15 @@ $leaders = get_users(
 		<?php esc_html_e( 'Set what each team actually needs. Until a target is entered, that team is left out of the gap panel rather than shown as fully staffed.', 'serve-dashboard' ); ?>
 	</p>
 
+	<p class="serve-lede" id="serve-kw-help">
+		<?php esc_html_e( '“What it is about” is the everyday words a team’s work involves — the people it serves, the tasks it does — separated by commas. Matching reads a person’s passions, abilities and past experience against these, so a heart for Elementary Children can point to Fellowship Kids even when no spiritual gift lines up. Every team starts with a sensible list; edit it when a suggestion looks wrong.', 'serve-dashboard' ); ?>
+	</p>
+
 	<table class="wp-list-table widefat fixed striped">
 		<thead>
 			<tr>
 				<th scope="col"><?php esc_html_e( 'Team', 'serve-dashboard' ); ?></th>
+				<th scope="col"><?php esc_html_e( 'What it is about', 'serve-dashboard' ); ?></th>
 				<th scope="col"><?php esc_html_e( 'Now', 'serve-dashboard' ); ?></th>
 				<th scope="col"><?php esc_html_e( 'Target', 'serve-dashboard' ); ?></th>
 				<th scope="col"><?php esc_html_e( 'Minimum', 'serve-dashboard' ); ?></th>
@@ -75,6 +80,21 @@ $leaders = get_users(
 					<td>
 						<strong><?php echo esc_html( $team->name ); ?></strong>
 						<div class="serve-row-meta"><?php echo esc_html( implode( ', ', Teams::gift_list( $team ) ) ); ?></div>
+					</td>
+					<td>
+						<?php
+						/*
+						 * Matching used to compare a person's passions,
+						 * abilities and experience against the team *name*
+						 * alone, so a heart for "Elementary Children" said
+						 * nothing about Fellowship Kids. These words are what
+						 * makes those dimensions able to support a suggestion.
+						 * Seeded, so this is tuning rather than data entry.
+						 */
+						?>
+						<textarea name="keywords" rows="2" cols="24" <?php disabled( ! $can_edit ); ?>
+							aria-describedby="serve-kw-help"
+						><?php echo esc_textarea( implode( ', ', Teams::keyword_list( $team ) ) ); ?></textarea>
 					</td>
 					<td>
 						<input type="number" min="0" name="current_headcount" value="<?php echo esc_attr( (string) $current ); ?>" <?php disabled( ! $can_edit ); ?> class="small-text">

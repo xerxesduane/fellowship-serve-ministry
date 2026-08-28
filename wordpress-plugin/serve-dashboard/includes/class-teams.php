@@ -31,22 +31,22 @@ final class Teams {
 	 */
 	private static function seed(): array {
 		return array(
-			array( 'Production', array( 'Assisting', 'Crafting', 'Creativity', 'Organization', 'Service' ), false ),
-			array( 'Livestream Team', array( 'Assisting', 'Creativity', 'Evangelism', 'Knowledge', 'Organization', 'Vision' ), false ),
-			array( 'GROW - Small Group', array( 'Teaching', 'Encouragement', 'Mentoring', 'Hospitality', 'Wisdom', 'Discernment' ), false ),
-			array( 'GROW - Compass', array( 'Teaching', 'Knowledge', 'Wisdom', 'Discernment', 'Encouragement', 'Leadership' ), false ),
-			array( 'GROW - Men Connect', array( 'Leadership', 'Mentoring', 'Encouragement', 'Wisdom', 'Justice' ), false ),
-			array( 'GROW - Women Connect', array( 'Encouragement', 'Mentoring', 'Hospitality', 'Mercy', 'Teaching', 'Wisdom' ), false ),
-			array( 'GROW - Young Adults', array( 'Evangelism', 'Leadership', 'Mentoring', 'Encouragement', 'Vision', 'Mission' ), false ),
-			array( 'Fellowship Kids', array( 'Teaching', 'Creativity', 'Mercy', 'Assisting', 'Encouragement', 'Hospitality' ), true ),
-			array( 'Youth Ministry', array( 'Leadership', 'Evangelism', 'Mentoring', 'Teaching', 'Encouragement', 'Vision' ), true ),
-			array( 'Events', array( 'Organization', 'Creativity', 'Hospitality', 'Assisting', 'Service', 'Leadership' ), false ),
-			array( 'Worship', array( 'Creativity', 'Vision', 'Encouragement', 'Discernment', 'Faith', 'Leadership' ), false ),
-			array( 'Prayer', array( 'Prayer', 'Faith', 'Discernment', 'Healing', 'Mercy', 'Wisdom' ), false ),
-			array( 'Serve', array( 'Service', 'Assisting', 'Mercy', 'Giving', 'Hospitality', 'Teaching', 'Knowledge' ), false ),
-			array( 'Welcome', array( 'Hospitality', 'Encouragement', 'Assisting', 'Mercy', 'Evangelism' ), false ),
-			array( 'Newcomers Pathway', array( 'Hospitality', 'Encouragement', 'Teaching', 'Mentoring', 'Organization', 'Leadership' ), false ),
-			array( 'Administration', array( 'Organization', 'Leadership', 'Knowledge', 'Wisdom', 'Assisting', 'Vision' ), false ),
+			array( 'Production', array( 'Assisting', 'Crafting', 'Creativity', 'Organization', 'Service' ), false, array( 'technical', 'audio', 'lighting', 'video', 'media', 'recording', 'powerpoint', 'mechanical', 'repairing' ) ),
+			array( 'Livestream Team', array( 'Assisting', 'Creativity', 'Evangelism', 'Knowledge', 'Organization', 'Vision' ), false, array( 'video', 'audio', 'technical', 'recording', 'media', 'graphics', 'information systems', 'promoting' ) ),
+			array( 'GROW - Small Group', array( 'Teaching', 'Encouragement', 'Mentoring', 'Hospitality', 'Wisdom', 'Discernment' ), false, array( 'fellowship', 'counseling', 'families', 'couples', 'singles', 'teaching', 'young marrieds' ) ),
+			array( 'GROW - Compass', array( 'Teaching', 'Knowledge', 'Wisdom', 'Discernment', 'Encouragement', 'Leadership' ), false, array( 'education', 'teaching', 'researching', 'evangelism', 'ethics' ) ),
+			array( 'GROW - Men Connect', array( 'Leadership', 'Mentoring', 'Encouragement', 'Wisdom', 'Justice' ), false, array( 'men', 'fathers', 'accountability', 'fellowship' ) ),
+			array( 'GROW - Women Connect', array( 'Encouragement', 'Mentoring', 'Hospitality', 'Mercy', 'Teaching', 'Wisdom' ), false, array( 'women', 'mothers', 'parenting', 'hospitality', 'fellowship' ) ),
+			array( 'GROW - Young Adults', array( 'Evangelism', 'Leadership', 'Mentoring', 'Encouragement', 'Vision', 'Mission' ), false, array( 'college', 'career', 'singles', 'young marrieds', 'students', 'evangelism' ) ),
+			array( 'Fellowship Kids', array( 'Teaching', 'Creativity', 'Mercy', 'Assisting', 'Encouragement', 'Hospitality' ), true, array( 'children', 'infants', 'babies', 'toddlers', 'preschool', 'elementary', 'parenting', 'at-risk', 'teaching', 'artistic' ) ),
+			array( 'Youth Ministry', array( 'Leadership', 'Evangelism', 'Mentoring', 'Teaching', 'Encouragement', 'Vision' ), true, array( 'high school', 'jr. high', 'students', 'athletic', 'teaching', 'evangelism' ) ),
+			array( 'Events', array( 'Organization', 'Creativity', 'Hospitality', 'Assisting', 'Service', 'Leadership' ), false, array( 'planning', 'decorating', 'feeding', 'managing', 'promoting', 'organize', 'hospitality' ) ),
+			array( 'Worship', array( 'Creativity', 'Vision', 'Encouragement', 'Discernment', 'Faith', 'Leadership' ), false, array( 'worship', 'musical', 'entertaining', 'artistic' ) ),
+			array( 'Prayer', array( 'Prayer', 'Faith', 'Discernment', 'Healing', 'Mercy', 'Wisdom' ), false, array( 'prayer', 'illness', 'injury', 'recovery', 'disabilities', 'sanctity of life' ) ),
+			array( 'Serve', array( 'Service', 'Assisting', 'Mercy', 'Giving', 'Hospitality', 'Teaching', 'Knowledge' ), false, array( 'homelessness', 'relief', 'community', 'neighborhood', 'feeding', 'resourceful', 'financial management' ) ),
+			array( 'Welcome', array( 'Hospitality', 'Encouragement', 'Assisting', 'Mercy', 'Evangelism' ), false, array( 'welcoming', 'hospitality', 'recall', 'public relations', 'fellowship' ) ),
+			array( 'Newcomers Pathway', array( 'Hospitality', 'Encouragement', 'Teaching', 'Mentoring', 'Organization', 'Leadership' ), false, array( 'welcoming', 'fellowship', 'mobilizing people for ministry', 'interview', 'recall' ) ),
+			array( 'Administration', array( 'Organization', 'Leadership', 'Knowledge', 'Wisdom', 'Assisting', 'Vision' ), false, array( 'counting', 'classifying', 'evaluating', 'planning', 'editing', 'writing', 'researching', 'financial management' ) ),
 		);
 	}
 
@@ -55,7 +55,7 @@ final class Teams {
 		global $wpdb;
 		$table = Schema::table( 'teams' );
 
-		foreach ( self::seed() as list( $name, $gifts, $safeguarded ) ) {
+		foreach ( self::seed() as list( $name, $gifts, $safeguarded, $keywords ) ) {
 			$slug = sanitize_title( $name );
 
 			$exists = $wpdb->get_var(
@@ -76,13 +76,14 @@ final class Teams {
 					'slug'                  => $slug,
 					'name'                  => $name,
 					'gifts'                 => wp_json_encode( $gifts ) ?: '[]',
+					'keywords'              => wp_json_encode( $keywords ) ?: '[]',
 					'target_headcount'      => 0,
 					'min_headcount'         => 0,
 					'current_headcount'     => 0,
 					'requires_safeguarding' => $safeguarded ? 1 : 0,
 					'is_active'             => 1,
 				),
-				array( '%s', '%s', '%s', '%d', '%d', '%d', '%d', '%d' )
+				array( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d', '%d' )
 			);
 		}
 	}
@@ -356,11 +357,25 @@ final class Teams {
 			'headcount_checked_at'  => current_time( 'mysql', true ),
 		);
 
+		$formats = array( '%d', '%d', '%d', '%d', '%d', '%d', '%s' );
+
+		/*
+		 * Only touched when the caller actually passed it. An absent key is not
+		 * an empty field: the Teams form always submits this, but anything
+		 * saving a team programmatically would otherwise wipe its vocabulary as
+		 * a side effect of adjusting a headcount — which is exactly what
+		 * happened to two seeded teams the first time the suite ran.
+		 */
+		if ( array_key_exists( 'keywords', $data ) ) {
+			$fields['keywords'] = wp_json_encode( self::parse_keywords( (string) $data['keywords'] ) ) ?: '[]';
+			$formats[]          = '%s';
+		}
+
 		$updated = $wpdb->update(
 			Schema::table( 'teams' ),
 			$fields,
 			array( 'id' => $id ),
-			array( '%d', '%d', '%d', '%d', '%d', '%d', '%s' ),
+			$formats,
 			array( '%d' )
 		);
 
@@ -375,9 +390,15 @@ final class Teams {
 	 * People who might fit one team, best-explained first.
 	 *
 	 * The inverse of the person-first view: a leader starts from the gap rather
-	 * than from a profile. Candidates come from those already suggested to this
-	 * team plus anyone whose likely gifts overlap it, so the list is not limited
-	 * to whatever the assessment's own ranking happened to pick.
+	 * than from a profile.
+	 *
+	 * Anybody with any evidence for this team is a candidate. The filter used to
+	 * be "already suggested, or a likely gift overlaps" — the same gifts-only
+	 * narrowing that limited the person-first suggestions, and with the same
+	 * consequence: somebody whose fit was a passion, an ability or a past job
+	 * never appeared, so neither view could surface them and the fit was
+	 * invisible from both directions. Evidence now means anything `explain()`
+	 * can produce a readable reason from.
 	 *
 	 * Ordered by strength of evidence. Team need never enters the ordering —
 	 * that a team is short of people says nothing about whether any given
@@ -392,10 +413,15 @@ final class Teams {
 			return array();
 		}
 
-		$gifts = array_map( 'strtolower', self::gift_list( $team ) );
-
-		// Pull a wide slice and filter in PHP: the gift lists live in JSON, and
-		// a LIKE per gift would be both uglier and no faster at pilot scale.
+		/*
+		 * Pull a wide slice and judge each one in PHP. Heart, abilities and
+		 * experience live inside profile_json, so there is no cheap SQL
+		 * pre-filter that does not simply reintroduce the gifts-only narrowing
+		 * this is here to remove — every row in the slice therefore gets its
+		 * profile decoded. That is a couple of hundred json_decode calls per
+		 * team view, which is nothing at the scale one church produces and
+		 * would want revisiting long before it became one.
+		 */
 		$rows = Submissions::query(
 			array(
 				'include_snoozed' => true,
@@ -412,15 +438,17 @@ final class Teams {
 			}
 
 			$suggested = Submissions::decode_list( $row->suggested_teams );
-			$likely    = array_map( 'strtolower', Submissions::decode_list( $row->gifts_likely ) );
-			$overlap   = array_intersect( $likely, $gifts );
-
-			if ( ! in_array( $team->slug, $suggested, true ) && ! $overlap ) {
-				continue;
-			}
+			$already   = in_array( $team->slug, $suggested, true );
 
 			$profile = Submissions::profile( $row, false );
 			$match   = Matching::explain( $row, $team, $profile );
+
+			// Nothing to say about them and nobody suggested them: not a
+			// candidate, and padding the list with names would make the list
+			// worth less than an empty one.
+			if ( ! $already && ! $match['reasons'] ) {
+				continue;
+			}
 
 			$out[] = array(
 				'id'            => (int) $row->id,
@@ -428,7 +456,7 @@ final class Teams {
 				'initials'      => strtoupper( mb_substr( $row->display_name, 0, 1 ) ),
 				'status'        => $row->status,
 				'statusLabel'   => Schema::status_labels()[ $row->status ] ?? $row->status,
-				'alreadySuggested' => in_array( $team->slug, $suggested, true ),
+				'alreadySuggested' => $already,
 				'needsCheck'    => (int) $team->requires_safeguarding
 					&& Safeguarding::STATUS_CLEARED !== $row->safeguarding_status,
 				'match'         => $match,
@@ -462,5 +490,84 @@ final class Teams {
 		$decoded = json_decode( (string) $team->gifts, true );
 
 		return is_array( $decoded ) ? array_map( 'strval', $decoded ) : array();
+	}
+
+	/**
+	 * The words a team's work is about, decoded.
+	 *
+	 * Tolerates a missing property so a row read before the 1.17.0 column
+	 * existed cannot fatal — matching simply falls back to the team name, which
+	 * is what it did before.
+	 *
+	 * @return string[]
+	 */
+	public static function keyword_list( object $team ): array {
+		$decoded = json_decode( (string) ( $team->keywords ?? '' ), true );
+
+		if ( ! is_array( $decoded ) ) {
+			return array();
+		}
+
+		$out = array();
+		foreach ( $decoded as $word ) {
+			$word = trim( (string) $word );
+			if ( '' !== $word ) {
+				$out[] = $word;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Turn what a pastor typed into a keyword list.
+	 *
+	 * Comma-separated, because that is how anybody would write a list of words
+	 * without being told a format. Duplicates and blanks are dropped; case is
+	 * kept as typed since the reason shown to a leader quotes the person's own
+	 * wording, not this.
+	 *
+	 * @return string[]
+	 */
+	public static function parse_keywords( string $raw ): array {
+		$out = array();
+
+		foreach ( explode( ',', $raw ) as $word ) {
+			$word = trim( sanitize_text_field( $word ) );
+
+			if ( '' === $word || in_array( $word, $out, true ) ) {
+				continue;
+			}
+
+			$out[] = $word;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Give seeded teams their vocabulary on upgrade.
+	 *
+	 * Matched by slug and only where the column is still empty, so a site that
+	 * has edited its own wording keeps it and a team somebody added themselves
+	 * is left alone rather than handed another team's words.
+	 */
+	public static function backfill_keywords(): void {
+		global $wpdb;
+		$table = Schema::table( 'teams' );
+
+		foreach ( self::seed() as list( $name, $gifts, $safeguarded, $keywords ) ) {
+			unset( $gifts, $safeguarded );
+
+			$wpdb->query(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					"UPDATE {$table} SET keywords = %s
+					 WHERE slug = %s AND ( keywords = '' OR keywords = '[]' OR keywords IS NULL )",
+					wp_json_encode( $keywords ) ?: '[]',
+					sanitize_title( $name )
+				)
+			);
+		}
 	}
 }

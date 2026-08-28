@@ -23,7 +23,7 @@ final class Schema {
 	 * Bumped whenever a CREATE TABLE statement below changes, so that
 	 * maybe_upgrade() knows to re-run dbDelta.
 	 */
-	public const DB_VERSION = '1.6.0';
+	public const DB_VERSION = '1.7.0';
 
 	public const OPTION_DB_VERSION = 'serve_dashboard_db_version';
 
@@ -214,12 +214,20 @@ final class Schema {
 		 * Teams carry the capacity numbers the deck's "team gaps" tile needs.
 		 * A gap is target_headcount minus current_headcount; without both
 		 * numbers that tile has nothing to render.
+		 *
+		 * `keywords` is the vocabulary of what a team's work is about. Matching
+		 * could previously compare a person's passions, abilities and
+		 * experience only against the team's *name*, so a heart for Elementary
+		 * Children said nothing about Fellowship Kids and every dimension
+		 * except spiritual gifts was effectively dead weight. Seeded for all
+		 * sixteen teams, so it works before anybody edits anything.
 		 */
 		$sql = "CREATE TABLE {$teams} (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			slug varchar(80) NOT NULL,
 			name varchar(190) NOT NULL,
 			gifts text NOT NULL,
+			keywords text NOT NULL,
 			target_headcount smallint(5) unsigned NOT NULL DEFAULT 0,
 			min_headcount smallint(5) unsigned NOT NULL DEFAULT 0,
 			current_headcount smallint(5) unsigned NOT NULL DEFAULT 0,
@@ -390,6 +398,22 @@ final class Schema {
 
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name is not user input.
 			$wpdb->query( "UPDATE {$teams} SET headcount_checked_at = UTC_TIMESTAMP() WHERE headcount_checked_at IS NULL" );
+		}
+
+		/*
+		 * Schema 1.7.0 — plugin 1.17.0 — gives every team a vocabulary, so
+		 * heart, abilities and experience can support a suggestion rather than
+		 * only spiritual gifts. Note the gate is the *schema* version, which
+		 * runs its own numbering: these comparisons are against DB_VERSION, not
+		 * against the plugin header.
+		 *
+		 * Backfilled from the seed list by slug, and only where the column is
+		 * still empty: an upgrading site keeps any wording it has edited, and a
+		 * team somebody renamed or added themselves is left alone rather than
+		 * given another team's words.
+		 */
+		if ( '' !== $from && version_compare( $from, '1.7.0', '<' ) ) {
+			Teams::backfill_keywords();
 		}
 	}
 }
