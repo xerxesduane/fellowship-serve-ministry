@@ -23,7 +23,7 @@ final class Schema {
 	 * Bumped whenever a CREATE TABLE statement below changes, so that
 	 * maybe_upgrade() knows to re-run dbDelta.
 	 */
-	public const DB_VERSION = '1.5.0';
+	public const DB_VERSION = '1.6.0';
 
 	public const OPTION_DB_VERSION = 'serve_dashboard_db_version';
 
@@ -137,6 +137,12 @@ final class Schema {
 			verified_at datetime DEFAULT NULL,
 			verify_token char(64) DEFAULT NULL,
 			verify_sent_at datetime DEFAULT NULL,
+			invite_token char(64) DEFAULT NULL,
+			invited_at datetime DEFAULT NULL,
+			invite_method varchar(16) DEFAULT NULL,
+			invite_response varchar(16) DEFAULT NULL,
+			invite_responded_at datetime DEFAULT NULL,
+			invite_note text NOT NULL,
 			safeguarding_status varchar(32) NOT NULL DEFAULT 'not_required',
 			safeguarding_verified_at datetime DEFAULT NULL,
 			snooze_until date DEFAULT NULL,
@@ -153,7 +159,9 @@ final class Schema {
 			KEY assigned_user_id (assigned_user_id),
 			KEY submitted_at (submitted_at),
 			KEY verified_at (verified_at),
-			KEY verify_token (verify_token)
+			KEY verify_token (verify_token),
+			KEY invite_token (invite_token),
+			KEY invite_response (invite_response)
 		) {$charset};";
 		dbDelta( $sql );
 

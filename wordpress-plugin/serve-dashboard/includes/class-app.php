@@ -92,6 +92,7 @@ final class App {
 			// hardcoding a second copy of the pipeline in JavaScript.
 			'statuses'   => Schema::status_labels(),
 			'safeguardStatuses' => Safeguarding::status_labels(),
+			'inviteResponses'   => Invitation::responses(),
 			'gatedStatuses'     => array_values(
 				array_filter( array_keys( Schema::status_labels() ), array( Safeguarding::class, 'is_gated_status' ) )
 			),

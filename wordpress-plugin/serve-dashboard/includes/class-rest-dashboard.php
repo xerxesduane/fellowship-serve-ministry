@@ -202,6 +202,21 @@ final class Rest_Dashboard {
 
 		register_rest_route(
 			$ns,
+			'/people/(?P<id>\d+)/invite',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'invite' ),
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+				'args'                => array(
+					'method'  => array( 'type' => 'string' ),
+					'subject' => array( 'type' => 'string' ),
+					'body'    => array( 'type' => 'string' ),
+				),
+			)
+		);
+
+		register_rest_route(
+			$ns,
 			'/people/(?P<id>\d+)/settled',
 			array(
 				'methods'             => \WP_REST_Server::CREATABLE,
@@ -280,6 +295,37 @@ final class Rest_Dashboard {
 		Audit::log( 'submission.settled', 'submission', $id );
 
 		return new \WP_REST_Response( array( 'settled' => true ) );
+	}
+
+	/**
+	 * Invite somebody, or record that a leader will do it themselves.
+	 *
+	 * @param \WP_REST_Request $request
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public static function invite( \WP_REST_Request $request ) {
+		$id = (int) $request->get_param( 'id' );
+
+		if ( ! Roles::can_view_submission( $id ) ) {
+			return new \WP_Error( 'serve_forbidden', __( 'You cannot change this record.', 'serve-dashboard' ), array( 'status' => 403 ) );
+		}
+
+		$method = Invitation::METHOD_PERSONAL === $request->get_param( 'method' )
+			? Invitation::METHOD_PERSONAL
+			: Invitation::METHOD_EMAIL;
+
+		$result = Invitation::METHOD_PERSONAL === $method
+			? Invitation::record_personal( $id )
+			: Invitation::send( $id, (string) $request->get_param( 'subject' ), (string) $request->get_param( 'body' ) );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		// Either way somebody has taken this on, so the stage moves.
+		Submissions::set_status( $id, Schema::STATUS_CONTACTED );
+
+		return self::person( $request );
 	}
 
 	public static function can_erase(): bool {
@@ -503,6 +549,14 @@ final class Rest_Dashboard {
 					'months'  => (int) $consent->retention_months,
 				) : null,
 				'planningCenterUrl' => Planning_Center::person_search_url( (string) $submission->email ),
+				// Piece one: what the leader would send if they chose to.
+				'inviteDraft'    => Invitation::draft( $submission ),
+				'invitedAt'      => $submission->invited_at
+					? mysql2date( get_option( 'date_format' ), $submission->invited_at )
+					: null,
+				'inviteMethod'   => $submission->invite_method,
+				// Piece two: what the person said back, if anything.
+				'inviteResponse' => Invitation::summary( $submission ),
 			)
 		);
 	}

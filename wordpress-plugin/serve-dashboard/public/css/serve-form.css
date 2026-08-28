@@ -497,3 +497,37 @@ body.serve-canvas--consent .skip-to-content:focus {
 	.serve-summary dl { grid-template-columns: 1fr; gap: .1rem .9rem; }
 	.serve-summary dt { margin-top: .5rem; }
 }
+
+/* Answering an invitation: three choices, none of them the loud one. */
+.serve-invite__choices {
+	display: grid;
+	gap: .6rem;
+	margin: 0 0 1.25rem;
+}
+
+.serve-invite__choice {
+	display: flex;
+	align-items: center;
+	gap: .7rem;
+	/* A whole-row target, so the radio itself is never the thing to hit. */
+	min-height: 52px;
+	padding: .75rem 1rem;
+	background: var(--serve-paper);
+	border: 1px solid var(--serve-line);
+	border-radius: 10px;
+	font-size: .95rem;
+	cursor: pointer;
+}
+
+.serve-invite__choice:hover { border-color: var(--serve-teal); }
+
+.serve-invite__choice:focus-within {
+	outline: 2px solid var(--serve-teal);
+	outline-offset: 2px;
+}
+
+.serve-invite__choice input {
+	width: 1.15rem;
+	height: 1.15rem;
+	accent-color: var(--serve-teal);
+}

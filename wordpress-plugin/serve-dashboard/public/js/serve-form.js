@@ -225,3 +225,77 @@
 			});
 	});
 }());
+
+/*
+ * Answering an invitation.
+ *
+ * Its own small block rather than folded into the consent form: they are
+ * different pages that happen to share a stylesheet, and the consent script
+ * above bails out early when its form is absent.
+ */
+(function () {
+	'use strict';
+
+	const config = window.serveShapeConfig;
+	const form = document.getElementById('serve-invite-form');
+	if (!config || !form) {
+		return;
+	}
+
+	const status = form.querySelector('.serve-consent__status');
+	const submit = form.querySelector('.serve-consent__submit');
+
+	form.addEventListener('submit', function (event) {
+		event.preventDefault();
+
+		const chosen = form.querySelector('input[name="serve_invite_response"]:checked');
+		if (!chosen) {
+			return;
+		}
+
+		submit.disabled = true;
+		status.textContent = config.strings.sending;
+		status.classList.remove('is-error');
+
+		fetch(config.inviteEndpoint, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				token: form.dataset.inviteToken,
+				response: chosen.value,
+				note: (form.querySelector('[data-invite-note]').value || '').trim()
+			})
+		})
+			.then(function (response) {
+				return response.json().then(function (body) {
+					return { ok: response.ok, body: body };
+				});
+			})
+			.then(function (result) {
+				if (!result.ok) {
+					submit.disabled = false;
+					status.textContent = (result.body && result.body.message) || config.strings.failed;
+					status.classList.add('is-error');
+					return;
+				}
+
+				const done = document.querySelector('[data-invite-done]');
+				const message = document.querySelector('[data-invite-done-message]');
+
+				if (done) {
+					if (message) {
+						message.textContent = result.body.message || '';
+					}
+					form.hidden = true;
+					done.hidden = false;
+					done.setAttribute('tabindex', '-1');
+					done.focus({ preventScroll: true });
+				}
+			})
+			.catch(function () {
+				submit.disabled = false;
+				status.textContent = config.strings.failed;
+				status.classList.add('is-error');
+			});
+	});
+}());

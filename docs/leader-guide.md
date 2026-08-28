@@ -96,6 +96,17 @@ and it is not a judgement on them.
 leader you will see a note that the Experiences section is hidden from you. That
 is deliberate; see below.
 
+**Invite to a conversation** — you choose how. *Send them an email now* opens a
+draft with their name and the suggested team already in it; edit it so it sounds
+like you, because a form letter signed with your name is worse than no email.
+*I will contact them myself* sends nothing and records that you have taken it
+on, so nobody else rings them tomorrow. Either way the stage moves to Contacted.
+
+An emailed invitation carries a link where they can answer for themselves — yes,
+not right now, or a question. Their answer appears at the top of their panel
+under **What they said**. "Not right now" pauses them for three months rather
+than declining them; those are not the same thing.
+
 **Suggested teams** — with the reasons. Read the reasons rather than the
 ordering. If the reasons do not convince you, they should not convince you.
 

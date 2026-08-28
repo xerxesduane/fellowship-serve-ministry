@@ -84,6 +84,34 @@ final class Rest {
 			)
 		);
 
+		/*
+		 * The person answering their own invitation.
+		 *
+		 * Public, because they are not a WordPress user and never will be. The
+		 * emailed token is the credential, exactly as it is for confirming an
+		 * address or resuming a draft.
+		 */
+		register_rest_route(
+			self::NAMESPACE,
+			'/invite-response',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'invite_response' ),
+				'permission_callback' => '__return_true',
+				'args'                => array(
+					'token'    => array(
+						'required' => true,
+						'type'     => 'string',
+					),
+					'response' => array(
+						'required' => true,
+						'type'     => 'string',
+					),
+					'note'     => array( 'type' => 'string' ),
+				),
+			)
+		);
+
 		register_rest_route(
 			self::NAMESPACE,
 			'/consent-text',
@@ -99,6 +127,29 @@ final class Rest {
 					);
 				},
 				'permission_callback' => '__return_true',
+			)
+		);
+	}
+
+	/**
+	 * @param \WP_REST_Request $request
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public static function invite_response( \WP_REST_Request $request ) {
+		$saved = Invitation::respond(
+			(string) $request->get_param( 'token' ),
+			(string) $request->get_param( 'response' ),
+			(string) $request->get_param( 'note' )
+		);
+
+		if ( is_wp_error( $saved ) ) {
+			return $saved;
+		}
+
+		return new \WP_REST_Response(
+			array(
+				'ok'      => true,
+				'message' => __( 'Thank you — that is recorded, and a ministry leader will see it.', 'serve-dashboard' ),
 			)
 		);
 	}

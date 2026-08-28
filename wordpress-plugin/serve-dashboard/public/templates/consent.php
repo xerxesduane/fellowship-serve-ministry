@@ -51,11 +51,19 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 $serve_is_privacy = get_queried_object_id() === (int) get_option( 'wp_page_for_privacy_policy' );
 
-Shortcode::brand_header(
-	$serve_is_privacy
-		? __( 'Privacy', 'serve-dashboard' )
-		: __( 'Final step', 'serve-dashboard' )
-);
+// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only, decides a heading.
+$serve_is_invite = isset( $_GET[ Invitation::QUERY_VAR ] );
+
+if ( $serve_is_privacy ) {
+	$serve_eyebrow = __( 'Privacy', 'serve-dashboard' );
+} elseif ( $serve_is_invite ) {
+	// Not "Final step" — they finished the journey some time ago.
+	$serve_eyebrow = __( 'An invitation', 'serve-dashboard' );
+} else {
+	$serve_eyebrow = __( 'Final step', 'serve-dashboard' );
+}
+
+Shortcode::brand_header( $serve_eyebrow );
 ?>
 <main id="serve-main">
 <?php

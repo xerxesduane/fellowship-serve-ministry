@@ -567,11 +567,63 @@ const drawer = {
 				</form>
 			</div>` : '';
 
+		/*
+		 * Inviting somebody, and what they said back.
+		 *
+		 * The button used to move a stage and send nothing, which was honest
+		 * given no messaging workflow had been agreed but left the deck's Serve
+		 * stage with no invitation in it. A leader now chooses per person:
+		 * ringing somebody you know and emailing a newcomer are different acts.
+		 *
+		 * The wording is theirs. A pastoral invitation signed with a leader's
+		 * name but written by software reads as a mass mailing at exactly the
+		 * moment personal contact matters, so this is a draft, not a template.
+		 */
+		const answered = person.inviteResponse;
+		const answerBlock = answered
+			? `<div class="serve-section">
+					<h3>What they said</h3>
+					<p class="serve-note serve-note--${esc(answered.tone === 'ok' ? 'info' : answered.tone)}">
+						<strong>${esc(answered.label)}</strong>${answered.when ? ` &middot; ${esc(answered.when)}` : ''}
+					</p>
+					${answered.note ? `<p class="serve-card__hint">“${esc(answered.note)}”</p>` : ''}
+				</div>`
+			: '';
+
+		const inviteBlock = CONFIG.caps.manage ? `
+			<div class="serve-section" data-invite-panel="${esc(person.id)}" hidden>
+				<h3>Invite to a conversation</h3>
+				<form class="serve-stageform" data-invite-form="${esc(person.id)}">
+					<label for="serve-invite-how-${esc(person.id)}">How</label>
+					<select id="serve-invite-how-${esc(person.id)}" data-invite-method>
+						<option value="email">Send them an email now</option>
+						<option value="personal">I will contact them myself</option>
+					</select>
+
+					<div data-invite-fields>
+						<label for="serve-invite-subject-${esc(person.id)}">Subject</label>
+						<input type="text" id="serve-invite-subject-${esc(person.id)}" data-invite-subject
+							value="${esc(person.inviteDraft.subject)}" maxlength="190">
+
+						<label for="serve-invite-body-${esc(person.id)}">Message</label>
+						<textarea id="serve-invite-body-${esc(person.id)}" rows="8" data-invite-body>${esc(person.inviteDraft.body)}</textarea>
+						<p class="serve-card__hint">A draft, not a template — say it the way you would say it. Your name and a link where they can answer are added underneath.</p>
+					</div>
+
+					<div data-invite-personal hidden>
+						<p class="serve-card__hint">Nothing is sent. This records that you have taken it on, so nobody else rings them tomorrow.</p>
+					</div>
+
+					<button type="submit" class="serve-btn serve-btn--primary">Do it</button>
+					<p class="serve-note serve-note--warn" data-invite-error hidden></p>
+				</form>
+			</div>` : '';
+
 		const actions = [];
 
 		if (CONFIG.caps.manage) {
-			actions.push(`<button type="button" class="serve-btn serve-btn--primary serve-btn--block" data-invite="${esc(person.id)}">
-				${icon('send')}Invite to a conversation</button>`);
+			actions.push(`<button type="button" class="serve-btn serve-btn--primary serve-btn--block" data-invite-open="${esc(person.id)}">
+				${icon('send')}${person.invitedAt ? 'Invite again' : 'Invite to a conversation'}</button>`);
 		}
 
 		if (person.planningCenterUrl) {
@@ -616,6 +668,8 @@ const drawer = {
 				${safeguarding}
 			</div>
 
+			${answerBlock}
+			${inviteBlock}
 			${stageForm}
 			${safeguardForm}
 
@@ -1041,9 +1095,14 @@ function boot() {
 			return;
 		}
 
-		const invite = event.target.closest('[data-invite]');
-		if (invite) {
-			inviteToConversation(invite);
+		const inviteOpen = event.target.closest('[data-invite-open]');
+		if (inviteOpen) {
+			const panel = document.querySelector(`[data-invite-panel="${inviteOpen.dataset.inviteOpen}"]`);
+			if (panel) {
+				panel.hidden = false;
+				panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+				panel.querySelector('[data-invite-method]').focus();
+			}
 			return;
 		}
 
@@ -1173,6 +1232,13 @@ function boot() {
 			return;
 		}
 
+		const invite = event.target.closest('[data-invite-form]');
+		if (invite) {
+			event.preventDefault();
+			submitInvite(invite);
+			return;
+		}
+
 		const stage = event.target.closest('[data-stage-form]');
 		if (stage) {
 			event.preventDefault();
@@ -1226,6 +1292,14 @@ function boot() {
 	});
 
 	document.addEventListener('change', (event) => {
+		const how = event.target.closest('[data-invite-method]');
+		if (how) {
+			const form = how.closest('[data-invite-form]');
+			const byEmail = 'email' === how.value;
+			form.querySelector('[data-invite-fields]').hidden = !byEmail;
+			form.querySelector('[data-invite-personal]').hidden = byEmail;
+		}
+
 		const stage = event.target.closest('[data-stage-status]');
 		if (stage) {
 			syncStageFields(stage.closest('[data-stage-form]'));
@@ -1359,29 +1433,41 @@ function submitSafeguard(form) {
 		});
 }
 
-function inviteToConversation(button) {
-	const id = button.dataset.invite;
+/**
+ * Send the invitation, or record that the leader will do it themselves.
+ *
+ * A refusal comes straight back — if the mailer will not take it, nothing is
+ * recorded as invited, because a leader believing they have written to somebody
+ * who never heard is worse than an obvious failure.
+ */
+function submitInvite(form) {
+	const id = form.dataset.inviteForm;
+	const method = form.querySelector('[data-invite-method]').value;
+	const error = form.querySelector('[data-invite-error]');
+	const button = form.querySelector('button[type="submit"]');
 
+	error.hidden = true;
 	button.disabled = true;
-	button.textContent = 'Saving…';
+	button.textContent = 'email' === method ? 'Sending…' : 'Saving…';
 
-	api(`/people/${id}/status`, {
+	api(`/people/${id}/invite`, {
 		method: 'POST',
-		body: JSON.stringify({ status: 'contacted' })
+		body: JSON.stringify({
+			method,
+			subject: form.querySelector('[data-invite-subject]').value,
+			body: form.querySelector('[data-invite-body]').value
+		})
 	})
 		.then(() => {
-			announce('Marked as contacted');
+			announce('email' === method ? 'Invitation sent' : 'Recorded — you are contacting them');
 			drawer.open(id);
 			bootPromise = loadDashboard();
 		})
-		.catch((error) => {
+		.catch((err) => {
 			button.disabled = false;
-			button.textContent = 'Invite to a conversation';
-
-			const note = document.createElement('p');
-			note.className = 'serve-note serve-note--warn';
-			note.textContent = error.message;
-			button.parentElement.prepend(note);
+			button.textContent = 'Do it';
+			error.textContent = err.message;
+			error.hidden = false;
 		});
 }
 

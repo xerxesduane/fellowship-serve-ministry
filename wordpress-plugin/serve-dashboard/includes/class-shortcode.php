@@ -143,6 +143,7 @@ final class Shortcode {
 			'serveShapeConfig',
 			array(
 				'endpoint'   => rest_url( Rest::NAMESPACE . '/submissions' ),
+				'inviteEndpoint' => rest_url( Rest::NAMESPACE . '/invite-response' ),
 				'storageKey' => self::STORAGE_KEY,
 				'logoUrl'    => SERVE_DASHBOARD_URL . 'public/assessment/fellowship-logo.jpeg',
 				'strings'    => array(
@@ -165,6 +166,20 @@ final class Shortcode {
 	public static function render( $atts = array() ): string {
 		// Already done in the head on the consent page; a no-op there.
 		self::enqueue();
+
+		/*
+		 * Arriving from an invitation: the person answers for themselves.
+		 *
+		 * The deck's model is system suggests, leader confirms, person chooses,
+		 * and the third had no surface anywhere in the product. Until now
+		 * "Declined" was something a leader typed on somebody else's behalf.
+		 */
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- an emailed one-time token is the credential.
+		$invite = isset( $_GET[ Invitation::QUERY_VAR ] ) ? sanitize_text_field( wp_unslash( $_GET[ Invitation::QUERY_VAR ] ) ) : '';
+
+		if ( '' !== $invite ) {
+			return self::render_invitation( $invite );
+		}
 
 		/*
 		 * Arriving from a confirmation email: show the outcome instead of the
@@ -312,6 +327,71 @@ final class Shortcode {
 			</p>
 		</div>
 
+		</div>
+		<?php
+
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Answering an invitation.
+	 *
+	 * Three honest options and a box, rather than a single "accept" button.
+	 * "Not right now" is a real answer and has to be as easy to give as yes, or
+	 * the only people who reply are the ones saying what we hoped to hear.
+	 */
+	private static function render_invitation( string $token ): string {
+		$submission = Invitation::find( $token );
+
+		ob_start();
+		?>
+		<div class="serve-consent-page">
+		<?php if ( ! $submission ) : ?>
+			<div class="serve-consent serve-consent--result is-warn">
+				<h1><?php esc_html_e( 'That link is no longer active', 'serve-dashboard' ); ?></h1>
+				<p class="serve-consent__lede">
+					<?php esc_html_e( 'It may already have been used, or it may have been sitting in an inbox for a while. Reply to the email a leader sent you and they will pick it up from there.', 'serve-dashboard' ); ?>
+				</p>
+			</div>
+		<?php else : ?>
+			<form class="serve-consent" id="serve-invite-form" data-invite-token="<?php echo esc_attr( $token ); ?>" novalidate>
+				<h1><?php esc_html_e( 'About serving at Fellowship Dubai', 'serve-dashboard' ); ?></h1>
+				<p class="serve-consent__lede">
+					<?php
+					printf(
+						/* translators: %s: the person's first name. */
+						esc_html__( 'Hello %s. Whatever you say here is fine — there is no right answer, and nobody is keeping score.', 'serve-dashboard' ),
+						esc_html( (string) strtok( (string) $submission->display_name, ' ' ) )
+					);
+					?>
+				</p>
+
+				<div class="serve-invite__choices" role="radiogroup" aria-label="<?php esc_attr_e( 'Your answer', 'serve-dashboard' ); ?>">
+					<?php foreach ( Invitation::responses() as $value => $label ) : ?>
+						<label class="serve-invite__choice">
+							<input type="radio" name="serve_invite_response" value="<?php echo esc_attr( $value ); ?>"
+								<?php checked( Invitation::RESPONSE_YES, $value ); ?>>
+							<span><?php echo esc_html( $label ); ?></span>
+						</label>
+					<?php endforeach; ?>
+				</div>
+
+				<div class="serve-consent__field">
+					<label for="serve-invite-note"><?php esc_html_e( 'Anything you would like them to know (optional)', 'serve-dashboard' ); ?></label>
+					<textarea id="serve-invite-note" rows="3" maxlength="500" data-invite-note
+						placeholder="<?php esc_attr_e( 'e.g. I am travelling until October, or — what would it actually involve?', 'serve-dashboard' ); ?>"></textarea>
+				</div>
+
+				<button type="submit" class="serve-consent__submit"><?php esc_html_e( 'Send my answer', 'serve-dashboard' ); ?></button>
+				<p class="serve-consent__status" role="status" aria-live="polite"></p>
+			</form>
+
+			<div class="serve-consent serve-consent--done" data-invite-done hidden>
+				<span class="serve-consent__tick" aria-hidden="true">&#10003;</span>
+				<h1><?php esc_html_e( 'Thank you', 'serve-dashboard' ); ?></h1>
+				<p class="serve-consent__lede" data-invite-done-message></p>
+			</div>
+		<?php endif; ?>
 		</div>
 		<?php
 

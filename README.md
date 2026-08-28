@@ -56,7 +56,7 @@ before deleting anything: both implementations carried the same 73 option ids,
 SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
 ```
 
-Seventy-two tests covering the guarantees whose failure would be silent: the
+Eighty-one tests covering the guarantees whose failure would be silent: the
 safeguarding gate, unverified profiles staying invisible, Experiences redaction,
 what a CSV may contain, the confirmation-email path in both directions, what the
 public intake endpoint accepts, who may move somebody along the pipeline or
@@ -75,7 +75,7 @@ again, then reports if a count moved. It refuses to run against an install
 declaring itself production, and otherwise requires `SERVE_TEST_OK=1` so that
 pointing it somewhere real has to be deliberate.
 
-Adding Composer and the WordPress PHPUnit scaffold to run seventy-two tests
+Adding Composer and the WordPress PHPUnit scaffold to run eighty-one tests
 would have been a bigger change to this repository than anything they check, so
 the runner is about a hundred lines and has no dependencies.
 
