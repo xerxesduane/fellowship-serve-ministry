@@ -18,8 +18,10 @@ Built for a dedicated WordPress install at `serve.fellowshipdubai.com`.
 ```
 wordpress-plugin/serve-dashboard/   the entire product, one deployable plugin
 tools/build-release.sh              produces the installable zip
-tools/run-tests.php                 the test runner
+tools/run-tests.php                 the plugin test runner
+tools/run-js-tests.mjs              the assessment test runner
 tests/                              what must never quietly regress
+tests/js/                           the same, for the assessment JavaScript
 docs/leader-guide.md                for the ministry leaders who use it
 docs/deployment-runbook.md          taking it live, in order
 docs/planning-center-prepare.md     field ownership, before any integration
@@ -56,7 +58,7 @@ before deleting anything: both implementations carried the same 73 option ids,
 SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
 ```
 
-Eighty-two tests covering the guarantees whose failure would be silent: the
+One hundred and eight tests covering the guarantees whose failure would be silent: the
 safeguarding gate, unverified profiles staying invisible, Experiences redaction,
 what a CSV may contain, the confirmation-email path in both directions, what the
 public intake endpoint accepts, who may move somebody along the pipeline or
@@ -67,7 +69,29 @@ That last group exists because activation runs once, on a database nobody has
 looked at yet, and then never again — so it is the least-exercised code here and
 the only defect this suite has found in anger was hiding in it.
 
-They boot a real WordPress and run against a real database, because every one of
+### The assessment JavaScript
+
+```bash
+node tools/run-js-tests.mjs
+```
+
+Twenty tests over `profile.js` — the object that becomes somebody's stored
+profile, and the text they download, print and email. No WordPress, no database
+and no network: these are pure functions over their arguments, so the runner
+touches nothing and needs no confirmation flag.
+
+It exists because the PHP suite stops at the REST endpoint. Everything on the
+visitor's side of that boundary could be broken freely and no test noticed —
+including the two things nobody would catch by eye: an "Other" answer attaching
+to the wrong question, and the takeaway document quietly omitting a section.
+Both are now covered, and both were confirmed by breaking them on purpose.
+
+`app.js` is not covered. It reads `document` at import time and renders on load,
+so importing it outside a browser needs a DOM shim larger than the tests it would
+enable. CI parses it, which catches the mistake that actually happens; the rest
+of it is still checked by eye.
+
+The plugin tests boot a real WordPress and run against a real database, because every one of
 those guarantees is a SQL predicate or a capability check and none of them would
 survive being mocked. That means **the runner writes to the database it is
 pointed at** — it creates submissions, users and placements, and deletes them

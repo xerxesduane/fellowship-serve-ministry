@@ -151,6 +151,17 @@ exclusions, and the confirmation-email path — and it was validated by breaking
 each of them on purpose and confirming the right tests went red. See the
 repository README for what it writes to the database and the guards around that.
 
+The assessment's own JavaScript has a second suite, which needs neither
+WordPress nor a database:
+
+```bash
+node ../../tools/run-js-tests.mjs
+```
+
+It covers `profile.js`: what a completed assessment turns into, and what the
+person downloads. `app.js` is not covered — it needs a DOM to import at all —
+so CI parses it and nothing more.
+
 ## Tables
 
 All prefixed `{$wpdb->prefix}serve_`:

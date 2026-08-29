@@ -36,6 +36,33 @@ jobs:
           # never runs, which is invisible until a migration is skipped.
           [ "$header" = "$const" ]
 
+  # No database and no WordPress: the assessment's modules are pure functions
+  # over their arguments, so this runs in seconds and gates every PR cheaply.
+  assessment:
+    name: Assessment JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'   # the oldest Node that parses these modules unaided
+
+      - name: Parse every assessment module
+        run: |
+          status=0
+          # app.js is never imported by the tests — it needs a DOM — so without
+          # this a syntax error in the file the visitor actually loads would
+          # ship with a green build.
+          for file in wordpress-plugin/serve-dashboard/public/assessment/*.js \
+                      wordpress-plugin/serve-dashboard/admin/js/*.js; do
+            node --check "$file" || { echo "::error file=$file::syntax error"; status=1; }
+          done
+          exit $status
+
+      - name: Run the assessment tests
+        run: node tools/run-js-tests.mjs
+
   tests:
     name: Plugin tests
     runs-on: ubuntu-latest
