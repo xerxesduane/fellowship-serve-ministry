@@ -593,3 +593,197 @@ test(
 		}
 	}
 );
+
+/*
+ * Suggestions are strong matches only.
+ *
+ * "Possible" was never a claim that the person and the team fit; it is the
+ * ranking saying it found something and not enough of it. Putting that in front
+ * of a ministry leader as a suggestion spends their attention on the matches
+ * least likely to be right, and gives the person an expectation of a
+ * conversation nobody is going to start.
+ */
+
+test(
+	'a possible match is never suggested, and never opens a profile',
+	function ( Assert $a, Fixtures $f ) {
+		// One gift and nothing behind it. Strong needs two shared gifts and a
+		// second S.H.A.P.E. dimension, so this can only ever be possible.
+		$profile = array(
+			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+			'abilities'      => array( 'Counting ability' ),
+		);
+
+		$ranked = Matching::rank_profile( $profile );
+		$a->ok( count( $ranked ) > 0, 'the ranking still finds teams' );
+		$a->same(
+			0,
+			count( array_filter( $ranked, static fn( $m ) => 'strong' === $m['strength'] ) ),
+			'none of them reaching strong'
+		);
+
+		// So nothing is suggested, and nothing is stored.
+		$a->same( array(), Matching::suggestions_for_profile( $profile ), 'no suggestions' );
+		$a->same( array(), Matching::slugs_for_profile( $profile ), 'and no team is recorded' );
+
+		/*
+		 * The evidence is not thrown away. rank_profile is the explanation and
+		 * still answers, so a pastor reading the profile can see what was
+		 * considered and why it fell short.
+		 */
+		$a->ok( ! empty( $ranked[0]['reasons'] ), 'the reasons survive for whoever reads the profile' );
+	}
+);
+
+test(
+	'a strong match below the top three is still suggested',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The ranking orders by evidence, not by strength, so a person's only
+		 * strong matches can sit below possible ones. Filtering the top three
+		 * would throw them away and leave the person with nothing at all --
+		 * which is what happened to a real profile in the pilot data before
+		 * this was written the other way round.
+		 */
+		$profile = array(
+			'spiritualGifts' => array( 'likely' => array( 'Faith', 'Leadership', 'Service' ) ),
+			'abilities'      => array(
+				'Interview ability', 'Researching ability', 'Graphics ability', 'Athletic ability',
+				'Teaching ability', 'Repairing ability', 'Promoting ability', 'Welcoming ability',
+				'Musical ability',
+			),
+			'heart'          => array(
+				'roles'  => array( 'DESIGN/DEVELOP', 'PIONEER', 'SERVE/HELP', 'INFLUENCE', 'REPAIR', 'LEAD/BE IN CHARGE', 'FOLLOW THE RULES' ),
+				'people' => array( 'Jr. High Students', 'Elementary Children', 'Men' ),
+				'causes' => array( 'Abuse/Violence', 'Financial Management', 'Blindness', 'Law and/or Justice System', 'Health and/or Fitness' ),
+			),
+		);
+
+		$suggestions = Matching::suggestions_for_profile( $profile );
+
+		/*
+		 * Asserted as the invariant rather than against a hand-tuned fixture:
+		 * every strong match in the complete ranking, up to the limit, is
+		 * suggested. A fixture pinned to one exact ordering would stop testing
+		 * anything the first time somebody edits a team's vocabulary.
+		 */
+		$complete = Matching::rank_profile( $profile, PHP_INT_MAX );
+		$expected = array_slice(
+			array_column(
+				array_values( array_filter( $complete, static fn( $m ) => 'strong' === $m['strength'] ) ),
+				'team_slug'
+			),
+			0,
+			Matching::suggestion_limit()
+		);
+
+		$a->ok( count( $expected ) > 0, 'this profile does have strong matches somewhere in the ranking' );
+		$a->same( $expected, array_column( $suggestions, 'team_slug' ), 'and every one of them is suggested' );
+
+		// The cut happens after the filter, never before it.
+		$capped     = Matching::rank_profile( $profile );
+		$from_top   = array_filter( $capped, static fn( $m ) => 'strong' === $m['strength'] );
+		$a->ok(
+			count( $suggestions ) >= count( $from_top ),
+			'filtering the capped ranking could only ever have found fewer'
+		);
+
+		foreach ( $suggestions as $suggestion ) {
+			$a->same( 'strong', $suggestion['strength'], 'each one strong' );
+		}
+
+		$a->ok(
+			count( $suggestions ) <= Matching::suggestion_limit(),
+			'still no more than the limit'
+		);
+	}
+);
+
+test(
+	'no more teams are suggested than the limit allows',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * Broad, genuine evidence across several teams. Without the cap this
+		 * profile would hand its answers to six ministry leaders rather than
+		 * three, and `suggested_teams` is what decides who may open it -- so
+		 * the limit is an access-control bound, not a display preference.
+		 */
+		$profile = array(
+			'spiritualGifts' => array( 'likely' => array( 'Mercy', 'Hospitality', 'Service', 'Leadership' ) ),
+			'abilities'      => array( 'Feeding ability', 'Welcoming ability', 'Planning ability', 'Managing ability', 'Recall ability' ),
+			'heart'          => array(
+				'roles'  => array( 'SERVE/HELP', 'ORGANIZE', 'LEAD/BE IN CHARGE' ),
+				'people' => array( 'Older Adults 60+', 'Families', 'Men' ),
+				'causes' => array( 'Fellowship', 'Homelessness', 'Illness and/or Injury' ),
+			),
+		);
+
+		$all_strong = array_filter(
+			Matching::rank_profile( $profile, PHP_INT_MAX ),
+			static fn( $m ) => 'strong' === $m['strength']
+		);
+
+		$a->ok(
+			count( $all_strong ) > Matching::suggestion_limit(),
+			'this profile genuinely matches more teams than may be suggested'
+		);
+
+		$a->same(
+			Matching::suggestion_limit(),
+			count( Matching::suggestions_for_profile( $profile ) ),
+			'and it is cut to the limit'
+		);
+
+		$a->same(
+			Matching::suggestion_limit(),
+			count( Matching::slugs_for_profile( $profile ) ),
+			'so no more than that many teams are given access'
+		);
+	}
+);
+
+test(
+	"the leader's panel is the same strong matches as everything else",
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The drawer heading says "Suggested teams", so it is a suggestion
+		 * surface and answers to the same rule. It used to call the full
+		 * ranking, which would have shown a leader possible matches the person
+		 * was never told about and no placement row exists for.
+		 */
+		$id = $f->submission(
+			array(
+				'profile' => array(
+					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
+					'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				),
+			)
+		);
+
+		global $wpdb;
+		$submission = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT * FROM ' . Schema::table( 'submissions' ) . ' WHERE id = %d',
+				$id
+			)
+		);
+		$a->ok( null !== $submission, 'the submission is there to read' );
+
+		$profile = json_decode( (string) $submission->profile_json, true ) ?: array();
+		$panel   = Matching::for_submission( $submission, $profile );
+
+		$a->ok( count( $panel ) > 0, 'the leader is shown something' );
+
+		foreach ( $panel as $match ) {
+			$a->same( 'strong', $match['strength'], 'and every row of it is a strong match' );
+		}
+
+		// The same teams the person was shown and the same ones placed.
+		$a->same(
+			array_column( Matching::suggestions_for_profile( $profile ), 'team_slug' ),
+			array_column( $panel, 'team_slug' ),
+			'identical to what the person was shown'
+		);
+	}
+);

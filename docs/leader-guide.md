@@ -92,7 +92,23 @@ with the reasons underneath. These come from weighing every team against
 everything they told us — gifts, passions, abilities and past experience — not
 just their spiritual gifts.
 
-The person saw the same three teams at the end of their assessment, so normally
+**Only strong matches are suggested.** A strong match needs at least two shared
+spiritual gifts, backed up by a second part of their S.H.A.P.E. and at least
+three reasons in total, and the gifts have to be selective rather than a long
+list catching everything. Weaker overlaps are not shown here at all.
+
+That makes this list short, and for some people it is **empty**. How often is
+not yet known: on the handful of profiles the system has seen so far it was
+about one in five, but that is demo data and a real congregation may look
+nothing like it. It is worth watching during the pilot.
+
+An empty list is a real answer, not a failure: the evidence was there but it did
+not concentrate on any one team. Everything they wrote is still on the page, and
+the conversation starts open. Those people stay in your first-conversation queue
+if you lead no team they matched, a pastor sees them regardless, and they are
+worth a call precisely because the software could not shortcut it.
+
+The person saw the same teams at the end of their assessment, so normally
 nothing here is a surprise to them. Any team marked **not on their profile** is
 one they did not see — which happens for profiles completed before September
 2026, when the assessment worked its own suggestions out from spiritual gifts

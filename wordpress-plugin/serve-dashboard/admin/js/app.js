@@ -586,7 +586,7 @@ const drawer = {
 					</div>` : `<p class="serve-match__context">No specific overlap was found. This suggestion needs a conversation before anything else.</p>`}
 					${match.opening_note ? `<p class="serve-match__context">${esc(match.opening_note)}</p>` : ''}
 				</div>`).join('')
-			: `<p class="serve-note serve-note--muted">No team suggestions are available for this profile. That is not a problem — it means the conversation starts open.</p>`;
+			: `<p class="serve-note serve-note--muted">No team reached a strong match for this profile. That is a real answer, not a gap: the evidence was there but it did not concentrate on any one team. Their answers are on this page, and the conversation starts open.</p>`;
 
 		/*
 		 * How this person is likely to serve, whichever team it turns out to be.
@@ -828,7 +828,7 @@ const drawer = {
 
 			<div class="serve-section">
 				<h3>Suggested teams</h3>
-				<p class="serve-card__hint">A suggestion is a starting point. The leader confirms, and the person chooses. Anything marked <em>not on their profile</em> came from their wider answers, so they have not seen it yet.</p>
+				<p class="serve-card__hint">Strong matches only, so this list is short by design and sometimes empty. A suggestion is still a starting point: the leader confirms, and the person chooses. Anything marked <em>not on their profile</em> came from their wider answers, so they have not seen it yet.</p>
 				${person.matches.find((m) => m.caveat)
 					? `<p class="serve-note serve-note--warn">${esc(person.matches.find((m) => m.caveat).caveat)}</p>`
 					: ''}

@@ -910,6 +910,61 @@ keeps it as close to hand while giving it room to say plainly what happens to a
 report. Including the part that is easy to overstate: the audit trail records
 that you left a report, and not a word of what it said.
 
+## Suggestions are strong matches only
+
+A suggestion is a claim that this person and this team fit. "Possible" was never
+that claim -- it is the ranking reporting that it found something and not enough
+of it. Showing those as suggestions spends a ministry leader's attention on the
+matches least likely to be right, and gives the person an expectation of a
+conversation nobody is going to start.
+
+`strength()` already set a real bar for strong, and it is unchanged:
+
+- two spiritual gifts shared with the team,
+- corroboration from a second S.H.A.P.E. dimension, so gifts alone can never
+  reach it,
+- three reasons in total,
+- and selectivity above 0.25, so a long list of claimed gifts cannot catch every
+  team by volume.
+
+All three suggestion surfaces now answer to that bar together: what the person is
+shown at the end of the assessment, what `suggested_teams` stores, and the
+**Suggested teams** panel in the leader's drawer. The full ranking is still
+computed and is still what `rank_profile()` returns -- it is the explanation, and
+a pastor reading a profile can see what was considered and why it fell short.
+
+### The cut happens after the filter, never before
+
+The ranking orders by evidence, not by strength, so a person's only strong
+matches can sit below possible ones. Filtering the top three would throw them
+away. On the demo data one profile ranked Youth Ministry, Administration and
+Fellowship Kids in its top three -- all possible -- while Events and Worship,
+further down, were both strong. Filter-then-cut gives that person two teams;
+cut-then-filter gives them none.
+
+A test asserts the invariant rather than that exact ordering, because a fixture
+pinned to one arrangement stops testing anything the first time somebody edits a
+team's vocabulary.
+
+### Some people now match nothing, and that is the answer
+
+An empty list is not a failure. It means the evidence was there and did not
+concentrate on any one team. Those profiles get no placement rows, so no ministry
+leader can open them; a pastor sees everyone, and the dashboard already puts
+people nobody has spoken to first. The drawer says so in those words rather than
+showing an empty space.
+
+How often this happens is not yet known. On the nine demo profiles it was two,
+but that is seeded data and a real congregation may look nothing like it. It is
+the first thing worth measuring in the pilot, because if it is common the honest
+response is to look again at the bar, not to quietly re-admit possible matches.
+
+### What this costs
+
+Fewer teams see each profile: on the demo data, eighteen placement rows became
+fourteen. That is data minimisation working as intended, but it does mean a
+ministry leader who used to see somebody on a possible match no longer does.
+
 ## The end of the journey stopped competing with itself
 
 Finishing the assessment used to offer six ways out of it and one way in.
