@@ -540,7 +540,13 @@ final class Rest {
 		);
 
 		$out = array();
-		foreach ( Matching::rank_profile( $considered ) as $match ) {
+		/*
+		 * Strong matches only, exactly as the leader's screen and the stored
+		 * column now are. Showing the person a team the dashboard does not
+		 * suggest would leave them expecting a conversation nobody is going to
+		 * start.
+		 */
+		foreach ( Matching::suggestions_for_profile( $considered ) as $match ) {
 			$out[] = array(
 				'team'          => $match['team_name'],
 				'strength'      => $match['strength'],

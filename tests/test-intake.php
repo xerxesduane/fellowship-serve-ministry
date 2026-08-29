@@ -221,8 +221,13 @@ test(
 		// Logged out: this is the public assessment, not the dashboard.
 		wp_set_current_user( 0 );
 
+		/*
+		 * Enough to reach a strong match, because only strong matches are
+		 * suggested now. One gift can never get there: strong requires two
+		 * shared gifts and a second S.H.A.P.E. dimension behind them.
+		 */
 		$profile = array(
-			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+			'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
 			'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
 			'personality'    => array( 'Be Introverted', 'Prefer Routine' ),
 		);
@@ -236,9 +241,16 @@ test(
 		$teams = array_column( $data['suggestions'], 'team' );
 		$a->same( 'Administration', $teams[0], 'ranked on all the evidence, not just gifts' );
 
-		// The same answer the dashboard gives for the same profile.
-		$ranked = array_column( Matching::rank_profile( $profile ), 'team_name' );
+		// The same answer the dashboard gives for the same profile. Compared
+		// against the suggestions rather than the ranking, because the ranking
+		// is the explanation and the suggestions are what both sides are shown.
+		$ranked = array_column( Matching::suggestions_for_profile( $profile ), 'team_name' );
 		$a->same( $ranked, $teams, 'identical to what a leader is shown' );
+
+		// And nothing weaker travels to either of them.
+		foreach ( $data['suggestions'] as $suggestion ) {
+			$a->same( 'strong', $suggestion['strength'], 'every suggestion is a strong match' );
+		}
 
 		// Reasons quote the person back to themselves; personality travels too.
 		$a->contains( 'Counting ability', implode( ' | ', $data['suggestions'][0]['reasons'] ), 'with readable reasons' );
@@ -398,8 +410,9 @@ test(
 				array(
 					'email'   => $email,
 					'profile' => array(
-						// Answers that genuinely point at Administration.
-						'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+						// Answers that genuinely point at Administration, strongly
+						// enough to be suggested rather than merely considered.
+						'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
 						'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
 
 						// And a claim to three teams they say nothing about.
@@ -434,11 +447,26 @@ test(
 		$a->not( in_array( 'livestream-team', $stored, true ), 'nor the third' );
 		$a->ok( in_array( 'administration', $stored, true ), 'the team its answers point at is' );
 
-		// Exactly the suggestion limit: what is shown, stored and placed agree.
-		$a->same(
-			\Serve_Dashboard\Matching::suggestion_limit(),
-			count( $stored ),
-			'and there are as many as the person was shown'
+		/*
+		 * What is shown, stored and placed agree.
+		 *
+		 * This used to assert the count equalled the suggestion limit, which was
+		 * only ever a proxy for agreement and stopped being true the moment
+		 * suggestions were restricted to strong matches: a profile now gets as
+		 * many as it earns, up to that limit. Compared against the suggestions
+		 * themselves instead, which is the guarantee the proxy stood in for.
+		 */
+		$posted  = json_decode( (string) $row->profile_json, true ) ?: array();
+		$shown   = \Serve_Dashboard\Matching::suggestions_for_profile( $posted );
+		$expected = array_column( $shown, 'team_slug' );
+		sort( $expected );
+		$sorted_stored = $stored;
+		sort( $sorted_stored );
+
+		$a->same( $expected, $sorted_stored, 'stored is exactly what the person was shown' );
+		$a->ok(
+			count( $stored ) <= \Serve_Dashboard\Matching::suggestion_limit(),
+			'and never more than the limit allows'
 		);
 
 		// The claim is not kept either — it is not in the whitelist at all.
@@ -540,7 +568,7 @@ test(
 			$diagnostics = array();
 			$good        = serve_preview(
 				array(
-					'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
 					'abilities'      => array( 'Counting ability', 'Classifying ability' ),
 				)
 			);

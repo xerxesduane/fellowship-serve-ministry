@@ -379,6 +379,52 @@ final class Matching {
 	}
 
 	/**
+	 * The suggestions themselves: strong matches, and nothing weaker.
+	 *
+	 * A suggestion is a claim that this person and this team fit. "Possible"
+	 * was never that claim — it is the ranking saying it found something but
+	 * not enough of it, and putting that in front of a ministry leader as a
+	 * suggestion spends their attention on the matches least likely to be
+	 * right. `strength()` already sets a real bar for strong: two shared gifts,
+	 * corroboration from a second S.H.A.P.E. dimension, three reasons, and
+	 * enough selectivity that the overlap is not just a long gift list catching
+	 * everything. Whatever clears that is worth a leader's time. What does not
+	 * is worth a conversation instead, which is what the empty state says.
+	 *
+	 * Filtered across the whole ranking and capped afterwards, never the other
+	 * way round. Order is by evidence rather than by strength, so a person's
+	 * only strong match can sit below two possible ones -- filtering the top
+	 * three would have thrown it away and left them with nothing.
+	 *
+	 * @param array<string,mixed> $profile
+	 * @param string[]            $from_assessment Slugs the assessment named, if known.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function suggestions_for_profile( array $profile, array $from_assessment = array() ): array {
+		$strong = array();
+
+		foreach ( self::rank_profile( $profile, PHP_INT_MAX, $from_assessment ) as $match ) {
+			if ( self::STRENGTH_STRONG === ( $match['strength'] ?? '' ) ) {
+				$strong[] = $match;
+			}
+		}
+
+		return array_slice( $strong, 0, self::suggestion_limit() );
+	}
+
+	/**
+	 * The same, for a submission whose assessment picks are on record.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function suggestions_for_submission( object $submission, array $profile ): array {
+		return self::suggestions_for_profile(
+			$profile,
+			Submissions::decode_list( $submission->suggested_teams )
+		);
+	}
+
+	/**
 	 * The team slugs a new submission should be recorded against.
 	 *
 	 * This is what `suggested_teams` is built from, and therefore what decides
@@ -401,7 +447,7 @@ final class Matching {
 	public static function slugs_for_profile( array $profile ): array {
 		$slugs = array();
 
-		foreach ( self::rank_profile( $profile ) as $match ) {
+		foreach ( self::suggestions_for_profile( $profile ) as $match ) {
 			if ( ! empty( $match['reasons'] ) && '' !== $match['team_slug'] ) {
 				$slugs[] = $match['team_slug'];
 			}
@@ -416,7 +462,7 @@ final class Matching {
 	 * @return array<int,array<string,mixed>>
 	 */
 	public static function for_submission( object $submission, array $profile ): array {
-		return self::rank( $submission, $profile );
+		return self::suggestions_for_submission( $submission, $profile );
 	}
 
 	/**
