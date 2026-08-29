@@ -915,10 +915,11 @@ that you left a report, and not a word of what it said.
   frequency, conflict handling, permissions, API limits and the join identifiers
   all have to be agreed first — that is the deck's own "Prepare" phase. The
   boundary class marks where it will go.
-- **A test runner for the assessment JavaScript.** The PHP suite covers the
-  server; nothing exercises profile.js or the assessment app, so the browser side
-  is checked by running the real modules by hand. That is how the padding removal
-  and this guide change were verified, and it is not automated.
+- **Coverage of `app.js`.** `profile.js` now has a suite of its own
+  (`node tools/run-js-tests.mjs`), but the assessment app around it reads
+  `document` at import time, so importing it outside a browser needs a DOM shim
+  larger than the tests it would enable. CI parses it; the rendering is still
+  checked by eye.
 - **Team-specific personality fit.** Personality is interpreted per person (see
   above) but cannot be team-specific: `keywords` describes what a team's work is
   about, not what temperament the role suits, and those are different questions.
