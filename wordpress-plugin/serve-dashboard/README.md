@@ -965,6 +965,57 @@ Fewer teams see each profile: on the demo data, eighteen placement rows became
 fourteen. That is data minimisation working as intended, but it does mean a
 ministry leader who used to see somebody on a possible match no longer does.
 
+### What happens to the people nothing matched
+
+Restricting suggestions to strong matches created a category that had no route
+through the software. Three things were wrong, in order of severity.
+
+**Placing them silently half-worked.** `set_status()` did `$wpdb->update` on the
+placements table and nothing else. With no row to update it changed nothing and
+reported success, so a person read as Placed while the team had no record of
+them: counted in the pipeline, invisible to that team's leader, absent from its
+headcount. Probed on a real profile before fixing:
+
+    created id=19062  placements=0
+    set_status(placed, Welcome): accepted
+    submission.status = placed | placement rows now = 0
+
+`Placements::ensure()` now creates the row first. This was reachable before
+today for anyone with an empty `suggested_teams`; strong-only made it a designed
+category rather than an edge case.
+
+**The team dropdown was empty**, so Trial serve and Placed were permanently
+unreachable for them — the conversation could happen and then have nowhere to be
+recorded. The block was UI-only; the server always accepted any team. The drawer
+now offers every active team when nothing matched, and says why.
+
+**Nothing told them apart.** They sat in the priority queue looking like everyone
+else, and the only sign was an empty Teams column, which reads as missing data
+rather than as the answer. There is a `no team matched` flag on the row, the
+column says *none matched*, and the overview carries a count.
+
+### The catch-all owner
+
+People no team matched are given to one team for the first conversation. It is a
+setting, defaulting to Welcome, and blank is a real answer meaning pastors keep
+them. A slug hardcoded here would be the third thing in this plugin to be
+hardcoded and later dug back out.
+
+Two rules keep it honest:
+
+- **`suggested_teams` stays empty.** The person matched no team and their profile
+  keeps saying so. The catch-all creates an owner, not a claim of fit.
+- **The row records which it is.** `placements.source` is `match` or `catchall`,
+  so nothing downstream can read an ownership assignment as evidence.
+
+Exactly one team gains access, and a test asserts the same intake with the
+setting cleared gives zero placement rows — which is what makes the row above a
+decision rather than a leak.
+
+A catch-all row left at `submitted` after the person is placed elsewhere is not a
+false queue entry: the lists show the submission's status, which by then says
+placed.
+
 ## The end of the journey stopped competing with itself
 
 Finishing the assessment used to offer six ways out of it and one way in.

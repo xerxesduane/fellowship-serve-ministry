@@ -80,19 +80,32 @@ final class Submissions {
 					'submission_id' => $submission_id,
 					'team_id'       => (int) $team->id,
 					'status'        => Schema::STATUS_SUBMITTED,
+					'source'        => Placements::SOURCE_MATCH,
 					'notes'         => '',
 					'created_at'    => $now,
 					'updated_at'    => $now,
 				),
-				array( '%d', '%d', '%s', '%s', '%s', '%s' )
+				array( '%d', '%d', '%s', '%s', '%s', '%s', '%s' )
 			);
 		}
+
+		/*
+		 * Nobody matched, so somebody still owns the first conversation.
+		 *
+		 * `suggested_teams` is left empty on purpose: the person matched no team
+		 * and their profile keeps saying so. This creates an owner, not a claim
+		 * of fit, and the row records which of the two it is.
+		 */
+		$catchall = Placements::assign_catchall( $submission_id, $suggested );
 
 		Audit::log(
 			Audit::ACTION_SUBMITTED,
 			'submission',
 			$submission_id,
-			array( 'suggested_teams' => $suggested )
+			array(
+				'suggested_teams' => $suggested,
+				'catchall_team'   => $catchall ?: null,
+			)
 		);
 
 		/*
@@ -427,6 +440,16 @@ final class Submissions {
 		}
 
 		if ( $team_id ) {
+			/*
+			 * The row has to exist before it can be updated. Without this the
+			 * update matched nothing, changed nothing and reported success: the
+			 * person read as Placed while the team had no record of them, its
+			 * leader still could not see them, and its headcount never moved.
+			 * Only reachable for somebody with no suggestions, which used to be
+			 * rare and is now a designed outcome.
+			 */
+			Placements::ensure( $id, $team_id );
+
 			$wpdb->update(
 				Schema::table( 'placements' ),
 				array(

@@ -218,6 +218,18 @@ final class Admin {
 			: '';
 		update_option( Assessment::OPTION_SERVING_FORM, $serving_form );
 
+		/*
+		 * Who picks up the people no team matched. A slug, checked against the
+		 * teams that actually exist, so a typo cannot silently mean "nobody".
+		 */
+		$catchall = isset( $_POST['catchall_team'] )
+			? sanitize_key( wp_unslash( $_POST['catchall_team'] ) )
+			: '';
+		update_option(
+			Placements::OPTION_CATCHALL_TEAM,
+			( '' !== $catchall && Teams::get_by_slug( $catchall ) ) ? $catchall : ''
+		);
+
 		// Enables deep links only. Nothing is read from or written to Planning
 		// Center, so no credentials are involved.
 		$subdomain = isset( $_POST['pco_subdomain'] )

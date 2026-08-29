@@ -241,6 +241,29 @@ if ( ! defined( 'ABSPATH' ) ) {
 					</p>
 				</td>
 			</tr>
+			<tr>
+				<th scope="row">
+					<label for="catchall_team"><?php esc_html_e( 'When no team matches', 'serve-dashboard' ); ?></label>
+				</th>
+				<td>
+					<?php $catchall = (string) get_option( Placements::OPTION_CATCHALL_TEAM, '' ); ?>
+					<select id="catchall_team" name="catchall_team">
+						<option value=""><?php esc_html_e( 'Nobody — pastors pick these up', 'serve-dashboard' ); ?></option>
+						<?php foreach ( Teams::all() as $serve_team ) : ?>
+							<option value="<?php echo esc_attr( $serve_team->slug ); ?>" <?php selected( $catchall, $serve_team->slug ); ?>>
+								<?php echo esc_html( $serve_team->name ); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+					<p class="description">
+						<?php esc_html_e( 'Suggestions are strong matches only, so some profiles match no team at all. This team is given the first conversation with those people, which makes them visible to the leader of that team instead of to pastors alone.', 'serve-dashboard' ); ?>
+					</p>
+					<p class="description">
+						<strong><?php esc_html_e( 'It is not a suggestion.', 'serve-dashboard' ); ?></strong>
+						<?php esc_html_e( 'Their profile still records that no team matched, and the dashboard says so. This only decides who picks up the conversation.', 'serve-dashboard' ); ?>
+					</p>
+				</td>
+			</tr>
 		</table>
 
 		<h2><?php esc_html_e( 'Planning Center', 'serve-dashboard' ); ?></h2>

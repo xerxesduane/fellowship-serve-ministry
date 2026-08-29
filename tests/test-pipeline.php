@@ -276,3 +276,188 @@ test(
 		$a->not( in_array( $id, $queue, true ), 'placed people stay out of the follow-up queue' );
 	}
 );
+
+test(
+	'placing somebody always leaves a placement row behind',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * set_status() used to UPDATE the placements table and nothing else.
+		 * With no row to update it changed nothing and still reported success,
+		 * so a person could be marked Placed on a team that had no record of
+		 * them: counted in the pipeline, invisible to that team's leader, and
+		 * absent from its headcount. Nothing said so.
+		 *
+		 * Rare while everybody had suggestions. Reachable by design now that a
+		 * profile can legitimately match no team.
+		 */
+		$id = $f->submission( array( 'suggested_teams' => array() ) );
+
+		global $wpdb;
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+		$wpdb->delete( Schema::table( 'placements' ), array( 'submission_id' => $id ), array( '%d' ) );
+
+		$a->same(
+			0,
+			(int) $wpdb->get_var(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					'SELECT COUNT(*) FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d',
+					$id
+				)
+			),
+			'starting with nothing to update'
+		);
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		$team = \Serve_Dashboard\Teams::get_by_slug( 'prayer' );
+		$a->ok( null !== $team, 'the team exists to place them on' );
+
+		$result = \Serve_Dashboard\Submissions::set_status( $id, Schema::STATUS_PLACED, (int) $team->id );
+		$a->not( is_wp_error( $result ), 'the move is accepted' );
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT status FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d AND team_id = %d',
+				$id,
+				(int) $team->id
+			)
+		);
+
+		$a->ok( null !== $row, 'and the team now has a record of them' );
+		$a->same( Schema::STATUS_PLACED, $row->status, 'saying they are placed' );
+
+		// Which is what makes them visible to the leader of that team.
+		$leader = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		$f->lead_team( $leader, 'prayer' );
+		wp_set_current_user( $leader );
+
+		$a->ok(
+			\Serve_Dashboard\Roles::can_view_submission( $id ),
+			'so the leader they were placed with can open them'
+		);
+	}
+);
+
+test(
+	'placing somebody twice does not duplicate the row',
+	function ( Assert $a, Fixtures $f ) {
+		// ensure() runs on every move, so it has to be safe to run repeatedly.
+		$id = $f->submission();
+
+		global $wpdb;
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+		$team = \Serve_Dashboard\Teams::get_by_slug( 'welcome' );
+
+		\Serve_Dashboard\Submissions::set_status( $id, Schema::STATUS_TRIAL_SERVE, (int) $team->id );
+		\Serve_Dashboard\Submissions::set_status( $id, Schema::STATUS_PLACED, (int) $team->id );
+
+		$a->same(
+			1,
+			(int) $wpdb->get_var(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					'SELECT COUNT(*) FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d AND team_id = %d',
+					$id,
+					(int) $team->id
+				)
+			),
+			'one row, updated rather than added to'
+		);
+	}
+);
+
+test(
+	'a retired team never becomes the catch-all',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The catch-all owns the first conversation with everybody the ranking
+		 * matched to nothing. A team the church has closed cannot do that, and
+		 * pointing every unmatched person at it would hand their profiles to a
+		 * leader who is no longer running anything.
+		 *
+		 * Falls back to nobody, which is the safe direction: pastors keep them.
+		 */
+		$before = get_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, false );
+		$team   = \Serve_Dashboard\Teams::get_by_slug( 'welcome' );
+		$a->ok( null !== $team, 'the team exists to begin with' );
+
+		global $wpdb;
+
+		try {
+			update_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, 'welcome' );
+			$a->ok( null !== \Serve_Dashboard\Placements::catchall_team(), 'and is the catch-all while it is active' );
+
+			$wpdb->update( Schema::table( 'teams' ), array( 'is_active' => 0 ), array( 'id' => (int) $team->id ), array( '%d' ), array( '%d' ) );
+
+			$a->same( null, \Serve_Dashboard\Placements::catchall_team(), 'retiring it takes the job away' );
+
+			// And an unmatched profile then gets no placement row at all.
+			$id = $f->submission( array( 'suggested_teams' => array() ) );
+			$wpdb->delete( Schema::table( 'placements' ), array( 'submission_id' => $id ), array( '%d' ) );
+
+			$a->same(
+				0,
+				\Serve_Dashboard\Placements::assign_catchall( $id, array() ),
+				'so nobody is assigned rather than a closed team'
+			);
+		} finally {
+			$wpdb->update( Schema::table( 'teams' ), array( 'is_active' => 1 ), array( 'id' => (int) $team->id ), array( '%d' ), array( '%d' ) );
+
+			if ( false === $before ) {
+				delete_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM );
+			} else {
+				update_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, $before );
+			}
+		}
+	}
+);
+
+test(
+	'ensuring a placement twice reports success both times',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The table has a unique key on (submission_id, team_id), so a second
+		 * insert fails at the database rather than duplicating. That protects
+		 * the data but not the answer: without the early return, the second call
+		 * reports failure for a row that exists, and assign_catchall() would
+		 * then log that nobody was assigned when somebody was.
+		 */
+		$id   = $f->submission();
+		$team = \Serve_Dashboard\Teams::get_by_slug( 'prayer' );
+
+		global $wpdb;
+		$wpdb->delete( Schema::table( 'placements' ), array( 'submission_id' => $id ), array( '%d' ) );
+
+		$a->ok( \Serve_Dashboard\Placements::ensure( $id, (int) $team->id ), 'created the first time' );
+		$a->ok( \Serve_Dashboard\Placements::ensure( $id, (int) $team->id ), 'and still true the second time' );
+
+		$a->same(
+			1,
+			(int) $wpdb->get_var(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					'SELECT COUNT(*) FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d AND team_id = %d',
+					$id,
+					(int) $team->id
+				)
+			),
+			'with one row to show for it'
+		);
+	}
+);

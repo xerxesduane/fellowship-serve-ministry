@@ -188,7 +188,13 @@ function errorState(message, retryAttr) {
 function personRow(person) {
 	const flags = [
 		person.needsCheck ? `<span class="serve-flag serve-flag--check">${esc('check required')}</span>` : '',
-		person.isStale ? `<span class="serve-flag serve-flag--stale">${esc('stale')}</span>` : ''
+		person.isStale ? `<span class="serve-flag serve-flag--stale">${esc('stale')}</span>` : '',
+		/*
+		 * Said on the row, because otherwise the only sign is an empty Teams
+		 * column -- which reads as missing data rather than as the answer, and
+		 * meant opening every profile to find out which was which.
+		 */
+		person.unmatched ? `<span class="serve-flag serve-flag--nomatch">${esc('no team matched')}</span>` : ''
 	].join('');
 
 	const dueTone = person.isOverdue ? 'is-attention' : (person.isDueToday ? 'is-soon' : '');
@@ -221,7 +227,7 @@ function personRow(person) {
 			<span class="serve-row__name">${esc(person.name)}</span>
 			<span class="serve-row__meta">${esc(person.gifts.join(', ') || '—')}${flags}${dueInline}</span>
 		</span>
-		<span class="serve-row__col serve-row__col--teams">${esc(person.suggestedTeams.join(', ') || '—')}</span>
+		<span class="serve-row__col serve-row__col--teams">${person.suggestedTeams.length ? esc(person.suggestedTeams.join(', ')) : (person.unmatched ? '<span class="serve-muted-cell">none matched</span>' : '—')}</span>
 		<span class="serve-row__col serve-row__col--due">${due}</span>
 		<span class="serve-row__aside">
 			${stageIndicator(person.status, person.statusLabel)}
@@ -652,7 +658,18 @@ const drawer = {
 		 * decisions about a particular team, and the safeguarding gate is a
 		 * question that cannot be asked without one.
 		 */
-		const teamOptions = person.placements
+		/*
+		 * Ordinarily the choice is between the teams this person was suggested
+		 * to. Somebody the ranking matched to nothing has no such list, and
+		 * without a fallback the conversation could happen and then have nowhere
+		 * to be recorded: the dropdown was empty and Trial serve and Placed were
+		 * unreachable for them, permanently.
+		 */
+		const choosableTeams = person.placements.length
+			? person.placements
+			: (person.allTeams || []);
+
+		const teamOptions = choosableTeams
 			.map((p) => `<option value="${esc(p.teamId)}">${esc(p.teamName)}${p.safeguarded ? ' — background check required' : ''}</option>`)
 			.join('');
 
@@ -670,8 +687,9 @@ const drawer = {
 					<div data-stage-team ${CONFIG.gatedStatuses.includes(person.status) ? '' : 'hidden'}>
 						<label for="serve-stage-team-${esc(person.id)}">On which team</label>
 						${teamOptions
-							? `<select id="serve-stage-team-${esc(person.id)}" data-stage-team-select>${teamOptions}</select>`
-							: '<p class="serve-note serve-note--warn">No team is suggested for this person yet, so there is nothing to place them on.</p>'}
+							? `<select id="serve-stage-team-${esc(person.id)}" data-stage-team-select>${teamOptions}</select>
+								${!person.placements.length ? '<p class="serve-card__hint">No team matched this profile, so every active team is listed. Choose the one the conversation settled on.</p>' : ''}`
+							: '<p class="serve-note serve-note--warn">There are no active teams to place anyone on. Add one on the Teams screen first.</p>'}
 					</div>
 
 					<div data-stage-until ${person.status === 'paused' ? '' : 'hidden'}>
@@ -1138,6 +1156,22 @@ function loadDashboard() {
 			renderFollowups(data.followups);
 			renderSettling(data.settling);
 			renderGifts(data.gifts);
+
+			/*
+			 * How many people the ranking matched to nothing.
+			 *
+			 * Shown as a sentence above the queue rather than as another metric
+			 * tile, because it is not a number to drive down: it says how many
+			 * conversations start without a suggestion to open them with.
+			 */
+			const unmatched = $('unmatched');
+			if (unmatched) {
+				const n = Number(data.unmatchedCount || 0);
+				unmatched.hidden = n === 0;
+				unmatched.textContent = n === 0
+					? ''
+					: `${n} ${n === 1 ? 'person' : 'people'} matched no team. Their answers are still here and the conversation starts open.`;
+			}
 
 			$('priority').innerHTML = rowsOrEmpty(data.priority, {
 				title: data.metrics.some((m) => m.value > 0) ? CONFIG.i18n.allClear : CONFIG.i18n.noProfiles,

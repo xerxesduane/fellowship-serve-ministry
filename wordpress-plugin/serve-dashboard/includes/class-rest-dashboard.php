@@ -463,6 +463,17 @@ final class Rest_Dashboard {
 				// five so a busy week does not push the newest arrival off.
 				'priority'       => self::rows( Submissions::query( array( 'limit' => 6, 'orderby' => 'waiting' ) ) ),
 				'gaps'           => $gaps,
+
+				/*
+				 * How many people the ranking matched to nothing. A count rather
+				 * than a list, and zero for a scoped leader, because it is a
+				 * question about the whole congregation.
+				 *
+				 * Worth watching: if this climbs, the honest response is to look
+				 * again at where the bar for a strong match sits, not to quietly
+				 * start suggesting weaker ones.
+				 */
+				'unmatchedCount' => Placements::unmatched_count(),
 				// Numbers somebody needs to re-confirm, not teams short of people.
 				'headcountChecks' => $headcount_checks,
 				'followups'      => Metrics::upcoming_followups(),
@@ -565,6 +576,30 @@ final class Rest_Dashboard {
 				 * beside the suggestions instead of inside each one.
 				 */
 				'personalityNotes' => Matching::personality_notes( $profile ),
+
+				/*
+				 * Whether the ranking found anything at all, which is a
+				 * different question from whether there are placement rows: an
+				 * unmatched person has a catch-all row and still matched nothing.
+				 */
+				'unmatched'      => empty( Submissions::decode_list( $submission->suggested_teams ) ),
+
+				/*
+				 * Every active team, so somebody who matched nothing can still
+				 * be recorded onto whichever team the conversation settled on.
+				 * Sent only when it is needed: the ordinary case chooses from
+				 * the placements below and this would be noise.
+				 */
+				'allTeams'       => empty( Submissions::decode_list( $submission->suggested_teams ) )
+					? array_map(
+						static fn( $t ) => array(
+							'teamId'      => (int) $t->id,
+							'teamName'    => $t->name,
+							'safeguarded' => (bool) (int) $t->requires_safeguarding,
+						),
+						Teams::all()
+					)
+					: array(),
 				'placements'     => array_map(
 					static fn( $p ) => array(
 						'teamId'   => (int) $p->team_id,
@@ -700,6 +735,13 @@ final class Rest_Dashboard {
 					'gifts'          => array_slice( Submissions::decode_list( $row->gifts_likely ), 0, 3 ),
 					'languages'      => Submissions::decode_list( $row->languages ),
 					'suggestedTeams' => $suggested,
+
+					/*
+					 * No team matched. Distinct from "no teams shown", which a
+					 * scoped leader also sees, and the reason the Teams column
+					 * is empty for this row.
+					 */
+					'unmatched'      => empty( $suggested ),
 					'status'         => $row->status,
 					'statusLabel'    => $labels[ $row->status ] ?? $row->status,
 					'nextActionAt'   => $row->next_action_at,
