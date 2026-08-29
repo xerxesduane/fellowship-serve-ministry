@@ -122,6 +122,21 @@ final class Teams {
 	/**
 	 * @return array<int,object>
 	 */
+	/*
+	 * Deliberately uncached.
+	 *
+	 * A per-request cache was tried, to save the repeated query when a list
+	 * ranks every row. It broke four tests, and the one that mattered was "a
+	 * deactivated team is not suggested": the teams table is written from
+	 * several places, including raw SQL in fixtures, so a static cache
+	 * confidently reported a retired team as still open. Flush calls would have
+	 * covered the paths that go through save() and missed exactly the ones that
+	 * do not.
+	 *
+	 * A team list that lies about which teams exist is worse than a query per
+	 * row. If this ever costs something real, the fix is to read the teams once
+	 * and hand them to the ranking, not to guess from a static.
+	 */
 	public static function all( bool $active_only = true ): array {
 		global $wpdb;
 		$table = Schema::table( 'teams' );
