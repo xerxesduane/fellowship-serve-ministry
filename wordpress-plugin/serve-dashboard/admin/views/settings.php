@@ -224,6 +224,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<?php endif; ?>
 				</td>
 			</tr>
+			<tr>
+				<th scope="row">
+					<label for="serving_form_url"><?php esc_html_e( 'Serving opportunities form', 'serve-dashboard' ); ?></label>
+				</th>
+				<td>
+					<input type="url" id="serving_form_url" name="serving_form_url" class="large-text"
+						value="<?php echo esc_attr( Assessment::serving_form_url() ); ?>"
+						placeholder="https://yourchurch.churchcenter.com/people/forms/000000">
+					<p class="description">
+						<?php esc_html_e( 'Offered after the share step, for people who would rather browse opportunities themselves. Leave blank to offer no external form at all.', 'serve-dashboard' ); ?>
+					</p>
+					<p class="description">
+						<strong><?php esc_html_e( 'Worth knowing:', 'serve-dashboard' ); ?></strong>
+						<?php esc_html_e( 'anyone who volunteers through this form instead of sharing their profile does not appear in this dashboard at all — not in the follow-up queue, the team gaps, or the pilot figures. The journey now says so on the page, and the form loads only when someone asks for it, so it is not contacting a third party on behalf of every visitor.', 'serve-dashboard' ); ?>
+					</p>
+				</td>
+			</tr>
 		</table>
 
 		<h2><?php esc_html_e( 'Planning Center', 'serve-dashboard' ); ?></h2>

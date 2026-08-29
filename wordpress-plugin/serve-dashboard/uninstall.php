@@ -47,6 +47,7 @@ foreach (
 		'serve_dashboard_consent_page',
 		'serve_dashboard_digest_enabled',
 		'serve_dashboard_pco_subdomain',
+		'serve_dashboard_serving_form_url',
 		'serve_dashboard_funnel',
 	) as $option
 ) {

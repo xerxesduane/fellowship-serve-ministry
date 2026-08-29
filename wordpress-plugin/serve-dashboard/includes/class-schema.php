@@ -23,7 +23,7 @@ final class Schema {
 	 * Bumped whenever a CREATE TABLE statement below changes, so that
 	 * maybe_upgrade() knows to re-run dbDelta.
 	 */
-	public const DB_VERSION = '1.7.0';
+	public const DB_VERSION = '1.8.0';
 
 	public const OPTION_DB_VERSION = 'serve_dashboard_db_version';
 
@@ -509,6 +509,24 @@ final class Schema {
 		 */
 		if ( '' !== $from && version_compare( $from, '1.7.0', '<' ) ) {
 			Teams::backfill_keywords();
+		}
+
+		/*
+		 * Schema 1.8.0 — plugin 1.23.0 — moves the serving-form address out of
+		 * app.js and into Settings.
+		 *
+		 * Seeded with the URL it used to be hardcoded to, and only when the
+		 * option has never been set. Without this the upgrade would quietly
+		 * remove the church's serving form from the end of the journey, which
+		 * is a worse failure than the one being fixed.
+		 *
+		 * `false` rather than `''` as the default is the whole point: an
+		 * administrator who has deliberately cleared the field must not have it
+		 * refilled on the next upgrade.
+		 */
+		if ( '' !== $from && version_compare( $from, '1.8.0', '<' )
+			&& false === get_option( Assessment::OPTION_SERVING_FORM, false ) ) {
+			add_option( Assessment::OPTION_SERVING_FORM, Assessment::LEGACY_SERVING_FORM );
 		}
 	}
 }

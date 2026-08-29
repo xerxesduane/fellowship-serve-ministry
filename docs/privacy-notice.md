@@ -10,9 +10,8 @@
 > data — and adjust the wording, the named contact and the retention period
 > before it goes live.
 >
-> Two things in it are decisions rather than facts, and are flagged where they
-> appear: the Church Center form embedded at the end of the journey, and how
-> long profiles are kept.
+> One thing in it is a decision rather than a fact, and is flagged where it
+> appears: how long profiles are kept.
 >
 > Replaces the WordPress default draft, which describes comment forms, Gravatar
 > and embedded media — none of which this site uses.
@@ -188,16 +187,19 @@ there, but nothing is sent.
 
 ### One exception, and it is worth knowing
 
-At the end of the journey the page shows Fellowship Dubai's serving-opportunities
-form, which is hosted by **Church Center (Planning Center)** and displayed inside
-the page. Because it is loaded from their servers, Planning Center receives your
-IP address and may set its own cookies when that page opens — whether or not you
-use the form. Anything you type into that form goes to Planning Center, not into
-this system, and Planning Center's own privacy terms apply to it.
+At the end of the journey the page offers Fellowship Dubai's
+serving-opportunities form, which is hosted by **Church Center (Planning
+Center)**. You can open it in a new tab, or ask for it to be shown on the page.
 
-> **For review:** this is a design decision, not a technical necessity. The form
-> could be a link that loads nothing until clicked, which would mean no
-> third-party contact for people who never use it.
+Nothing is fetched from Planning Center until you do one of those things. If you
+choose to show the form here, it is loaded from their servers, so at that point
+Planning Center receives your IP address and may set its own cookies. Anything
+you type into that form goes to Planning Center, not into this system, and
+Planning Center's own privacy terms apply to it.
+
+The form also goes somewhere different from the rest of the journey: if you fill
+it in without sharing your profile, the SERVE team does not receive your
+S.H.A.P.E. answers. The page says so where the form appears.
 
 ---
 

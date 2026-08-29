@@ -75,10 +75,11 @@ the only defect this suite has found in anger was hiding in it.
 node tools/run-js-tests.mjs
 ```
 
-Twenty tests over `profile.js` — the object that becomes somebody's stored
-profile, and the text they download, print and email. No WordPress, no database
-and no network: these are pure functions over their arguments, so the runner
-touches nothing and needs no confirmation flag.
+Thirty-four tests over the journey's pure modules — `profile.js`, which builds
+the object that becomes somebody's stored profile and the text they download;
+`handoff.js`, which decides what the results page offers once they have
+finished; and `render.js`. No WordPress, no database and no network, so the
+runner touches nothing and needs no confirmation flag.
 
 It exists because the PHP suite stops at the REST endpoint. Everything on the
 visitor's side of that boundary could be broken freely and no test noticed —
@@ -86,10 +87,17 @@ including the two things nobody would catch by eye: an "Other" answer attaching
 to the wrong question, and the takeaway document quietly omitting a section.
 Both are now covered, and both were confirmed by breaking them on purpose.
 
-`app.js` is not covered. It reads `document` at import time and renders on load,
-so importing it outside a browser needs a DOM shim larger than the tests it would
-enable. CI parses it, which catches the mistake that actually happens; the rest
-of it is still checked by eye.
+`app.js` is still not covered. It reads `document` at import time and renders on
+load, so importing it outside a browser needs a DOM shim larger than the tests it
+would enable. CI parses it, which catches the mistake that actually happens; the
+rest is checked by eye.
+
+The useful move has been taking things *out* of it. `handoff.js` was extracted
+precisely because the code deciding whether a person becomes visible to the SERVE
+team was trapped in the one file no test could reach — and a source-scanning test
+written in its place passed against a version that behaved wrongly. Pure
+functions in their own module are testable; that is most of what these
+extractions buy.
 
 The plugin tests boot a real WordPress and run against a real database, because every one of
 those guarantees is a SQL predicate or a capability check and none of them would

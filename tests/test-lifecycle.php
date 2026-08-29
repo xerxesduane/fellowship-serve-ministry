@@ -409,6 +409,108 @@ test(
 	}
 );
 
+/*
+ * The serving form at the end of the journey.
+ *
+ * It used to be a URL written into app.js, form id and all. Two things were
+ * wrong with that and both are tested here: a church could not correct it
+ * without editing JavaScript, and every person finishing the journey was
+ * offered five routes into it against one route into this dashboard — with the
+ * embedded copy completable in place, so somebody could volunteer and leave no
+ * record at all.
+ */
+
+test(
+	'the serving form address is a setting, not a URL in the JavaScript',
+	function ( Assert $a, Fixtures $f ) {
+		$before = get_option( Assessment::OPTION_SERVING_FORM, false );
+
+		try {
+			update_option( Assessment::OPTION_SERVING_FORM, 'https://example.churchcenter.com/people/forms/12345' );
+
+			$config = Assessment::config();
+
+			$a->same(
+				'https://example.churchcenter.com/people/forms/12345',
+				$config['servingFormUrl'],
+				'the journey is handed whatever the church configured'
+			);
+
+			/*
+			 * And nothing else supplies one. A second copy in the JavaScript
+			 * would win silently on the page while this test went on passing,
+			 * which is exactly how the first version of this went wrong.
+			 */
+			$journey = '';
+			foreach ( (array) glob( SERVE_DASHBOARD_DIR . 'public/assessment/*.js' ) as $module ) {
+				$journey .= (string) file_get_contents( (string) $module );
+			}
+
+			$a->lacks( 'churchcenter.com', $journey, 'no serving form address is hardcoded anywhere in the journey' );
+			$a->contains( 'SERVE_CONFIG.servingFormUrl', $journey, 'it reads the configured one instead' );
+		} finally {
+			if ( false === $before ) {
+				delete_option( Assessment::OPTION_SERVING_FORM );
+			} else {
+				update_option( Assessment::OPTION_SERVING_FORM, $before );
+			}
+		}
+	}
+);
+
+test(
+	'no configured form means no external route is offered',
+	function ( Assert $a, Fixtures $f ) {
+		$before = get_option( Assessment::OPTION_SERVING_FORM, false );
+
+		try {
+			update_option( Assessment::OPTION_SERVING_FORM, '' );
+
+			$a->same( '', Assessment::serving_form_url(), 'blank stays blank' );
+			$a->same( '', Assessment::config()['servingFormUrl'], 'and reaches the page as blank' );
+
+			/*
+			 * What the journey then renders is asserted in tests/js, against the
+			 * functions themselves. Checking the source for a guard here was
+			 * tried and was worthless: it went on passing against a version that
+			 * loaded the form for everybody regardless.
+			 */
+		} finally {
+			if ( false === $before ) {
+				delete_option( Assessment::OPTION_SERVING_FORM );
+			} else {
+				update_option( Assessment::OPTION_SERVING_FORM, $before );
+			}
+		}
+	}
+);
+
+test(
+	'a javascript: address cannot reach the results page',
+	function ( Assert $a, Fixtures $f ) {
+		$before = get_option( Assessment::OPTION_SERVING_FORM, false );
+
+		try {
+			/*
+			 * This value becomes both a link href and an iframe source on a
+			 * public page, so the sanitising happens on the way out as well as
+			 * on the way in — an option can be written by something other than
+			 * the settings form.
+			 */
+			update_option( Assessment::OPTION_SERVING_FORM, 'javascript:alert(document.cookie)' );
+
+			$a->lacks( 'javascript:', Assessment::serving_form_url(), 'the scheme is refused' );
+			$a->lacks( 'javascript:', (string) Assessment::config()['servingFormUrl'], 'and never reaches the config' );
+		} finally {
+			if ( false === $before ) {
+				delete_option( Assessment::OPTION_SERVING_FORM );
+			} else {
+				update_option( Assessment::OPTION_SERVING_FORM, $before );
+			}
+		}
+	}
+);
+
 test(
 	'both public pages exist and carry their shortcode',
 	function ( Assert $a, Fixtures $f ) {

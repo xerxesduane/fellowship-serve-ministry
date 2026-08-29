@@ -36,6 +36,43 @@ final class Assessment {
 	public const OPTION_ASSESSMENT_PAGE = 'serve_dashboard_assessment_page';
 
 	/**
+	 * Where "explore serving opportunities" sends people, if anywhere.
+	 *
+	 * This was a URL typed into app.js, form id and all. A church that replaced
+	 * that form had no way to correct it without editing JavaScript, and until
+	 * somebody did, every person finishing the journey was pointed at a dead
+	 * link at the exact moment they had decided to volunteer.
+	 *
+	 * Blank hides the external routes entirely, which is the same rule the
+	 * Church Center address follows: no setting, no broken link.
+	 */
+	public const OPTION_SERVING_FORM = 'serve_dashboard_serving_form_url';
+
+	/**
+	 * The address the journey used to be hardcoded to.
+	 *
+	 * Kept solely so the upgrade can seed the option with it — an existing site
+	 * must not lose its serving form because the value moved into Settings.
+	 * Nothing reads this at runtime; a fresh install starts blank, because
+	 * another church's form is not a sensible default.
+	 */
+	public const LEGACY_SERVING_FORM = 'https://fellowshipdubai.churchcenter.com/people/forms/268058';
+
+	/**
+	 * The configured serving form, or an empty string.
+	 *
+	 * Re-sanitised on the way out rather than trusted from storage: this value
+	 * reaches the page as a link and an iframe source, and esc_url_raw is what
+	 * rules out a javascript: URL should the option ever be written by
+	 * something other than the settings form.
+	 */
+	public static function serving_form_url(): string {
+		$url = trim( (string) get_option( self::OPTION_SERVING_FORM, '' ) );
+
+		return '' === $url ? '' : (string) esc_url_raw( $url );
+	}
+
+	/**
 	 * Create the two public pages if they are missing.
 	 *
 	 * Run on activation so the plugin works without a manual setup ritual. The
@@ -222,6 +259,13 @@ final class Assessment {
 			 * a missing or failing endpoint costs nothing.
 			 */
 			'suggestUrl'   => esc_url_raw( rest_url( Rest::NAMESPACE . '/suggestions' ) ),
+
+			/*
+			 * The church's own serving form, offered after the share step
+			 * rather than alongside it. Empty means the journey offers no
+			 * external route at all, and says nothing about one.
+			 */
+			'servingFormUrl' => self::serving_form_url(),
 
 			/*
 			 * The ministry guide, from the teams as they actually are.
