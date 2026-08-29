@@ -57,7 +57,20 @@ final class Placements {
 	 * unmatched person.
 	 */
 	public static function catchall_team(): ?object {
-		$slug = trim( (string) get_option( self::OPTION_CATCHALL_TEAM, '' ) );
+		/*
+		 * `false` and `''` mean different things and must not be collapsed.
+		 *
+		 * `false` is an option nobody has ever set, which is a fresh install --
+		 * the seeding migration only runs on upgrade, so a new church would
+		 * otherwise get no catch-all at all, the exact opposite of the
+		 * documented default. CI caught this; a developer machine that had
+		 * upgraded through the migration could not.
+		 *
+		 * `''` is an administrator who chose "Nobody" in Settings, and that
+		 * choice has to survive.
+		 */
+		$stored = get_option( self::OPTION_CATCHALL_TEAM, false );
+		$slug   = false === $stored ? self::DEFAULT_CATCHALL_TEAM : trim( (string) $stored );
 
 		if ( '' === $slug ) {
 			return null;

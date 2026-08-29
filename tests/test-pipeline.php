@@ -461,3 +461,39 @@ test(
 		);
 	}
 );
+
+test(
+	'a fresh install gets the catch-all, a cleared one does not',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The seeding migration only runs on upgrade, so an install that has
+		 * never had the option set is not the same as one where somebody chose
+		 * "Nobody". Collapsing the two gave a brand new church no catch-all at
+		 * all -- the opposite of the default this ships with.
+		 */
+		$before = get_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, false );
+
+		try {
+			// Never set: a fresh install.
+			delete_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM );
+			$team = \Serve_Dashboard\Placements::catchall_team();
+
+			$a->ok( null !== $team, 'an install that has never been configured still has one' );
+			$a->same(
+				\Serve_Dashboard\Placements::DEFAULT_CATCHALL_TEAM,
+				$team->slug,
+				'and it is the shipped default'
+			);
+
+			// Deliberately cleared: nobody.
+			update_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, '' );
+			$a->same( null, \Serve_Dashboard\Placements::catchall_team(), 'choosing nobody is respected' );
+		} finally {
+			if ( false === $before ) {
+				delete_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM );
+			} else {
+				update_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, $before );
+			}
+		}
+	}
+);
