@@ -138,6 +138,51 @@ body.serve-app-fullscreen {
 	border-radius: var(--serve-radius-sm);
 }
 
+/*
+ * Press feedback.
+ *
+ * No control on the dashboard acknowledged a press. A leader moving somebody
+ * through a stage is making a decision about a person, and the control should
+ * confirm it heard them before the row re-renders.
+ *
+ * Transform only, so it composes with the background transitions already here.
+ */
+.serve-app button,
+.serve-app .serve-btn,
+.serve-app summary {
+	transition: transform 120ms cubic-bezier(.23, 1, .32, 1);
+}
+
+.serve-app button:active:not(:disabled),
+.serve-app .serve-btn:active:not(:disabled),
+.serve-app summary:active {
+	transform: scale(.97);
+}
+
+/* A whole row is a big surface; scaling it is too much movement for a click. */
+.serve-app .serve-row:active {
+	transform: none;
+}
+
+/*
+ * The surfaces the browser draws. WordPress admin ships its own blue for these,
+ * which is the one place the dashboard stops looking like itself.
+ */
+.serve-app ::selection {
+	background: rgba(22, 125, 131, .22);
+	color: var(--serve-text);
+}
+
+.serve-app input,
+.serve-app textarea {
+	caret-color: var(--serve-teal);
+}
+
+.serve-app * {
+	scrollbar-color: var(--serve-border-strong) transparent;
+	scrollbar-width: thin;
+}
+
 .serve-app .screen-reader-text {
 	position: absolute;
 	width: 1px;
@@ -340,7 +385,12 @@ body.serve-app-fullscreen {
 	min-width: 22px;
 	padding: 1px 7px;
 	border-radius: var(--serve-radius-pill);
-	background: var(--serve-coral);
+	/*
+	 * Not --serve-coral. White on it is 3.03:1, and this is 12px bold, which is
+	 * nowhere near the size that lets 3:1 count. --serve-coral-dark is the same
+	 * hue at 5.55:1, and this badge is how a leader learns something needs them.
+	 */
+	background: var(--serve-coral-dark);
 	color: #fff;
 	font-size: .75rem;
 	font-weight: 700;
