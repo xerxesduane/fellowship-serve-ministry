@@ -104,9 +104,23 @@ nothing like it. It is worth watching during the pilot.
 
 An empty list is a real answer, not a failure: the evidence was there but it did
 not concentrate on any one team. Everything they wrote is still on the page, and
-the conversation starts open. Those people stay in your first-conversation queue
-if you lead no team they matched, a pastor sees them regardless, and they are
-worth a call precisely because the software could not shortcut it.
+the conversation starts open. They are worth a call precisely because the
+software could not shortcut it.
+
+**Somebody still owns them.** People no team matched are given to one team for
+the first conversation, set under *When no team matches* in Settings and
+currently **Welcome**. That is not a suggestion and their profile still records
+that nothing matched — it only decides who picks up the phone. A pastor sees
+them regardless, and the overview says how many there are.
+
+On their row you will see **no team matched**, and the Teams column reads *none
+matched* rather than a dash, so you can tell it apart from a column that simply
+has nothing to show.
+
+When you have had the conversation and know where they would fit, the team list
+under *Record what happened* offers every active team rather than only the ones
+they matched. Choose the one you agreed on; it is recorded against that team like
+any other placement.
 
 The person saw the same teams at the end of their assessment, so normally
 nothing here is a surprise to them. Any team marked **not on their profile** is

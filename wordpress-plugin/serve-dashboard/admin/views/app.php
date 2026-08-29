@@ -241,6 +241,7 @@ $nav = array(
 								<?php esc_html_e( 'Anyone nobody has spoken to yet comes first. A suggested team is a conversation starter, not a decision.', 'serve-dashboard' ); ?>
 							</p>
 							<?php self::stage_legend(); ?>
+							<p class="serve-note serve-note--info" data-serve="unmatched" hidden></p>
 							<div data-serve="priority"><?php self::skeleton_rows( 5 ); ?></div>
 						</div>
 

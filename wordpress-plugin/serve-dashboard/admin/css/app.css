@@ -864,6 +864,24 @@ button.serve-metric:hover {
 	color: #6b5a2e;
 }
 
+/*
+ * No team matched.
+ *
+ * Deliberately not the coral used for "check required": this is not a warning
+ * and nothing is wrong. It is a statement about the evidence, and it means the
+ * conversation starts open rather than that somebody is blocked.
+ */
+.serve-flag--nomatch {
+	background: var(--serve-teal-soft);
+	color: var(--serve-teal-dark);
+}
+
+/* Says "none matched" is the answer, not that the cell failed to load. */
+.serve-muted-cell {
+	color: var(--serve-text-muted);
+	font-style: italic;
+}
+
 /* ── Gaps & gifts bars ──────────────────────────────────────────────────── */
 
 .serve-bar {

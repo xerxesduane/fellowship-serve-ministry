@@ -594,10 +594,15 @@ test(
 		 * handing three teams access to somebody's pastoral profile on no
 		 * evidence at all.
 		 *
-		 * An empty list is now what arrives. This asserts what that means: no
-		 * placement rows, no ministry leader can open them, and — the part that
-		 * makes it safe rather than merely tidier — a pastor still can, so
-		 * nobody falls out of the process.
+		 * An empty list is now what arrives, and exactly one team is given
+		 * access on purpose: the configured catch-all, so somebody owns the
+		 * first conversation rather than leaving it to pastors alone. That row
+		 * is marked as a catch-all and is not a suggestion -- the profile still
+		 * records that nothing matched.
+		 *
+		 * Asserted with the setting on and then off, because the difference
+		 * between "one team, deliberately" and "any team, accidentally" is the
+		 * whole point, and only the second run proves the first was a choice.
 		 */
 		$email = 'nogifts-' . wp_generate_password( 8, false ) . '@serve.test';
 
@@ -633,14 +638,23 @@ test(
 			'with no suggested teams rather than three invented ones'
 		);
 
-		$placements = (int) $wpdb->get_var(
+		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-				'SELECT COUNT(*) FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d',
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names are not user input.
+				'SELECT p.source, t.slug FROM ' . Schema::table( 'placements' ) . ' p'
+				. ' INNER JOIN ' . Schema::table( 'teams' ) . ' t ON t.id = p.team_id'
+				. ' WHERE p.submission_id = %d',
 				(int) $row->id
 			)
 		);
-		$a->same( 0, $placements, 'and no placement rows, so no team gains access' );
+
+		$a->same( 1, count( $rows ), 'exactly one team gains access, not none and not several' );
+		$a->same( 'welcome', $rows[0]->slug, 'and it is the configured catch-all' );
+		$a->same(
+			\Serve_Dashboard\Placements::SOURCE_CATCHALL,
+			$rows[0]->source,
+			'recorded as a catch-all, so nothing can read it as a match'
+		);
 
 		// Nothing was named, so nothing required a background check.
 		$a->same(
@@ -664,13 +678,23 @@ test(
 			array( '%d' )
 		);
 
-		$leader = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
-		$f->lead_team( $leader, 'welcome' );
-		wp_set_current_user( $leader );
+		$welcome_leader = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		$f->lead_team( $welcome_leader, 'welcome' );
+		wp_set_current_user( $welcome_leader );
+
+		$a->ok(
+			\Serve_Dashboard\Roles::can_view_submission( (int) $row->id ),
+			'the catch-all team can open them, which is the point of it'
+		);
+
+		// And nobody else. One team owns the conversation, not every team.
+		$other = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		$f->lead_team( $other, 'youth-ministry' );
+		wp_set_current_user( $other );
 
 		$a->not(
 			\Serve_Dashboard\Roles::can_view_submission( (int) $row->id ),
-			'a leader of a formerly-padded team cannot open them'
+			'a leader of any other team still cannot' 
 		);
 
 		/*
@@ -689,5 +713,57 @@ test(
 			in_array( (int) $row->id, array_map( 'intval', wp_list_pluck( \Serve_Dashboard\Submissions::query( array( 'limit' => 200, 'orderby' => 'waiting' ) ), 'id' ) ), true ),
 			'and they appear in the queue a pastor works from'
 		);
+
+		/*
+		 * With no catch-all configured, the old behaviour returns exactly: no
+		 * team at all, and the conversation belongs to pastors. This is what
+		 * makes the row above a decision rather than a leak.
+		 */
+		$before = get_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, false );
+
+		try {
+			update_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, '' );
+
+			$second = 'nocatch-' . wp_generate_password( 8, false ) . '@serve.test';
+			$a->same(
+				201,
+				post_submission(
+					intake_payload(
+						array(
+							'email'   => $second,
+							'profile' => array( 'spiritualGifts' => array( 'likely' => array() ) ),
+						)
+					),
+					$f
+				)->get_status(),
+				'a second unmatched profile is accepted'
+			);
+
+			$second_id = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					'SELECT id FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
+					$second
+				)
+			);
+
+			$a->same(
+				0,
+				(int) $wpdb->get_var(
+					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+						'SELECT COUNT(*) FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d',
+						$second_id
+					)
+				),
+				'and with no catch-all set, no team gains access at all'
+			);
+		} finally {
+			if ( false === $before ) {
+				delete_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM );
+			} else {
+				update_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, $before );
+			}
+		}
 	}
 );

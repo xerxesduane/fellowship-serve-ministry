@@ -23,7 +23,7 @@ final class Schema {
 	 * Bumped whenever a CREATE TABLE statement below changes, so that
 	 * maybe_upgrade() knows to re-run dbDelta.
 	 */
-	public const DB_VERSION = '1.8.0';
+	public const DB_VERSION = '1.9.0';
 
 	public const OPTION_DB_VERSION = 'serve_dashboard_db_version';
 
@@ -362,6 +362,7 @@ final class Schema {
 			submission_id bigint(20) unsigned NOT NULL,
 			team_id bigint(20) unsigned NOT NULL,
 			status varchar(32) NOT NULL DEFAULT 'submitted',
+			source varchar(16) NOT NULL DEFAULT 'match',
 			decline_reason varchar(190) NOT NULL DEFAULT '',
 			leader_user_id bigint(20) unsigned DEFAULT NULL,
 			notes text NOT NULL,
@@ -527,6 +528,25 @@ final class Schema {
 		if ( '' !== $from && version_compare( $from, '1.8.0', '<' )
 			&& false === get_option( Assessment::OPTION_SERVING_FORM, false ) ) {
 			add_option( Assessment::OPTION_SERVING_FORM, Assessment::LEGACY_SERVING_FORM );
+		}
+
+		/*
+		 * Schema 1.9.0 — plugin 1.26.0 — records how a placement came about.
+		 *
+		 * Every row that already exists came from a match, which is the column
+		 * default, so nothing needs rewriting. The new value is 'catchall': a
+		 * row created because nothing matched at all, so somebody still owns the
+		 * first conversation. It is deliberately not a suggestion and must never
+		 * be read as one.
+		 *
+		 * The catch-all team is an option rather than a constant, because the
+		 * last two things hardcoded in this plugin — a team list and a form URL
+		 * — both had to be dug back out again. Seeded with Welcome, and blank is
+		 * a real answer meaning pastors keep it.
+		 */
+		if ( '' !== $from && version_compare( $from, '1.9.0', '<' )
+			&& false === get_option( Placements::OPTION_CATCHALL_TEAM, false ) ) {
+			add_option( Placements::OPTION_CATCHALL_TEAM, Placements::DEFAULT_CATCHALL_TEAM );
 		}
 	}
 }
