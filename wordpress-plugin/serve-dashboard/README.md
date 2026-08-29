@@ -839,13 +839,17 @@ The deck's Prepare phase still lists "agree on who can see personal information"
 as an open item. This makes the current answer better-evidenced. It does not make
 it decided.
 
-### What is still duplicated
+### Nothing is duplicated any more
 
-`ministryGiftTable.js` remains, because the printed ministry guide on the results
-page is a teaching aid drawn from it. It no longer decides anything, so the en
-dash is now only ever displayed and never slugified — but it is still a second
-copy of the team list, and a church that renames a team will see the old name in
-that table.
+`ministryGiftTable.js` is deleted. The printed ministry guide on the results page
+was the last thing reading it, and it now draws the church's actual teams —
+handed to the page by the server rather than fetched, because the guide is
+printed with the profile and has to be there whether or not a request succeeds.
+Active teams only: a team the church has closed does not belong in a guide about
+where somebody might serve.
+
+Verified by renaming a team in the database and reloading: the new name appears.
+Under the old copy it never would have.
 
 ## Reading it without being trained on it
 
@@ -900,12 +904,10 @@ that you left a report, and not a word of what it said.
   frequency, conflict handling, permissions, API limits and the join identifiers
   all have to be agreed first — that is the deck's own "Prepare" phase. The
   boundary class marks where it will go.
-- **The ministry guide table.** `ministryGiftTable.js` still holds a second
-  copy of the team list, because the printed guide on the results page is
-  drawn from it. It no longer decides anything — suggestions and placements
-  are ranked on the server as of 1.21.0 — but a renamed team will still show
-  its old name there. Serving that table from the Teams screen is the
-  remaining piece.
+- **A test runner for the assessment JavaScript.** The PHP suite covers the
+  server; nothing exercises profile.js or the assessment app, so the browser side
+  is checked by running the real modules by hand. That is how the padding removal
+  and this guide change were verified, and it is not automated.
 - **Team-specific personality fit.** Personality is interpreted per person (see
   above) but cannot be team-specific: `keywords` describes what a team's work is
   about, not what temperament the role suits, and those are different questions.

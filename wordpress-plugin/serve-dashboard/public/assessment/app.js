@@ -18,7 +18,6 @@ import {
   whatIsShapeSection,
   workExperiences,
 } from "./shapeContent.js";
-import { ministryGiftTable } from "./ministryGiftTable.js";
 import { buildProfile, emptyAnswers, profileToText } from "./profile.js";
 
 const STORAGE_KEY = "fellowship-dubai-shape-v2";
@@ -453,8 +452,19 @@ function ministryRecommendations(profile) {
 }
 
 function ministryTable() {
-  const rows = ministryGiftTable.map((row) => `<tr><th scope="row">${escapeHtml(row.ministry)}</th><td>${escapeHtml(row.gifts.join(", "))}</td></tr>`).join("");
-  const mobile = ministryGiftTable.map((row) => `<section><h3>${escapeHtml(row.ministry)}</h3><p>${escapeHtml(row.gifts.join(", "))}</p></section>`).join("");
+  /*
+   * The church's actual teams, handed to the page by the server. This was a
+   * hardcoded list in the browser, so renaming or retiring a team on the Teams
+   * screen left this guide showing the old one indefinitely.
+   */
+  const teams = Array.isArray(SERVE_CONFIG.teams) ? SERVE_CONFIG.teams : [];
+
+  if (!teams.length) {
+    return "";
+  }
+
+  const rows = teams.map((row) => `<tr><th scope="row">${escapeHtml(row.name)}</th><td>${escapeHtml((row.gifts || []).join(", "))}</td></tr>`).join("");
+  const mobile = teams.map((row) => `<section><h3>${escapeHtml(row.name)}</h3><p>${escapeHtml((row.gifts || []).join(", "))}</p></section>`).join("");
   /*
    * Collapsed by default.
    *
@@ -466,7 +476,7 @@ function ministryTable() {
    * reflective guide and conviction comes first — and the table itself is one
    * click away rather than gone.
    */
-  return `<article class="ministry-table-section"><header class="ministry-table-heading"><div class="ministry-table-icon">${icon("compass", 26)}</div><div><p class="eyebrow">Ministry guide</p><h2>Explore more places where your gifts may contribute.</h2><p>This table is a reflective guide, not a prescription. Prayerfully consider where your gifts may align, while giving priority to personal conviction and the Holy Spirit’s leading.</p></div></header><details class="ministry-table-fold"><summary>Show all sixteen teams and the gifts that strengthen them</summary><div class="ministry-table-desktop"><table><caption class="sr-only">Fellowship Dubai ministry and spiritual gift guide</caption><thead><tr><th scope="col">Ministry</th><th scope="col">Spiritual gifts that strengthen it</th></tr></thead><tbody>${rows}</tbody></table></div><div class="ministry-table-mobile">${mobile}</div></details></article>`;
+  return `<article class="ministry-table-section"><header class="ministry-table-heading"><div class="ministry-table-icon">${icon("compass", 26)}</div><div><p class="eyebrow">Ministry guide</p><h2>Explore more places where your gifts may contribute.</h2><p>This table is a reflective guide, not a prescription. Prayerfully consider where your gifts may align, while giving priority to personal conviction and the Holy Spirit’s leading.</p></div></header><details class="ministry-table-fold"><summary>Show all ${teams.length} teams and the gifts that strengthen them</summary><div class="ministry-table-desktop"><table><caption class="sr-only">Fellowship Dubai ministry and spiritual gift guide</caption><thead><tr><th scope="col">Ministry</th><th scope="col">Spiritual gifts that strengthen it</th></tr></thead><tbody>${rows}</tbody></table></div><div class="ministry-table-mobile">${mobile}</div></details></article>`;
 }
 
 /*

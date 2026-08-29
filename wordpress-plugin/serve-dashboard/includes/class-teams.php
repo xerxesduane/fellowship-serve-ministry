@@ -2,8 +2,9 @@
 /**
  * Ministry teams and their capacity.
  *
- * The gift lists are seeded from the assessment's own ministryGiftTable so
- * that matching in the dashboard and matching in the public form cannot drift.
+ * The gift lists below are the seed. They were once a mirror of a table in the
+ * assessment's JavaScript; that copy is gone, and the assessment now reads these
+ * teams from the server, so there is one list and nothing to drift.
  * The headcount columns are new: the assessment never knew how many people a
  * team actually needs, which is why "team gaps" could not be computed before.
  *
@@ -21,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class Teams {
 
 	/**
-	 * Seed data mirroring src/data/ministryGiftTable.ts.
+	 * The teams a church starts with, before anybody edits them.
 	 *
 	 * target/min headcounts start at zero deliberately: a made-up target is
 	 * worse than a visibly unset one, because it produces a gap number a

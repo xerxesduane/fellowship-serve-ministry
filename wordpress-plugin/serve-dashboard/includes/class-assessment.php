@@ -222,6 +222,28 @@ final class Assessment {
 			 * a missing or failing endpoint costs nothing.
 			 */
 			'suggestUrl'   => esc_url_raw( rest_url( Rest::NAMESPACE . '/suggestions' ) ),
+
+			/*
+			 * The ministry guide, from the teams as they actually are.
+			 *
+			 * That table used to be a hardcoded copy in the browser, which meant
+			 * a church renaming, retiring or adding a team on the Teams screen
+			 * saw the old list here forever. Rendered into the page rather than
+			 * fetched: the guide is printed with the profile, so it has to be
+			 * there whether or not a request succeeds.
+			 *
+			 * Active teams only. A team the church has closed does not belong in
+			 * a guide telling somebody where they might serve.
+			 */
+			'teams'        => array_values(
+				array_map(
+					static fn( $team ) => array(
+						'name'  => $team->name,
+						'gifts' => Teams::gift_list( $team ),
+					),
+					Teams::all()
+				)
+			),
 		);
 	}
 
