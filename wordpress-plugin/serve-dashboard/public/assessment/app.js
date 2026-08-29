@@ -243,8 +243,7 @@ function welcome() {
   return `<div class="welcome-layout">
     <div class="welcome-brand">
       <div class="shape-orbit" role="img" aria-label="S.H.A.P.E.: Spiritual Gifts, Heart, Abilities, Personality, and Experiences">${icon("compass", 42)}<span aria-hidden="true">S</span><span aria-hidden="true">H</span><span aria-hidden="true">A</span><span aria-hidden="true">P</span><span aria-hidden="true">E</span></div>
-      <img class="welcome-logo" src="${escapeHtml(SERVE_CONFIG.logoUrl || "assets/fellowship-logo.jpeg")}" alt="Fellowship Dubai" width="284" height="221">
-      <p>OUR VISION</p><p class="welcome-vision">Know Jesus<br>Grow to be like Jesus<br>Go tell the nations about Jesus</p>
+      <p>OUR MISSION</p><p class="welcome-vision">Know Jesus<br>Grow to be like Jesus<br>Go tell the nations about Jesus</p>
     </div>
     <div>${teachingCard(welcomeSection)}
       <p class="journey-estimate">${icon("clock", 16)}This takes ${escapeHtml(SERVE_CONFIG.estimate || "about 20 minutes")}. Your answers save automatically on this device as you go.</p>
@@ -593,7 +592,7 @@ function render({ focusSearch = "", animate = true } = {}) {
   const progress = Math.round((step / (journeySteps.length - 1)) * 100);
   const validation = validationMessage();
   root.innerHTML = `<main class="app-shell"><div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
-    ${isProfile ? "" : `<header class="progress-header no-print"><div class="journey-progress"><button class="fd-mark" type="button" data-action="home" aria-label="Return to welcome"><img src="${escapeHtml(SERVE_CONFIG.logoUrl || "assets/fellowship-logo.jpeg")}" alt="" width="284" height="221"></button><div class="progress-copy"><div class="progress-label"><span>${escapeHtml(current.title)}</span><span>${progress}%</span></div><div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div><small>Step ${step + 1} of ${journeySteps.length}</small></div><span class="purpose-mini">KNOW · GROW · GO</span></div></header>`}
+    ${isProfile ? "" : `<header class="progress-header no-print"><div class="journey-progress"><button class="fd-mark" type="button" data-action="home" aria-label="Return to welcome"><img src="${escapeHtml(SERVE_CONFIG.logoUrl || "assets/fellowship-logo.jpeg")}" alt="" width="284" height="221"></button><div class="progress-copy"><div class="progress-label"><span>${escapeHtml(current.title)}</span><span>${progress}%</span></div><div class="progress-track"><div class="progress-fill" style="--progress:${progress / 100}"></div></div><small>Step ${step + 1} of ${journeySteps.length}</small></div><span class="purpose-mini">KNOW · GROW · GO</span></div></header>`}
     <div class="journey-wrap ${isProfile ? "profile-wrap" : ""}"><section class="journey-stage${animate ? " animate-in" : ""}">${stage()}</section>
       ${isProfile ? "" : `<footer class="journey-actions no-print"><button class="back-button" type="button" data-action="back" ${step === 0 ? "disabled" : ""}>${icon("arrowLeft")}Back</button><div>${validation ? `<p class="validation-message">${validation}</p>` : ""}<button class="primary-button" type="button" data-action="next" ${validation ? "disabled" : ""}>${step === journeySteps.length - 2 ? "Build My Profile" : "Continue"}${icon("arrowRight")}</button></div></footer><p class="autosave-note no-print">${icon("check", 14)} Progress is saved in this browser. <button type="button" data-action="restart" class="restart-inline">${icon("refresh", 14)}Start over</button></p>`}
     </div></main>`;
