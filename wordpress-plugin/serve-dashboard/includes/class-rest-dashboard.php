@@ -723,9 +723,28 @@ final class Rest_Dashboard {
 
 		return array_map(
 			static function ( $row ) use ( $labels, $today ) {
-				$suggested = array_map(
-					static fn( $slug ) => ucwords( str_replace( '-', ' ', (string) $slug ) ),
-					Submissions::decode_list( $row->suggested_teams )
+				/*
+				 * Ranked here rather than read from `suggested_teams`.
+				 *
+				 * That column records what the person was shown when they
+				 * submitted, which is the right thing for it to hold and the
+				 * reason the drawer can flag a team as "not on their profile".
+				 * It is the wrong thing for a column headed Suggested teams to
+				 * display: every profile from before suggestions became
+				 * strong-only still lists the teams the old rules picked, so the
+				 * list and the panel underneath the same words disagreed. Imran
+				 * Sheikh read as Administration in the list and as nothing at
+				 * all in the drawer.
+				 *
+				 * One source of truth now, and the same one the drawer uses.
+				 * Team names come out as the church spells them, so GROW -
+				 * Small Group is no longer flattened to Grow Small Group by
+				 * title-casing a slug.
+				 */
+				$profile   = json_decode( (string) $row->profile_json, true );
+				$suggested = array_column(
+					Matching::suggestions_for_profile( is_array( $profile ) ? $profile : array() ),
+					'team_name'
 				);
 
 				return array(
@@ -737,9 +756,8 @@ final class Rest_Dashboard {
 					'suggestedTeams' => $suggested,
 
 					/*
-					 * No team matched. Distinct from "no teams shown", which a
-					 * scoped leader also sees, and the reason the Teams column
-					 * is empty for this row.
+					 * No team matched, by the same ranking the column above
+					 * shows, so the flag and the column can never disagree.
 					 */
 					'unmatched'      => empty( $suggested ),
 					'status'         => $row->status,

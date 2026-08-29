@@ -787,3 +787,148 @@ test(
 		);
 	}
 );
+
+test(
+	'the list and the drawer never disagree about suggested teams',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The list used to print the stored `suggested_teams` column while the
+		 * drawer ranked the profile live. Under the old rules those agreed. Once
+		 * suggestions became strong-only they stopped: every profile submitted
+		 * before that still listed the teams the old rules picked, so Imran
+		 * Sheikh read as Administration in the list and as nothing at all in the
+		 * panel underneath the same two words.
+		 *
+		 * The column keeps recording what the person was shown -- that is what
+		 * lets the drawer flag a team as "not on their profile" -- and the list
+		 * no longer displays it.
+		 */
+		global $wpdb;
+
+		// Stored teams that the current rules would not produce, exactly like a
+		// profile submitted before the change.
+		$id = $f->submission(
+			array(
+				'suggested_teams' => array( 'production', 'livestream-team' ),
+				'profile'         => array(
+					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
+					'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				),
+			)
+		);
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		$submission = \Serve_Dashboard\Submissions::get( $id );
+		$profile    = json_decode( (string) $submission->profile_json, true ) ?: array();
+
+		// What the drawer shows.
+		$drawer = array_column( \Serve_Dashboard\Matching::for_submission( $submission, $profile ), 'team_name' );
+
+		// What the list shows.
+		$rows = new \ReflectionMethod( \Serve_Dashboard\Rest_Dashboard::class, 'rows' );
+		$rows->setAccessible( true );
+		$listed = $rows->invoke( null, array( $submission ) );
+
+		$a->same( 1, count( $listed ), 'the row is built' );
+		$a->same( $drawer, $listed[0]['suggestedTeams'], 'the list prints exactly what the drawer does' );
+
+		// And specifically not the stored column, which still says otherwise.
+		$a->not(
+			in_array( 'Production', $listed[0]['suggestedTeams'], true ),
+			'not the team the old rules stored'
+		);
+
+		// The stored record is untouched, because the drawer needs it.
+		$a->same(
+			array( 'production', 'livestream-team' ),
+			\Serve_Dashboard\Submissions::decode_list( $submission->suggested_teams ),
+			'what the person was shown is still on record'
+		);
+	}
+);
+
+test(
+	'a person the ranking no longer supports reads as unmatched in the list',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The flag came off the stored column too, so somebody whose stored
+		 * teams were picked by the old rules showed those teams and no flag,
+		 * while the drawer showed nothing at all.
+		 */
+		global $wpdb;
+
+		$id = $f->submission(
+			array(
+				'suggested_teams' => array( 'administration' ),
+				// One gift and nothing behind it: possible at best, never strong.
+				'profile'         => array(
+					'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+					'abilities'      => array( 'Counting ability' ),
+				),
+			)
+		);
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		$rows = new \ReflectionMethod( \Serve_Dashboard\Rest_Dashboard::class, 'rows' );
+		$rows->setAccessible( true );
+		$listed = $rows->invoke( null, array( \Serve_Dashboard\Submissions::get( $id ) ) );
+
+		$a->same( array(), $listed[0]['suggestedTeams'], 'no teams are printed' );
+		$a->ok( $listed[0]['unmatched'], 'and the row says so' );
+	}
+);
+
+test(
+	'a team is listed under the name the church gave it',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The list title-cased the slug, so GROW - Small Group was printed as
+		 * Grow Small Group. Ranking returns the team's actual name.
+		 */
+		global $wpdb;
+
+		$id = $f->submission(
+			array(
+				'profile' => array(
+					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
+					'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				),
+			)
+		);
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		$rows = new \ReflectionMethod( \Serve_Dashboard\Rest_Dashboard::class, 'rows' );
+		$rows->setAccessible( true );
+		$listed = $rows->invoke( null, array( \Serve_Dashboard\Submissions::get( $id ) ) );
+
+		$names = array_column( \Serve_Dashboard\Teams::all(), 'name' );
+
+		foreach ( $listed[0]['suggestedTeams'] as $shown ) {
+			$a->ok( in_array( $shown, $names, true ), "{$shown} is a real team name" );
+		}
+	}
+);

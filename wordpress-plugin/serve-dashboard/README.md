@@ -1016,6 +1016,31 @@ A catch-all row left at `submitted` after the person is placed elsewhere is not 
 false queue entry: the lists show the submission's status, which by then says
 placed.
 
+### The list and the drawer disagreed under the same two words
+
+The list printed the stored `suggested_teams` column; the drawer ranked the
+profile live. Under the old rules those agreed, so nothing looked wrong. Once
+suggestions became strong-only they stopped agreeing for every profile submitted
+before the change, and the screen said two things at once: Imran Sheikh read as
+**Administration** in the list and as **nothing at all** in the panel underneath.
+
+The list ranks live now, from the same call the drawer uses, and the `no team
+matched` flag comes off that same answer so the flag and the column cannot
+disagree either. The stored column is untouched and still records what the person
+was shown, which is what lets the drawer mark a team *not on their profile*.
+
+Team names come from the ranking too, so `GROW - Small Group` is no longer
+flattened to `Grow Small Group` by title-casing a slug.
+
+**A cache was tried here and removed.** Ranking every row means a teams query per
+row, so `Teams::all()` got a per-request static. It broke four tests, and the one
+that mattered was *a deactivated team is not suggested*: the teams table is
+written from several places, fixtures included, and the static confidently
+reported a retired team as still open. Flush calls would have covered the paths
+going through `save()` and missed exactly the ones that do not. A team list that
+lies about which teams exist is worse than a query per row; if the cost ever
+matters, the fix is to read the teams once and hand them to the ranking.
+
 ### Old access was never re-examined
 
 Strong-only applies from the moment it shipped. Everybody already in the system
