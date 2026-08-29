@@ -235,6 +235,25 @@ textarea { min-height: 105px; resize: vertical; line-height: 1.5; }
 .embedded-form p { margin: 7px 0 20px; color: var(--muted); }
 .embedded-form iframe { width: 100%; height: 980px; border: 1px solid var(--line); border-radius: 16px; background: white; }
 .embedded-form > a { width: fit-content; margin-top: 15px; background: var(--navy); }
+
+/*
+ * The form is fetched on request, so the button stands where the iframe will.
+ * Same height band as the links it sits among, so asking for it does not read
+ * as a lesser action than opening it in a new tab.
+ */
+.embedded-form .load-form { min-height: 48px; display: inline-flex; align-items: center; gap: 8px; padding: 0 20px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; color: var(--navy); font-weight: 780; cursor: pointer; }
+.embedded-form .load-form:hover { border-style: solid; background: #fff; }
+
+/*
+ * Where this form actually goes.
+ *
+ * Somebody who completes it instead of sharing has volunteered and left no
+ * trace here, so this is the one line on the page that has to be read rather
+ * than skimmed past. Coloured as a notice, not as an error: using the form is
+ * a legitimate choice, it just needs to be an informed one.
+ */
+.external-note { display: flex; gap: 10px; align-items: flex-start; margin: 7px 0 20px !important; padding: 14px 16px; border: 1px solid #f0d9a8; border-radius: 14px; background: #fff8e9; color: var(--ink) !important; line-height: 1.55; }
+.external-note svg { flex: 0 0 auto; margin-top: 2px; color: #a9762a; }
 .profile-footer { box-shadow: none; display: flex; justify-content: center; padding: 5px; }
 .animate-in { animation: enter .35s ease both; }
 @keyframes enter { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }

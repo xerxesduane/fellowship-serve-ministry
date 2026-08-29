@@ -19,12 +19,13 @@ import {
   workExperiences,
 } from "./shapeContent.js";
 import { buildProfile, emptyAnswers, profileToText } from "./profile.js";
+import { escapeHtml, icon } from "./render.js";
+import { resultsHandoff } from "./handoff.js";
 
 const STORAGE_KEY = "fellowship-dubai-shape-v2";
 // The SERVE dashboard reads the computed profile from here, so a leader can be
 // sent the finished result rather than the raw answers.
 const PROFILE_KEY = `${STORAGE_KEY}-profile`;
-const SERVING_FORM = "https://fellowshipdubai.churchcenter.com/people/forms/268058";
 
 /*
  * Optional config supplied by the SERVE Dashboard plugin. Absent it, the
@@ -38,6 +39,28 @@ const SERVE_CONFIG = (() => {
     return {};
   }
 })();
+
+/*
+ * The church's serving form, from Settings.
+ *
+ * It used to be a URL typed in above, form id and all, which meant a church
+ * that replaced the form pointed everyone at a dead link until somebody edited
+ * JavaScript. Empty is a real answer and means the journey offers no external
+ * route, so every use of it is guarded rather than defaulted.
+ */
+const SERVING_FORM = typeof SERVE_CONFIG.servingFormUrl === "string" ? SERVE_CONFIG.servingFormUrl : "";
+
+/*
+ * The embedded form is fetched when somebody asks for it, not when the page
+ * opens.
+ *
+ * As an eager iframe it contacted Planning Center on behalf of every person
+ * reaching their results — handing over an IP address and accepting cookies
+ * from a third party they had not chosen to use, and costing a 980px-tall load
+ * nobody had asked for.
+ */
+let servingFormOpen = false;
+
 const WORK_OTHER_GROUPS = [
   "automotive", "business", "computer", "entertainment", "education-field",
   "medical", "military", "public-civil", "tax-legal", "transportation", "utilities",
@@ -200,33 +223,6 @@ function save() {
   } catch {
     // Storage is a convenience; the assessment remains usable without it.
   }
-}
-
-function escapeHtml(value = "") {
-  return String(value).replace(/[&<>'"]/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
-  })[character]);
-}
-
-function icon(name, size = 18) {
-  const paths = {
-    arrowLeft: '<path d="m15 18-6-6 6-6"/><path d="M9 12h12"/>',
-    arrowRight: '<path d="M9 18l6-6-6-6"/><path d="M3 12h12"/>',
-    check: '<path d="m5 12 4 4L19 6"/>',
-    chevron: '<path d="m6 9 6 6 6-6"/>',
-    clipboard: '<rect width="14" height="16" x="5" y="4" rx="2"/><path d="M9 4V2h6v2"/>',
-    compass: '<circle cx="12" cy="12" r="10"/><path d="m16 8-3 5-5 3 3-5 5-3Z"/>',
-    external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
-    lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
-    mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 6L2 7"/>',
-    printer: '<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>',
-    refresh: '<path d="M20 11a8 8 0 1 0-2.34 5.66"/><path d="M20 4v7h-7"/>',
-    search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
-    book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>',
-    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-    device: '<rect x="4" y="3" width="11" height="18" rx="2"/><path d="M17 8h3v13h-8"/>',
-  };
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || ""}</svg>`;
 }
 
 function teachingCard(section) {
@@ -479,21 +475,18 @@ function ministryTable() {
   return `<article class="ministry-table-section"><header class="ministry-table-heading"><div class="ministry-table-icon">${icon("compass", 26)}</div><div><p class="eyebrow">Ministry guide</p><h2>Explore more places where your gifts may contribute.</h2><p>This table is a reflective guide, not a prescription. Prayerfully consider where your gifts may align, while giving priority to personal conviction and the Holy Spirit’s leading.</p></div></header><details class="ministry-table-fold"><summary>Show all ${teams.length} teams and the gifts that strengthen them</summary><div class="ministry-table-desktop"><table><caption class="sr-only">Fellowship Dubai ministry and spiritual gift guide</caption><thead><tr><th scope="col">Ministry</th><th scope="col">Spiritual gifts that strengthen it</th></tr></thead><tbody>${rows}</tbody></table></div><div class="ministry-table-mobile">${mobile}</div></details></article>`;
 }
 
-/*
- * The share step. Offered first, because sending the profile to the SERVE team
- * is what lets a leader begin the conversation, whereas the Church Center links
- * below ask the person to go and find an opportunity themselves.
+/**
+ * The profile as text, plus the serving form if there is one.
+ *
+ * Written twice before — once for the mailto link and once for the clipboard —
+ * so the address could be appended in one and not the other.
  */
-function shareStep() {
-  if (!SERVE_CONFIG.shareUrl) {
-    return "";
-  }
+function takeawayText(profile) {
+  const text = profileToText(answers, profile, serverSuggestions);
 
-  return `<section class="next-step-panel share-panel"><header><p class="eyebrow">Recommended next step</p><h2>Let the SERVE team know you are interested</h2></header><div class="next-step-grid"><a href="${escapeHtml(SERVE_CONFIG.shareUrl)}"><strong>Share my profile with the SERVE team</strong><span>A ministry leader will review your profile and get in touch about where you might serve. You decide what happens next. ${icon("arrowRight", 17)}</span></a></div></section>`;
-}
-
-function nextSteps(mailto) {
-  return `<article class="results-handoff no-print">${shareStep()}<section class="save-reminder"><div><p class="eyebrow">Before you continue</p><h2>Save your results</h2><p>Serving forms open outside this tool. Save a PDF or email a copy to yourself before you leave so your profile is easy to return to.</p></div><div><button type="button" data-action="print">${icon("printer", 17)}Save / Download PDF</button><a href="${escapeHtml(mailto)}">${icon("mail", 17)}Email My Results</a></div></section><section class="next-step-panel"><header><p class="eyebrow">Ready to take the next step?</p><h2>Choose how you would like to continue</h2></header><div class="next-step-grid"><a href="${SERVING_FORM}" target="_blank" rel="noopener noreferrer"><strong>Explore Serving Opportunities</strong><span>View current opportunities and tell Fellowship Dubai where you would like to serve. ${icon("arrowRight", 17)}</span></a><a href="${SERVING_FORM}" target="_blank" rel="noopener noreferrer"><strong>Talk to a S.H.A.P.E. Advisor</strong><span>Open the form and select the SERVE Team to ask for personal guidance. ${icon("arrowRight", 17)}</span></a></div><div class="embedded-form"><div><h3>Serving opportunities form</h3><p>You can complete the form here or open it in a new tab.</p></div><iframe src="${SERVING_FORM}" title="Fellowship Dubai serving opportunities form" loading="lazy"></iframe><a href="${SERVING_FORM}" target="_blank" rel="noopener noreferrer">Open the serving form in a new tab ${icon("external", 16)}</a></div></section></article>`;
+  return SERVING_FORM
+    ? `${text}\n\nCURRENT SERVING OPPORTUNITIES\n${SERVING_FORM}`
+    : text;
 }
 
 function saveProfile(profile) {
@@ -507,16 +500,16 @@ function saveProfile(profile) {
 function profilePage() {
   const profile = buildProfile(answers);
   saveProfile(profile);
-  const text = `${profileToText(answers, profile, serverSuggestions)}\n\nCURRENT SERVING OPPORTUNITIES\n${SERVING_FORM}`;
+  const text = takeawayText(profile);
   const mailto = `mailto:${encodeURIComponent(answers.profile.email || "")}?subject=${encodeURIComponent(`${answers.profile.name || "My"} S.H.A.P.E. Profile`)}&body=${encodeURIComponent(text)}`;
-  return `<section class="profile-page"><header class="profile-hero"><p class="eyebrow">Fellowship Dubai · Complete profile</p><h1>${answers.profile.name ? `${escapeHtml(answers.profile.name)}’s` : "My"} S.H.A.P.E. Profile</h1><p>A clear starting point for prayer, reflection, and exploring current serving opportunities.</p><div class="profile-contact"><span>${escapeHtml(answers.profile.email || "Email not provided")}</span><span>${escapeHtml(answers.profile.phone || "Phone not provided")}</span></div><div class="profile-actions no-print"><button type="button" data-action="copy">${icon("clipboard", 17)}${copied ? "Copied" : "Copy My Profile"}</button><button type="button" data-action="print">${icon("printer", 17)}Download / Print PDF</button><a href="${escapeHtml(mailto)}">${icon("mail", 17)}Email / Share My Profile</a><a href="${SERVING_FORM}" target="_blank" rel="noopener noreferrer">Begin Serving ${icon("external", 16)}</a></div></header>
+  return `<section class="profile-page"><header class="profile-hero"><p class="eyebrow">Fellowship Dubai · Complete profile</p><h1>${answers.profile.name ? `${escapeHtml(answers.profile.name)}’s` : "My"} S.H.A.P.E. Profile</h1><p>A clear starting point for prayer, reflection, and exploring current serving opportunities.</p><div class="profile-contact"><span>${escapeHtml(answers.profile.email || "Email not provided")}</span><span>${escapeHtml(answers.profile.phone || "Phone not provided")}</span></div><div class="profile-actions no-print"><button type="button" data-action="copy">${icon("clipboard", 17)}${copied ? "Copied" : "Copy My Profile"}</button><button type="button" data-action="print">${icon("printer", 17)}Download / Print PDF</button><a href="${escapeHtml(mailto)}">${icon("mail", 17)}Email / Share My Profile</a></div></header>
     ${profileSection("S", "Spiritual Gifts", giftGroup("Likely gifts", profile.spiritualGifts.likely) + giftGroup("Possible gifts", profile.spiritualGifts.possible) + giftGroup("Unlikely gifts", profile.spiritualGifts.unlikely, true))}
     ${profileSection("H", "Heart / Passion", profileList("Roles I enjoy", profile.heart.roles) + profileList("People I care about", profile.heart.people) + profileList("Causes I feel led to champion", profile.heart.causes))}
     ${profileSection("A", "Abilities", profileList("Abilities I can use", profile.abilities))}
     ${profileSection("P", "Personality", profileList("My personality pattern", profile.personality))}
     ${profileSection("E", "Experiences", `<div class="profile-experience-grid">${Object.entries(profile.experiences).map(([label, values]) => profileList(label, values)).join("")}</div>`)}
     ${profileSection("+", "Availability", `<dl class="availability-summary"><div><dt>Are you making service a priority?</dt><dd>${escapeHtml(profile.availability.priority)}</dd></div><div><dt>Time per week</dt><dd>${escapeHtml(profile.availability.hours)}</dd></div><div><dt>Best times</dt><dd>${escapeHtml(profile.availability.timing.join(", ") || "Not specified")}</dd></div></dl>`)}
-    ${ministryRecommendations(profile)}${ministryTable()}${nextSteps(mailto)}<div class="profile-footer no-print"><button class="back-button" type="button" data-action="restart">${icon("refresh", 17)}Start a new profile</button></div></section>`;
+    ${ministryRecommendations(profile)}${ministryTable()}${resultsHandoff({ shareUrl: SERVE_CONFIG.shareUrl, servingFormUrl: SERVING_FORM, servingFormOpen, mailto })}<div class="profile-footer no-print"><button class="back-button" type="button" data-action="restart">${icon("refresh", 17)}Start a new profile</button></div></section>`;
 }
 
 function stage() {
@@ -615,7 +608,7 @@ function render({ focusSearch = "", animate = true } = {}) {
 
 async function copyProfile() {
   const profile = buildProfile(answers);
-  const text = `${profileToText(answers, profile, serverSuggestions)}\n\nCURRENT SERVING OPPORTUNITIES\n${SERVING_FORM}`;
+  const text = takeawayText(profile);
   try {
     await navigator.clipboard.writeText(text);
   } catch {
@@ -643,6 +636,7 @@ root.addEventListener("click", (event) => {
   if (action === "restart") {
     answers = emptyAnswers();
     step = 0;
+    servingFormOpen = false;
     Object.keys(searches).forEach((key) => delete searches[key]);
     openGroups.clear();
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* no-op */ }
@@ -656,6 +650,7 @@ root.addEventListener("click", (event) => {
     const selected = answers.selections[id] || [];
     answers.selections[id] = selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value];
   }
+  if (action === "load-form") servingFormOpen = true;
   if (action === "copy") { copyProfile(); return; }
   if (action === "print") { window.print(); return; }
   if (action === "save-place") { savePlace(); return; }

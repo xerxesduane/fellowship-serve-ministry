@@ -212,6 +212,15 @@ Placing someone through the dashboard does not change it.
 3. Set the **retention period**, if it differs from the default. Do this before
    the first real submission — the consent text is stored verbatim per person, so
    changing it later does not change what earlier people agreed to.
+4. Set the **serving opportunities form**, or clear it deliberately. This is the
+   Church Center form offered at the end of the journey, after the share step.
+
+   Decide this one with your eyes open. Somebody who volunteers through that
+   form instead of sharing their profile appears nowhere in this dashboard — not
+   in the follow-up queue, the team gaps, or the pilot figures — and during a
+   pilot they are counted as a drop-off rather than a success. The journey now
+   says as much on the page and loads the form only when asked, but the choice
+   of whether to offer it at all is a ministry decision, not a technical one.
 
 ---
 
@@ -338,6 +347,9 @@ Not blockers, but known and worth tracking:
   all need agreeing first — that is the deck's own Prepare phase, and
   [`docs/planning-center-prepare.md`](planning-center-prepare.md) is the material
   for that conversation.
-- **The end of the journey offers two routes.** The Church Center serving form
-  appears alongside the share step; anyone who takes the form lands in Planning
-  Center invisible to this dashboard.
+- **The end of the journey still offers two routes.** Sharing a profile is now
+  the recommended step and the Church Center form is offered after it, with the
+  consequence stated on the page — but anyone who takes the form instead still
+  lands in Planning Center invisible to this dashboard, and nothing in the
+  software can detect that. Set the form's address at **SERVE → Settings**, or
+  leave it blank to offer no external route at all.

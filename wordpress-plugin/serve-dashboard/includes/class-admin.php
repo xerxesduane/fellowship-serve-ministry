@@ -207,6 +207,17 @@ final class Admin {
 			Assessment::set_as_front_page();
 		}
 
+		/*
+		 * Where the journey sends somebody who wants to browse opportunities
+		 * themselves. esc_url_raw rather than esc_url because this is storage,
+		 * and it is what refuses a javascript: URL — the value ends up as an
+		 * iframe source on a public page.
+		 */
+		$serving_form = isset( $_POST['serving_form_url'] )
+			? esc_url_raw( trim( wp_unslash( $_POST['serving_form_url'] ) ) )
+			: '';
+		update_option( Assessment::OPTION_SERVING_FORM, $serving_form );
+
 		// Enables deep links only. Nothing is read from or written to Planning
 		// Center, so no credentials are involved.
 		$subdomain = isset( $_POST['pco_subdomain'] )

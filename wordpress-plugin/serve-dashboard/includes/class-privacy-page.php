@@ -112,7 +112,7 @@ final class Privacy_Page {
 	 * to check what the page actually claims.
 	 *
 	 * Every factual statement here was checked against the code. The three
-	 * judgement calls — the embedded Church Center form, the retention period,
+	 * judgement calls — the Church Center form offered at the end, the retention period,
 	 * and which supervisory authority applies — are the ones to revisit.
 	 */
 	private static function content(): string {
@@ -219,7 +219,7 @@ final class Privacy_Page {
 			'serve-dashboard'
 		) . '</p>';
 		$out[] = '<p>' . esc_html__(
-			'One exception is worth knowing. At the end of the journey the page shows Fellowship Dubai\'s serving-opportunities form, which is hosted by Church Center (Planning Center) and displayed inside the page. Because it loads from their servers, Planning Center receives your IP address and may set its own cookies when that page opens, whether or not you use the form. Anything you type into that form goes to Planning Center rather than into this system, and their privacy terms apply to it.',
+			'One exception is worth knowing. At the end of the journey the page offers Fellowship Dubai\'s serving-opportunities form, which is hosted by Church Center (Planning Center). Nothing is fetched from Planning Center unless you open that form or ask for it to be shown on the page; if you do, it loads from their servers, so at that point Planning Center receives your IP address and may set its own cookies. Anything you type into that form goes to Planning Center rather than into this system, and their privacy terms apply to it. It also goes somewhere different from the rest of the journey: filling it in does not send your S.H.A.P.E. answers to the SERVE team.',
 			'serve-dashboard'
 		) . '</p>';
 

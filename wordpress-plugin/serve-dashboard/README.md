@@ -158,9 +158,10 @@ WordPress nor a database:
 node ../../tools/run-js-tests.mjs
 ```
 
-It covers `profile.js`: what a completed assessment turns into, and what the
-person downloads. `app.js` is not covered — it needs a DOM to import at all —
-so CI parses it and nothing more.
+It covers the journey's pure modules: `profile.js` (what a completed assessment
+turns into, and what the person downloads), `handoff.js` (what the results page
+offers once they have finished) and `render.js`. `app.js` is not covered — it
+needs a DOM to import at all — so CI parses it and nothing more.
 
 ## Tables
 
@@ -908,6 +909,84 @@ for, occupying space in front of the lists everybody was. It is now its own
 keeps it as close to hand while giving it room to say plainly what happens to a
 report. Including the part that is easy to overstate: the audit trail records
 that you left a report, and not a word of what it said.
+
+## The end of the journey stopped competing with itself
+
+Finishing the assessment used to offer six ways out of it and one way in.
+
+Five of the six went to the church's Church Center serving form: a **Begin
+Serving** link in the results header, before anybody had read a word of their own
+profile; two cards in the next-steps grid pointing at the same URL; a link below
+them; and an iframe of the form itself, completable in place without leaving the
+page. Against all of that, one link: *Share my profile with the SERVE team*.
+
+That is not a cosmetic imbalance. Somebody who fills in the embedded form **has
+volunteered** — and no submission row is ever created, so they appear nowhere
+here. Not in the follow-up queue, not against a team's gap, not in the pilot
+figures. The pilot then reports them as a drop-off, which is the reverse of what
+happened.
+
+Three changes, none of which remove a route:
+
+- **The share step is offered first**, and the header no longer carries an exit
+  at all. Every other route is still on the page, under a heading that says what
+  it is: *Or, if you would rather look yourself*.
+- **The page says what the other route costs.** "This form goes to the church's
+  Planning Center, not to the SERVE team. If you use it without sharing your
+  profile above, nobody will see the answers you have just given." A person
+  choosing the form is making a legitimate choice; they should be making it
+  knowingly.
+- **The form loads when asked for**, not on arrival. It is a button until then.
+
+### The address was hardcoded in the browser
+
+`SERVING_FORM` was a URL typed into `app.js` — subdomain, path and form id. A
+church that replaced that form had no way to correct it without editing
+JavaScript, and until somebody did, every person finishing the journey was sent
+to a dead link at the exact moment they had decided to volunteer.
+
+It is a setting now, beside the Church Center address, and blank is a real
+answer: no form configured means no external route is offered and nothing is said
+about one. Schema 1.8.0 seeds the option with the address it used to be
+hardcoded to, so an upgrading site keeps its form — losing it silently would be a
+worse failure than the one being fixed. An administrator who deliberately clears
+the field does not get it back on the next upgrade, which is why the migration
+tests for `false` rather than `''`.
+
+### What this does not fix
+
+Nothing here can tell you whether somebody took the external route. There is no
+callback and no shared identifier, and adding one would mean the Planning Center
+integration that has not been built. The dashboard's figures still count only
+people who shared, and that limit is now stated in the runbook beside the setting
+rather than discovered later from a number that looks disappointing.
+
+### Two modules came out of app.js to make this testable
+
+`handoff.js` holds the three panels at the end of the journey; `render.js` holds
+`escapeHtml` and `icon`. Both were inside `app.js`, which reads `document` at
+import time and therefore cannot be imported outside a browser.
+
+That mattered here more than usual. The first attempt tested this change by
+scanning `app.js` for the strings it should contain — and that test passed,
+unchanged, against a deliberately broken version that loaded the form for every
+visitor anyway. A test that cannot fail is worse than no test, because it
+occupies the space where a real one would go. The functions are pure now and the
+tests assert what they return: eleven mutations, eleven failures.
+
+`render.js` also exports `iconNames()`, so a test can check that every icon the
+journey asks for is one that exists. An unknown name renders an empty `<svg>` —
+correctly sized, invisible and silent, which is exactly how every icon on the
+leader dashboard came to be drawn at 0x0.
+
+### A third-party request that was not needed
+
+The iframe loaded on arrival, so Planning Center received the IP address of
+every person who reached their results and could set cookies on them, whether or
+not they ever used the form. The privacy notice disclosed this accurately and
+flagged it as "a design decision, not a technical necessity" — noting the form
+could load nothing until clicked. That is now what happens, and both the notice
+and the generated privacy page say so.
 
 ## Deliberately not included yet
 
