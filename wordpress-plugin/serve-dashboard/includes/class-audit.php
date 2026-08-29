@@ -29,6 +29,14 @@ final class Audit {
 	public const ACTION_SAFEGUARD_BLOCK  = 'safeguarding.blocked';
 	public const ACTION_TEAM_SAVED       = 'team.saved';
 	public const ACTION_CONSENT_RECORDED = 'consent.recorded';
+
+	/*
+	 * A team's access to a profile was withdrawn because the ranking no longer
+	 * suggests them. Its own action rather than a generic update: "who could see
+	 * this person, and when did that change" is a question worth being able to
+	 * answer, and it should not be buried among edits.
+	 */
+	public const ACTION_PLACEMENT_RETIRED = 'placement.retired';
 	public const ACTION_VERIFY_MAIL_FAIL = 'verification.mail_failed';
 	public const ACTION_VERIFY_RESENT    = 'verification.resent';
 

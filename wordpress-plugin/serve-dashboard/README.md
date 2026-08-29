@@ -1016,6 +1016,60 @@ A catch-all row left at `submitted` after the person is placed elsewhere is not 
 false queue entry: the lists show the submission's status, which by then says
 placed.
 
+### Old access was never re-examined
+
+Strong-only applies from the moment it shipped. Everybody already in the system
+kept placement rows built under the old rules, and those rows decide who may read
+a profile, so the drift is an access question rather than a tidiness one. On the
+demo data six placements granted access to teams the ranking would not suggest
+today.
+
+`tools/reconcile-placements.php` reports them and, with `--apply` plus
+`SERVE_RECONCILE_OK=1`, withdraws them. Every deletion is audited under its own
+action, `placement.retired`, because "who could see this person, and when did
+that change" is worth being able to answer later.
+
+**What it never touches is the whole safety of it.** A placement anything has
+happened on stays: past `submitted`, or carrying an owner, a follow-up date, a
+decline reason or notes. Somebody halfway through a trial serve must not lose the
+leader walking them through it because a team's vocabulary was edited. On the
+demo data that rule spared exactly one row, and it was the one that mattered:
+a person mid-trial on Production.
+
+The claim marker is the subtle one. A leader can take somebody on before any
+stage has moved, which is what the claim/release lock is for, so judging
+"untouched" on status alone would withdraw a placement from a leader who had
+accepted responsibility and simply not logged anything yet. A mutation proved
+that guard was untested; there is now a test per marker, because a guard covering
+three of four reads as working right up until the fourth one matters.
+
+`retire()` re-checks at the moment of deletion rather than trusting the list,
+which may have been read minutes earlier.
+
+Anyone left matching nothing after a withdrawal is handed to the catch-all, so
+the reconcile lands where the current rules would have put them rather than
+leaving them worse off than if they had submitted today.
+
+### The catch-all lets go
+
+Its job is the first conversation. Once that leads to a trial or a placement on
+another team, the row is withdrawn: holding a profile open to a team the person
+is not joining is the same over-sharing this all started with. `contacted` is not
+enough, because a conversation in progress is not a conclusion, and a catch-all
+team that takes the person on itself keeps what is now a real placement.
+
+Deleted rather than marked closed. No status means "handed on": `declined` says
+the person decided against it, which would be a false claim about them, and
+inventing a status would put a new word into a vocabulary the metrics, filters
+and funnel all read.
+
+### The strength badge went
+
+Every suggestion is a strong match, so the badge read "Strong match" on every row:
+the same word down the panel, carrying nothing and pulling the eye off the
+reasons, which are what a leader actually has to read. The claim is made once, in
+the heading.
+
 ## The end of the journey stopped competing with itself
 
 Finishing the assessment used to offer six ways out of it and one way in.

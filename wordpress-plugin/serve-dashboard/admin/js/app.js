@@ -569,6 +569,14 @@ const drawer = {
 		 * ones they have not seen rather than on the ones they have: the new
 		 * suggestions are the smaller set and the ones that need the caveat.
 		 */
+		/*
+		 * No strength badge on each row.
+		 *
+		 * Only strong matches are suggested, so it read "Strong match" on every
+		 * one -- the same word repeated down the panel, carrying no information
+		 * and taking the eye away from the reasons, which are the part a leader
+		 * has to actually read. The claim is made once, in the heading above.
+		 */
 		const matches = person.matches.length
 			? person.matches.map((match) => `
 				<div class="serve-match">
@@ -577,10 +585,6 @@ const drawer = {
 							match.from_assessment
 								? ''
 								: '<span class="serve-flag serve-flag--stale">not on their profile</span>'}</span>
-						<span class="serve-badge serve-badge--${match.strength === 'strong' ? 'ready' : 'progress'}">
-							<span class="serve-badge__glyph" aria-hidden="true">${match.strength === 'strong' ? '●' : '◐'}</span>
-							${esc(match.strength_label)}
-						</span>
 					</div>
 					${match.reasons.length ? `<div class="serve-match__why">
 						<span>Why this team?</span>
@@ -846,7 +850,7 @@ const drawer = {
 
 			<div class="serve-section">
 				<h3>Suggested teams</h3>
-				<p class="serve-card__hint">Strong matches only, so this list is short by design and sometimes empty. A suggestion is still a starting point: the leader confirms, and the person chooses. Anything marked <em>not on their profile</em> came from their wider answers, so they have not seen it yet.</p>
+				<p class="serve-card__hint">Every one of these is a strong match, so the list is short by design and sometimes empty. A suggestion is still a starting point: the leader confirms, and the person chooses. Anything marked <em>not on their profile</em> came from their wider answers, so they have not seen it yet.</p>
 				${person.matches.find((m) => m.caveat)
 					? `<p class="serve-note serve-note--warn">${esc(person.matches.find((m) => m.caveat).caveat)}</p>`
 					: ''}

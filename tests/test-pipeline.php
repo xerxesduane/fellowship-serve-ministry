@@ -497,3 +497,335 @@ test(
 		}
 	}
 );
+
+test(
+	'the leader who owns the unmatched people can see how many there are',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * This count returned zero for anybody with a team scope, which was
+		 * wrong the moment the catch-all existed: the leader handed these people
+		 * is exactly who needs the number, and was the one person it refused.
+		 */
+		global $wpdb;
+
+		$id = $f->submission( array( 'suggested_teams' => array() ) );
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+		$wpdb->delete( Schema::table( 'placements' ), array( 'submission_id' => $id ), array( '%d' ) );
+
+		$welcome = \Serve_Dashboard\Teams::get_by_slug( 'welcome' );
+		\Serve_Dashboard\Placements::ensure( $id, (int) $welcome->id, \Serve_Dashboard\Placements::SOURCE_CATCHALL );
+
+		// The team that was handed them.
+		$owner = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		$f->lead_team( $owner, 'welcome' );
+		wp_set_current_user( $owner );
+
+		$a->ok(
+			\Serve_Dashboard\Placements::unmatched_count() > 0,
+			'the catch-all leader is told there are some'
+		);
+
+		// A leader of any other team is not: they were not handed anybody.
+		$other = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		$f->lead_team( $other, 'prayer' );
+		wp_set_current_user( $other );
+
+		$a->same( 0, \Serve_Dashboard\Placements::unmatched_count(), 'and a leader of another team is not' );
+
+		// A pastor sees the whole congregation's worth.
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+		$a->ok( \Serve_Dashboard\Placements::unmatched_count() > 0, 'a pastor still counts everyone' );
+
+		// And a leader with no team at all has no scope, so no count.
+		$unassigned = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		wp_set_current_user( $unassigned );
+		$a->same( 0, \Serve_Dashboard\Placements::unmatched_count(), 'an unassigned leader counts nothing' );
+	}
+);
+
+test(
+	'the catch-all lets go once another team takes the person on',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The catch-all owns the first conversation. Once that has led to a
+		 * trial or a placement elsewhere, holding the profile open to a team the
+		 * person is not joining is the same over-sharing that restricting
+		 * suggestions to strong matches was about.
+		 */
+		global $wpdb;
+
+		$id = $f->submission( array( 'suggested_teams' => array() ) );
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+		$wpdb->delete( Schema::table( 'placements' ), array( 'submission_id' => $id ), array( '%d' ) );
+
+		$welcome = \Serve_Dashboard\Teams::get_by_slug( 'welcome' );
+		$prayer  = \Serve_Dashboard\Teams::get_by_slug( 'prayer' );
+		\Serve_Dashboard\Placements::ensure( $id, (int) $welcome->id, \Serve_Dashboard\Placements::SOURCE_CATCHALL );
+
+		$count_for = static function ( int $team_id ) use ( $wpdb, $id ) {
+			return (int) $wpdb->get_var(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					'SELECT COUNT(*) FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d AND team_id = %d',
+					$id,
+					$team_id
+				)
+			);
+		};
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		// A conversation is not a conclusion: the catch-all still owns them.
+		\Serve_Dashboard\Submissions::set_status( $id, Schema::STATUS_CONTACTED, (int) $prayer->id );
+		$a->same( 1, $count_for( (int) $welcome->id ), 'a conversation in progress does not end the assignment' );
+
+		// A trial does.
+		\Serve_Dashboard\Submissions::set_status( $id, Schema::STATUS_TRIAL_SERVE, (int) $prayer->id );
+		$a->same( 0, $count_for( (int) $welcome->id ), 'starting somewhere else does' );
+		$a->same( 1, $count_for( (int) $prayer->id ), 'and the team they joined still has them' );
+	}
+);
+
+test(
+	'a catch-all the team has begun something with is left alone',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * If the catch-all team is the one taking the person on, retiring their
+		 * own row on the way past would cut them off from somebody they are
+		 * actively placing.
+		 */
+		global $wpdb;
+
+		$id = $f->submission( array( 'suggested_teams' => array() ) );
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+		$wpdb->delete( Schema::table( 'placements' ), array( 'submission_id' => $id ), array( '%d' ) );
+
+		$welcome = \Serve_Dashboard\Teams::get_by_slug( 'welcome' );
+		\Serve_Dashboard\Placements::ensure( $id, (int) $welcome->id, \Serve_Dashboard\Placements::SOURCE_CATCHALL );
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+		\Serve_Dashboard\Submissions::set_status( $id, Schema::STATUS_TRIAL_SERVE, (int) $welcome->id );
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT status FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d AND team_id = %d',
+				$id,
+				(int) $welcome->id
+			)
+		);
+
+		$a->ok( null !== $row, 'the catch-all team keeps the person it took on' );
+		$a->same( Schema::STATUS_TRIAL_SERVE, $row->status, 'as a real placement' );
+	}
+);
+
+test(
+	'reconciling never touches a placement anything has happened on',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The whole safety of the reconcile is this line. Somebody halfway
+		 * through a trial serve must not lose the leader walking them through it
+		 * because a team's vocabulary was edited.
+		 */
+		global $wpdb;
+
+		$id = $f->submission(
+			array(
+				// Matches Administration strongly, so Prayer is drift.
+				'suggested_teams' => array( 'administration' ),
+				'profile'         => array(
+					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
+					'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				),
+			)
+		);
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		$prayer = \Serve_Dashboard\Teams::get_by_slug( 'prayer' );
+		\Serve_Dashboard\Placements::ensure( $id, (int) $prayer->id );
+
+		$stale_here = static function () use ( $id, $prayer ) {
+			return array_filter(
+				\Serve_Dashboard\Placements::stale_rows(),
+				static fn( $r ) => $r['submission_id'] === $id && $r['team_id'] === (int) $prayer->id
+			);
+		};
+
+		$a->same( 1, count( $stale_here() ), 'an untouched drifted placement is listed' );
+
+		$placement_id = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT id FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d AND team_id = %d',
+				$id,
+				(int) $prayer->id
+			)
+		);
+
+		// Now somebody starts a conversation on it.
+		$wpdb->update(
+			Schema::table( 'placements' ),
+			array( 'status' => Schema::STATUS_TRIAL_SERVE ),
+			array( 'submission_id' => $id, 'team_id' => (int) $prayer->id ),
+			array( '%s' ),
+			array( '%d', '%d' )
+		);
+
+		$a->same( 0, count( $stale_here() ), 'and is dropped from the list the moment it is not untouched' );
+
+		// retire() re-checks, so a list read minutes ago cannot cause harm.
+		$a->not( \Serve_Dashboard\Placements::retire( $placement_id ), 'and retiring it directly is refused' );
+
+		$a->ok(
+			null !== $wpdb->get_row(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					'SELECT id FROM ' . Schema::table( 'placements' ) . ' WHERE id = %d',
+					$placement_id
+				)
+			),
+			'so the row is still there'
+		);
+	}
+);
+
+test(
+	'reconciling lists a drifted placement and withdraws it once',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$id = $f->submission(
+			array(
+				'suggested_teams' => array( 'administration' ),
+				'profile'         => array(
+					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
+					'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				),
+			)
+		);
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		$production = \Serve_Dashboard\Teams::get_by_slug( 'production' );
+		\Serve_Dashboard\Placements::ensure( $id, (int) $production->id );
+
+		$mine = static fn() => array_values(
+			array_filter(
+				\Serve_Dashboard\Placements::stale_rows(),
+				static fn( $r ) => $r['submission_id'] === $id
+			)
+		);
+
+		$listed = $mine();
+		$a->same( 1, count( $listed ), 'the drifted team is listed' );
+		$a->same( 'production', $listed[0]['team_slug'], 'by name' );
+
+		$a->ok( \Serve_Dashboard\Placements::retire( (int) $listed[0]['placement_id'] ), 'and is withdrawn' );
+		$a->same( 0, count( $mine() ), 'leaving nothing to do a second time' );
+
+		// A leader of that team can no longer open them.
+		$leader = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		$f->lead_team( $leader, 'production' );
+		wp_set_current_user( $leader );
+
+		$a->not( \Serve_Dashboard\Roles::can_view_submission( $id ), 'which is the point: the access is gone' );
+	}
+);
+
+test(
+	'every mark of a conversation protects a placement, not just its status',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * A leader can claim somebody before any stage has moved -- that is what
+		 * the claim/release lock is for. Judging "untouched" on status alone
+		 * would withdraw a placement from a leader who has taken responsibility
+		 * for the conversation and simply not logged anything yet, which is the
+		 * worst version of this whole feature.
+		 *
+		 * Each marker is checked on its own, because a guard that covers three
+		 * of the four reads as working right up until the fourth one matters.
+		 */
+		global $wpdb;
+
+		$production = \Serve_Dashboard\Teams::get_by_slug( 'production' );
+
+		$markers = array(
+			'a leader has claimed it'    => array( 'leader_user_id' => 99999 ),
+			'a follow-up date is set'    => array( 'next_action_at' => '2026-12-01' ),
+			'a reason has been recorded' => array( 'decline_reason' => 'not this season' ),
+			'somebody has left a note'   => array( 'notes' => 'spoke after the service' ),
+		);
+
+		foreach ( $markers as $label => $column ) {
+			$id = $f->submission(
+				array(
+					'suggested_teams' => array( 'administration' ),
+					'profile'         => array(
+						'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
+						'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+					),
+				)
+			);
+			$wpdb->update(
+				Schema::table( 'submissions' ),
+				array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+				array( 'id' => $id ),
+				array( '%s', '%s' ),
+				array( '%d' )
+			);
+
+			\Serve_Dashboard\Placements::ensure( $id, (int) $production->id );
+
+			$listed = static fn() => array_values(
+				array_filter(
+					\Serve_Dashboard\Placements::stale_rows(),
+					static fn( $r ) => $r['submission_id'] === $id
+				)
+			);
+
+			$a->same( 1, count( $listed() ), "{$label}: listed while it is genuinely untouched" );
+
+			$placement_id = (int) $listed()[0]['placement_id'];
+
+			$wpdb->update(
+				Schema::table( 'placements' ),
+				$column,
+				array( 'id' => $placement_id ),
+				array( is_int( reset( $column ) ) ? '%d' : '%s' ),
+				array( '%d' )
+			);
+
+			$a->same( 0, count( $listed() ), "{$label}: and dropped from the list once it is not" );
+		}
+	}
+);
