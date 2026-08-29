@@ -162,29 +162,246 @@ final class Placements {
 	}
 
 	/**
+	 * Withdraw the catch-all once another team has taken the person on.
+	 *
+	 * The catch-all exists so that one team owns the *first conversation* with
+	 * somebody nothing matched. When that conversation ends with a trial or a
+	 * placement on a different team, the assignment is finished: continuing to
+	 * expose the profile to a team the person is not joining is the same
+	 * over-sharing that restricting suggestions to strong matches was about.
+	 *
+	 * Deleted rather than marked closed. There is no status that means "handed
+	 * on" -- `declined` says the person decided against it, which is a claim
+	 * about them and would be untrue -- and inventing one would put a new word
+	 * into a pipeline vocabulary the metrics, filters and funnel all read.
+	 *
+	 * Only ever a catch-all row still sitting at `submitted`. If that team has
+	 * begun something of their own with the person, it is not a catch-all any
+	 * more and is left alone.
+	 *
+	 * @param int $team_id The team the person was just moved onto.
+	 * @return int How many were withdrawn.
+	 */
+	public static function retire_catchall( int $submission_id, int $team_id ): int {
+		global $wpdb;
+
+		$table = Schema::table( 'placements' );
+
+		$rows = (array) $wpdb->get_results(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				"SELECT id, team_id FROM {$table}
+				 WHERE submission_id = %d AND team_id <> %d AND source = %s AND status = %s",
+				$submission_id,
+				$team_id,
+				self::SOURCE_CATCHALL,
+				Schema::STATUS_SUBMITTED
+			)
+		);
+
+		$retired = 0;
+
+		foreach ( $rows as $row ) {
+			if ( ! $wpdb->delete( $table, array( 'id' => (int) $row->id ), array( '%d' ) ) ) {
+				continue;
+			}
+
+			++$retired;
+
+			Audit::log(
+				Audit::ACTION_PLACEMENT_RETIRED,
+				'submission',
+				$submission_id,
+				array(
+					'team_id' => (int) $row->team_id,
+					'reason'  => 'catch-all completed: placed with another team',
+				)
+			);
+		}
+
+		return $retired;
+	}
+
+	/**
+	 * Placements that grant access the ranking would no longer give.
+	 *
+	 * Strong-only suggestions apply from the moment they shipped, so everybody
+	 * already in the system keeps rows built under the old rules. Those rows are
+	 * what decide who may read a profile, so the drift is an access question
+	 * rather than a tidiness one.
+	 *
+	 * Two things are never listed, and the distinction is the whole safety of
+	 * this:
+	 *
+	 * - **A placement anything has happened on.** Status past `submitted`, or
+	 *   an owner, a follow-up date, a decline reason or notes against it. Those
+	 *   are relationships. Somebody halfway through a trial serve must not lose
+	 *   the leader walking them through it because the vocabulary moved.
+	 * - **A catch-all row**, which was never a claim of fit and is not drift.
+	 *
+	 * Reads only. Nothing here deletes anything.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function stale_rows(): array {
+		global $wpdb;
+
+		$submissions = Schema::table( 'submissions' );
+		$placements  = Schema::table( 'placements' );
+		$teams       = Schema::table( 'teams' );
+
+		$rows = (array) $wpdb->get_results(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names are not user input.
+				"SELECT p.id, p.submission_id, p.team_id, t.slug AS team_slug, t.name AS team_name,
+				        s.display_name, s.profile_json
+				 FROM {$placements} p
+				 INNER JOIN {$teams} t ON t.id = p.team_id
+				 INNER JOIN {$submissions} s ON s.id = p.submission_id
+				 WHERE p.status = %s
+				   AND p.source = %s
+				   AND ( p.leader_user_id IS NULL OR p.leader_user_id = 0 )
+				   AND p.next_action_at IS NULL
+				   AND p.decline_reason = ''
+				   AND TRIM( p.notes ) = ''
+				 ORDER BY s.id, t.slug",
+				Schema::STATUS_SUBMITTED,
+				self::SOURCE_MATCH
+			)
+		);
+
+		$stale   = array();
+		$ranking = array();
+
+		foreach ( $rows as $row ) {
+			$submission_id = (int) $row->submission_id;
+
+			// One ranking per person, not one per row.
+			if ( ! isset( $ranking[ $submission_id ] ) ) {
+				$profile                   = json_decode( (string) $row->profile_json, true );
+				$ranking[ $submission_id ] = array_column(
+					Matching::suggestions_for_profile( is_array( $profile ) ? $profile : array() ),
+					'team_slug'
+				);
+			}
+
+			if ( in_array( (string) $row->team_slug, $ranking[ $submission_id ], true ) ) {
+				continue;
+			}
+
+			$stale[] = array(
+				'placement_id'  => (int) $row->id,
+				'submission_id' => $submission_id,
+				'person'        => (string) $row->display_name,
+				'team_id'       => (int) $row->team_id,
+				'team_slug'     => (string) $row->team_slug,
+				'team_name'     => (string) $row->team_name,
+				'would_suggest' => $ranking[ $submission_id ],
+			);
+		}
+
+		return $stale;
+	}
+
+	/**
+	 * Withdraw one of those rows.
+	 *
+	 * Deliberately takes a single id rather than doing the sweep itself, so the
+	 * caller has to have looked at the list. Audited, because this removes
+	 * somebody's access to a profile and "who could see this, and when did that
+	 * change" is a question worth being able to answer later.
+	 */
+	public static function retire( int $placement_id ): bool {
+		global $wpdb;
+
+		$table = Schema::table( 'placements' );
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				"SELECT submission_id, team_id, status, source FROM {$table} WHERE id = %d",
+				$placement_id
+			)
+		);
+
+		// Re-checked here rather than trusted from the list, because the list
+		// may have been read minutes ago and a conversation may have started
+		// since.
+		if ( ! $row
+			|| Schema::STATUS_SUBMITTED !== $row->status
+			|| self::SOURCE_MATCH !== $row->source ) {
+			return false;
+		}
+
+		$deleted = (bool) $wpdb->delete( $table, array( 'id' => $placement_id ), array( '%d' ) );
+
+		if ( $deleted ) {
+			Audit::log(
+				Audit::ACTION_PLACEMENT_RETIRED,
+				'submission',
+				(int) $row->submission_id,
+				array(
+					'team_id' => (int) $row->team_id,
+					'reason'  => 'no longer a suggested team',
+				)
+			);
+		}
+
+		return $deleted;
+	}
+
+	/**
 	 * Submissions no team matched, among those the caller may see.
 	 *
 	 * Counted from `suggested_teams` rather than from placement rows, because a
 	 * catch-all row exists precisely for these people and would hide them.
+	 *
+	 * Scoped the same way everything else is. This returned zero for anybody
+	 * with a team scope, which was wrong the moment the catch-all existed: the
+	 * leader who has been handed these people is exactly the person who needs to
+	 * know how many there are, and they were the one person the count refused to
+	 * tell.
 	 */
 	public static function unmatched_count(): int {
 		global $wpdb;
 
 		$submissions = Schema::table( 'submissions' );
+		$placements  = Schema::table( 'placements' );
 		$team_ids    = Roles::visible_team_ids();
 
-		// A leader scoped to teams sees people through placements, and an
-		// unmatched person has no matched placement anywhere. The count is
-		// meaningful only for somebody who sees everyone.
-		if ( null !== $team_ids ) {
+		$unmatched = "s.verified_at IS NOT NULL
+			AND ( s.suggested_teams = '[]' OR s.suggested_teams = '' OR s.suggested_teams IS NULL )";
+
+		// Sees everyone: every unmatched person counts.
+		if ( null === $team_ids ) {
+			return (int) $wpdb->get_var(
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user input in this statement.
+				"SELECT COUNT(*) FROM {$submissions} s WHERE {$unmatched}"
+			);
+		}
+
+		// Sees nothing: an unassigned leader has no scope at all.
+		if ( empty( $team_ids ) ) {
 			return 0;
 		}
 
+		/*
+		 * Scoped to teams: the ones this leader has actually been given, which
+		 * is a catch-all row on a team they lead. A matched placement cannot
+		 * qualify, because an unmatched person has none by definition.
+		 */
+		$in = implode( ',', array_fill( 0, count( $team_ids ), '%d' ) );
+
 		return (int) $wpdb->get_var(
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user input in this statement.
-			"SELECT COUNT(*) FROM {$submissions}
-			 WHERE verified_at IS NOT NULL
-			   AND ( suggested_teams = '[]' OR suggested_teams = '' OR suggested_teams IS NULL )"
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names and placeholders are assembled above.
+				"SELECT COUNT(DISTINCT s.id) FROM {$submissions} s
+				 INNER JOIN {$placements} p ON p.submission_id = s.id
+				 WHERE {$unmatched}
+				   AND p.source = %s
+				   AND p.team_id IN ({$in})",
+				array_merge( array( self::SOURCE_CATCHALL ), array_map( 'intval', $team_ids ) )
+			)
 		);
 	}
 }

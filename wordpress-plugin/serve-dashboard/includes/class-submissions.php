@@ -450,6 +450,15 @@ final class Submissions {
 			 */
 			Placements::ensure( $id, $team_id );
 
+			/*
+			 * A trial or a placement on a real team completes whatever the
+			 * catch-all was assigned to do, so it stops holding the profile
+			 * open to a team the person is not joining.
+			 */
+			if ( Safeguarding::is_gated_status( $status ) ) {
+				Placements::retire_catchall( $id, $team_id );
+			}
+
 			$wpdb->update(
 				Schema::table( 'placements' ),
 				array(
