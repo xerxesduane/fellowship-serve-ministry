@@ -34,6 +34,18 @@ if [[ "$version" != "$constant" ]]; then
   exit 1
 fi
 
+# Without this the loop below runs `php -l` against a command that is not there,
+# every file fails, and the script reports a syntax error in all of them --
+# pointing at the code when the problem is the PATH. This runs on the church's
+# own Windows machine, where php is very often not on it, and go-live day is the
+# worst time to debug the wrong thing.
+if ! command -v php >/dev/null 2>&1; then
+  echo "php was not found on PATH, so the plugin cannot be checked before packing." >&2
+  echo "This is not a problem with the code. Install PHP, or add it to PATH:" >&2
+  echo "  Windows/XAMPP:  export PATH=\"/c/xampp/php:\$PATH\"" >&2
+  exit 2
+fi
+
 echo "Linting..."
 lint_failed=0
 while IFS= read -r file; do
