@@ -120,6 +120,49 @@ final class Fixtures {
 	}
 
 	/**
+	 * A production-shaped profile, built through the real taxonomy.
+	 *
+	 * Every one of the eighteen gifts is placed in exactly one bucket, which is
+	 * what the assessment guarantees: each question is required and offers three
+	 * answers. Anything not named is unlikely.
+	 *
+	 * Values are the display labels the browser writes, not ids, so a fixture
+	 * exercises the same normalisation a real submission does.
+	 *
+	 * This exists because the old fixtures put "Organization" in
+	 * spiritualGifts.likely. The assessment cannot emit that — it emits
+	 * "Administration" — and matching compared display strings, so an impossible
+	 * fixture was the only thing making the gift comparison look like it worked.
+	 * Anything hand-authored here can hide the same class of bug again, so build
+	 * profiles with this.
+	 *
+	 * @param string[]            $likely   Canonical gift ids.
+	 * @param string[]            $possible Canonical gift ids.
+	 * @param array<string,mixed> $extra    Other profile sections.
+	 * @return array<string,mixed>
+	 */
+	public static function gift_profile( array $likely, array $possible = array(), array $extra = array() ): array {
+		foreach ( array_merge( $likely, $possible ) as $id ) {
+			if ( ! \Serve_Dashboard\Gift_Taxonomy::is_gift( $id ) ) {
+				throw new Failure( "fixture asked for '$id', which is not one of the 18 assessed gifts" );
+			}
+		}
+
+		$unlikely = array_values( array_diff( \Serve_Dashboard\Gift_Taxonomy::ids(), $likely, $possible ) );
+
+		return array_merge(
+			array(
+				'spiritualGifts' => array(
+					'likely'   => \Serve_Dashboard\Gift_Taxonomy::labels( $likely ),
+					'possible' => \Serve_Dashboard\Gift_Taxonomy::labels( $possible ),
+					'unlikely' => \Serve_Dashboard\Gift_Taxonomy::labels( $unlikely ),
+				),
+			),
+			$extra
+		);
+	}
+
+	/**
 	 * @param array<string,mixed> $overrides
 	 */
 	public function submission( array $overrides = array() ): int {

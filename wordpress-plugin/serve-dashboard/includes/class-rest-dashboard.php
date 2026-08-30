@@ -115,7 +115,16 @@ final class Rest_Dashboard {
 								'gap'     => max( 0, (int) $team->target_headcount - (int) $team->current_headcount ),
 								'safeguarded' => (bool) (int) $team->requires_safeguarding,
 							),
-							'candidates' => Teams::candidates( (int) $request['id'] ),
+							/*
+							 * Discovery reads across the intake pool, so it
+							 * belongs to the SERVE-wide role. An ordinary
+							 * leader is told that plainly instead of being
+							 * handed an empty list that looks like "nobody
+							 * fits" — which is what the circular query used to
+							 * produce for them.
+							 */
+							'canDiscover' => Teams::can_discover_candidates(),
+							'candidates'  => Teams::candidates( (int) $request['id'] ),
 						)
 					);
 				},
@@ -569,7 +578,24 @@ final class Rest_Dashboard {
 				),
 				'shape'          => self::shape_dimensions( $profile, $submission ),
 				'redacted'       => ! empty( $profile['_redacted'] ),
+
+				/*
+				 * Three different questions, answered separately.
+				 *
+				 * `snapshot`   — what this person was told at the end of their
+				 *                journey. Fixed, and never recomputed.
+				 * `matches`    — what the matcher says today, from the evidence
+				 *                this caller is allowed to read.
+				 * `placements` — who has actually been assigned, by a human.
+				 *
+				 * They used to be one list, so "the software suggested this",
+				 * "the software would suggest this now" and "somebody decided
+				 * this" were indistinguishable — and only the third of those is
+				 * a reason anybody can see the profile.
+				 */
+				'snapshot'       => self::snapshot_for( $submission ),
 				'matches'        => Matching::for_submission( $submission, $profile ),
+				'drift'          => self::drift_note( $submission ),
 				/*
 				 * Sent once, not per match. Personality shapes how a person
 				 * serves rather than which team they belong on, so it sits
@@ -710,6 +736,58 @@ final class Rest_Dashboard {
 	}
 
 	/**
+	 * What the participant was shown, as stored.
+	 *
+	 * Never recomputed. A null column means the submission predates the record
+	 * being kept, and that is reported as exactly that: rows created under the
+	 * old string-comparison matcher were produced by rules that could not see
+	 * ten of the ministry table's terms, so recalculating them today and
+	 * presenting the result as "what they saw" would assert something that was
+	 * never true of anybody.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	private static function snapshot_for( object $submission ): ?array {
+		$raw = json_decode( (string) ( $submission->match_snapshot ?? '' ), true );
+
+		if ( ! is_array( $raw ) || ! $raw ) {
+			return null;
+		}
+
+		return $raw;
+	}
+
+	/**
+	 * Whether the rules have moved since this person was told their result.
+	 *
+	 * A short note rather than a silent recalculation. If the mapping or the
+	 * contract has been revised, the historical claim stays as it was and the
+	 * leader is told the current analysis below it was produced under different
+	 * rules — which is the difference between explaining a result and quietly
+	 * replacing it.
+	 */
+	private static function drift_note( object $submission ): string {
+		$stored = (string) ( $submission->match_version ?? '' );
+
+		if ( '' === $stored ) {
+			return __( 'This profile predates the record of what the participant was shown, so only the current analysis is available.', 'serve-dashboard' );
+		}
+
+		$current = Matching_Contract::VERSION . '/' . Gift_Crosswalk::VERSION;
+
+		if ( $stored === $current ) {
+			return '';
+		}
+
+		return sprintf(
+			/* translators: 1: stored version, 2: current version. */
+			__( 'The matching rules have changed since this person saw their result (%1$s, now %2$s). What they were shown is unchanged above; the current analysis below may rank teams differently.', 'serve-dashboard' ),
+			$stored,
+			$current
+		);
+	}
+
+	/**
 	 * Active teams the current user may assign somebody to.
 	 *
 	 * The same rule Roles::can_manage_team() enforces on the way in, so the UI
@@ -778,30 +856,36 @@ final class Rest_Dashboard {
 				 * title-casing a slug.
 				 */
 				/*
-				 * Through the same redaction the drawer uses, not a raw decode.
+				 * Read from the stored snapshot. No profile is decoded here at
+				 * all, and that is the fix rather than a side effect.
 				 *
-				 * json_decode( $row->profile_json ) read the whole profile
-				 * regardless of who was asking, so a team name in this column
-				 * could be derived from a painful Experience the same leader is
-				 * not permitted to read in the panel underneath it. A derived
-				 * name is still an inference from that evidence, and redaction
-				 * that only covers the place the text is displayed is not
-				 * redaction.
+				 * This called json_decode( $row->profile_json ) and ranked the
+				 * whole thing, regardless of who was asking. So a team name in
+				 * this column could be derived from a painful Experience that
+				 * the same leader is forbidden to read in the drawer — and a
+				 * derived name is still an inference from that evidence.
+				 * Redaction that only covers the place the text is displayed is
+				 * not redaction.
 				 *
-				 * It also made the two disagree: the drawer ranked a redacted
-				 * profile and the list ranked the full one, so the same person
-				 * could carry a team here that the panel could not explain.
-				 * Same input, same ranking, same answer.
+				 * It also made the two views disagree: the drawer ranked a
+				 * redacted profile and the list ranked the full one, so one
+				 * person could carry a team here that the panel could not
+				 * explain.
 				 *
-				 * Logging is off because a list is not a sensitive view: it
-				 * displays no Experience, and one audit row per person per page
-				 * refresh would bury the entries that mean somebody actually
-				 * opened one.
+				 * The snapshot holds team names, tiers and gift labels and
+				 * nothing sensitive, by construction. Every caller who may see
+				 * the row may see all of it, the list and the drawer are
+				 * reading the same record, and a list request no longer decodes
+				 * sixteen profiles to render a column.
 				 */
-				$suggested = array_column(
-					Matching::suggestions_for_profile( Submissions::profile( $row, false ) ),
-					'team_name'
-				);
+				$snapshot  = json_decode( (string) ( $row->match_snapshot ?? '' ), true );
+				$snapshot  = is_array( $snapshot ) ? $snapshot : array();
+				$suggested = array_column( (array) ( $snapshot['teams'] ?? array() ), 'team_name' );
+
+				// Null snapshot means the row predates the record being kept,
+				// which is not the same as "nothing matched" and must not be
+				// shown as it.
+				$has_snapshot = array() !== $snapshot;
 
 				return array(
 					'id'             => (int) $row->id,
@@ -810,12 +894,14 @@ final class Rest_Dashboard {
 					'gifts'          => array_slice( Submissions::decode_list( $row->gifts_likely ), 0, 3 ),
 					'languages'      => Submissions::decode_list( $row->languages ),
 					'suggestedTeams' => $suggested,
+					'hasSnapshot'    => $has_snapshot,
 
 					/*
-					 * No team matched, by the same ranking the column above
+					 * No team matched, from the same record the column above
 					 * shows, so the flag and the column can never disagree.
+					 * A row with no snapshot is unknown rather than unmatched.
 					 */
-					'unmatched'      => empty( $suggested ),
+					'unmatched'      => $has_snapshot && empty( $suggested ),
 					'status'         => $row->status,
 					'statusLabel'    => $labels[ $row->status ] ?? $row->status,
 					'nextActionAt'   => $row->next_action_at,

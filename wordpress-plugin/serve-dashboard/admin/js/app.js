@@ -23,6 +23,21 @@ function esc(value) {
 
 const $ = (name, scope = document) => scope.querySelector(`[data-serve="${name}"]`);
 
+/*
+ * Tier names as the participant saw them.
+ *
+ * A stored snapshot keeps the tier it was written with, not a label, so that
+ * renaming a tier later cannot rewrite what somebody was told. The wording is
+ * "gift match" rather than "S.H.A.P.E. match" because the supplied ministry
+ * table validates gift relationships and nothing else.
+ */
+const TIER_LABELS = {
+	strong: 'Strong gift match',
+	suggested: 'Suggested team to explore',
+	explore: 'Explore with an advisor',
+	none: 'No clear match yet',
+};
+
 /**
  * Build a REST URL that survives both permalink styles.
  *
@@ -227,7 +242,11 @@ function personRow(person) {
 			<span class="serve-row__name">${esc(person.name)}</span>
 			<span class="serve-row__meta">${esc(person.gifts.join(', ') || '—')}${flags}${dueInline}</span>
 		</span>
-		<span class="serve-row__col serve-row__col--teams">${person.suggestedTeams.length ? esc(person.suggestedTeams.join(', ')) : (person.unmatched ? '<span class="serve-muted-cell">none matched</span>' : '—')}</span>
+		<span class="serve-row__col serve-row__col--teams">${person.suggestedTeams.length
+			? esc(person.suggestedTeams.join(', '))
+			: (person.unmatched
+				? '<span class="serve-muted-cell">none matched</span>'
+				: '<span class="serve-muted-cell">not recorded</span>')}</span>
 		<span class="serve-row__col serve-row__col--due">${due}</span>
 		<span class="serve-row__aside">
 			${stageIndicator(person.status, person.statusLabel)}
@@ -252,7 +271,7 @@ function rowsHead() {
 	return `<div class="serve-rows__head" aria-hidden="true">
 		<span></span>
 		<span>Name and gifts</span>
-		<span class="serve-row__col serve-row__col--teams">Suggested teams</span>
+		<span class="serve-row__col serve-row__col--teams">Teams they were shown</span>
 		<span class="serve-row__col serve-row__col--due">Next step due</span>
 		<span class="serve-rows__head-aside">Stage</span>
 	</div>`;
@@ -577,6 +596,34 @@ const drawer = {
 		 * and taking the eye away from the reasons, which are the part a leader
 		 * has to actually read. The claim is made once, in the heading above.
 		 */
+		/*
+		 * What the participant was actually told, read from storage.
+		 *
+		 * Deliberately not recomputed. A profile submitted under an older
+		 * mapping is left saying what it said; the panel below shows how the
+		 * same answers rank now, and the drift note explains the difference
+		 * rather than letting today's answer masquerade as history.
+		 */
+		const snap = person.snapshot;
+		const snapshot = !snap
+			? '<p class="serve-note serve-note--muted">This profile predates the record of what the participant was shown, so only the current analysis below is available for them.</p>'
+			: (snap.teams && snap.teams.length
+				? `${snap.teams.map((team) => `
+					<div class="serve-match">
+						<div class="serve-match__head">
+							<span class="serve-match__name">${esc(team.team_name)}</span>
+							<span class="serve-flag">${esc(TIER_LABELS[team.tier] || team.tier)}</span>
+							${team.co_match ? '<span class="serve-flag">equally well supported</span>' : ''}
+						</div>
+						${team.gifts && team.gifts.length
+							? `<p class="serve-match__context">Their likely gifts of ${esc(team.gifts.join(', '))} aligned with this team.</p>`
+							: ''}
+					</div>`).join('')}
+					${snap.unmapped_likely && snap.unmapped_likely.length
+						? `<p class="serve-card__hint">Not counted: ${esc(snap.unmapped_likely.join(', '))}. The ministry table does not map ${snap.unmapped_likely.length === 1 ? 'that gift' : 'those gifts'} yet, and ${snap.unmapped_likely.length === 1 ? 'it was' : 'they were'} not treated as anything else.</p>`
+						: ''}`
+				: `<p class="serve-note serve-note--muted">${esc(snap.caveat || 'No team stood out clearly, and they were told so. That is a real result: the conversation starts open.')}</p>`);
+
 		const matches = person.matches.length
 			? person.matches.map((match) => `
 				<div class="serve-match">
@@ -853,8 +900,15 @@ const drawer = {
 			</div>
 
 			<div class="serve-section">
-				<h3>Suggested teams</h3>
-				<p class="serve-card__hint">Every one of these is a strong match, so the list is short by design and sometimes empty. A suggestion is still a starting point: the leader confirms, and the person chooses. Anything marked <em>not on their profile</em> came from their wider answers, so they have not seen it yet.</p>
+				<h3>What this person was shown</h3>
+				<p class="serve-card__hint">Fixed at the moment they finished their journey, and never recalculated. This is what they saw and what their downloaded profile says, so it is what they will refer to in conversation.</p>
+				${snapshot}
+			</div>
+
+			<div class="serve-section">
+				<h3>Current analysis</h3>
+				<p class="serve-card__hint">What the matcher makes of their answers today, from the evidence you are permitted to read. This is not a routing decision and gives nobody access: a team appearing here has not been told about this person. Anything marked <em>not on their profile</em> came from their wider answers, so they have not seen it either.</p>
+				${person.drift ? `<p class="serve-note serve-note--warn">${esc(person.drift)}</p>` : ''}
 				${person.matches.find((m) => m.caveat)
 					? `<p class="serve-note serve-note--warn">${esc(person.matches.find((m) => m.caveat).caveat)}</p>`
 					: ''}
@@ -997,6 +1051,24 @@ const matching = {
 					? `${data.team.current} of ${data.team.target} places filled${data.team.gap > 0 ? ` — ${data.team.gap} still needed` : ''}`
 					: 'No target headcount set for this team yet.';
 
+				/*
+				 * "You cannot see this" and "there is nobody" are different
+				 * answers and used to look identical. Discovery reads across
+				 * everyone in the intake queue, so it is a SERVE-wide view; a
+				 * ministry leader previously got an empty list, because the
+				 * query behind it was scoped to people already placed on their
+				 * own teams and could only ever return those.
+				 */
+				if (!data.canDiscover) {
+					container.innerHTML = `<p class="serve-card__hint">${esc(gapLine)}</p>` + emptyState({
+						title: 'Ask the SERVE team',
+						body: 'Finding candidates means reading profiles across the whole intake queue, which the SERVE and pastoral team does. They will bring you people to talk to — you are not missing a list you should be able to see.',
+						iconName: 'target'
+					});
+					announce('Candidate discovery is handled by the SERVE team');
+					return;
+				}
+
 				if (!data.candidates.length) {
 					container.innerHTML = `<p class="serve-card__hint">${esc(gapLine)}</p>` + emptyState({
 						title: 'Nobody to suggest yet',
@@ -1022,15 +1094,19 @@ const matching = {
 							<span class="serve-row__body">
 								<span class="serve-row__name">${esc(c.name)}</span>
 								<span class="serve-row__meta">
-									${esc(c.match.reasons.length ? c.match.reasons[0].label : 'No specific overlap found')}
+									${esc(c.match.reasons.length
+										? c.match.reasons[0].label
+										: (c.match.context && c.match.context.length
+											? c.match.context[0].label
+											: 'No specific overlap found'))}
 									${c.needsCheck ? '<span class="serve-flag serve-flag--check">check required</span>' : ''}
-									${c.alreadySuggested ? '' : '<span class="serve-flag serve-flag--stale">not auto-suggested</span>'}
+									${c.alreadySuggested ? '' : '<span class="serve-flag serve-flag--stale">not on their profile</span>'}
 								</span>
 							</span>
 							<span class="serve-row__col serve-row__col--due">${esc(c.statusLabel)}</span>
 							<span class="serve-row__aside">
-								<span class="serve-badge serve-badge--${c.match.strength === 'strong' ? 'ready' : 'progress'}">
-									<span class="serve-badge__glyph" aria-hidden="true">${c.match.strength === 'strong' ? '●' : '◐'}</span>${esc(c.match.strength_label)}
+								<span class="serve-badge serve-badge--${c.match.tier === 'strong' ? 'ready' : 'progress'}">
+									<span class="serve-badge__glyph" aria-hidden="true">${c.match.tier === 'strong' ? '●' : '◐'}</span>${esc(TIER_LABELS[c.match.tier] || c.match.tier_label)}
 								</span>
 							</span>
 						</button>`).join('')}</div>`;

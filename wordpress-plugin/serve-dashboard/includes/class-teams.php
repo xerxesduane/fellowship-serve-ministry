@@ -430,18 +430,53 @@ final class Teams {
 		}
 
 		/*
-		 * Pull a wide slice and judge each one in PHP. Heart, abilities and
-		 * experience live inside profile_json, so there is no cheap SQL
-		 * pre-filter that does not simply reintroduce the gifts-only narrowing
-		 * this is here to remove — every row in the slice therefore gets its
-		 * profile decoded. That is a couple of hundred json_decode calls per
-		 * team view, which is nothing at the scale one church produces and
-		 * would want revisiting long before it became one.
+		 * Discovery is a SERVE-wide view, and only a SERVE-wide role gets it.
+		 *
+		 * This ran for any leader, and was circular for most of them:
+		 * Submissions::query() scopes an ordinary leader to people who already
+		 * have a placement row on one of their teams, so "find me candidates
+		 * for my team" could only ever return people already assigned to it.
+		 * The tests that appeared to demonstrate otherwise all ran as a pastor.
+		 *
+		 * The circularity is not fixable by widening the query. Answering it
+		 * properly means reading the profiles of people who have not been
+		 * assigned to this leader, which is exactly the disclosure the whole
+		 * routing model exists to require a human decision for. So the feature
+		 * belongs to the central intake role, and a ministry leader gets an
+		 * explicit "ask SERVE" state rather than a list that silently means
+		 * something else.
+		 *
+		 * can_discover_candidates() is the same question the REST layer asks,
+		 * so the screen and the endpoint cannot disagree.
+		 */
+		if ( ! self::can_discover_candidates() ) {
+			return array();
+		}
+
+		/*
+		 * Ordered the way this list is ordered, then judged in PHP.
+		 *
+		 * It used to take the first 200 rows by next_action_at — a follow-up
+		 * date that says nothing about fit — filter them, then re-sort the
+		 * survivors by strength of evidence. So the best candidate for a team
+		 * could be excluded before the comparator ever saw them, purely for
+		 * having a distant follow-up date, and no amount of paging would
+		 * surface them. Every verified submission is considered now, and the
+		 * caller is told when the ceiling was hit rather than being handed a
+		 * silently truncated answer.
+		 *
+		 * Heart, abilities and experience live inside profile_json, so there is
+		 * no cheap SQL pre-filter that does not reintroduce the gifts-only
+		 * narrowing this is here to remove — every row therefore gets its
+		 * profile decoded. That is a few hundred json_decode calls per team
+		 * view, which is nothing at the scale one church produces and would
+		 * want revisiting long before it became one.
 		 */
 		$rows = Submissions::query(
 			array(
 				'include_snoozed' => true,
-				'limit'           => 200,
+				'orderby'         => 'submitted_at',
+				'limit'           => self::CANDIDATE_POOL,
 			)
 		);
 
@@ -459,10 +494,20 @@ final class Teams {
 			$profile = Submissions::profile( $row, false );
 			$match   = Matching::explain( $team, $profile );
 
-			// Nothing to say about them and nobody suggested them: not a
-			// candidate, and padding the list with names would make the list
-			// worth less than an empty one.
-			if ( ! $already && ! $match['reasons'] ) {
+			/*
+			 * Nothing to say about them and nobody suggested them: not a
+			 * candidate, and padding the list with names would make the list
+			 * worth less than an empty one.
+			 *
+			 * Context counts here where it does not count towards a tier. A
+			 * passion for Elementary Children is a real reason for a pastor to
+			 * look at somebody for Fellowship Kids, and dropping it would
+			 * reintroduce the gifts-only narrowing this view exists to remove.
+			 * It is safe here and unsafe in a tier for the same reason: this
+			 * list is read by somebody who can already see every profile, and
+			 * appearing on it grants nobody anything.
+			 */
+			if ( ! $already && ! $match['reasons'] && ! $match['context'] ) {
 				continue;
 			}
 
@@ -479,22 +524,56 @@ final class Teams {
 			);
 		}
 
+		/*
+		 * The same order the person-first ranking uses, so a leader reading
+		 * both views is not shown two different accounts of the same evidence.
+		 * Tier, then coverage, then selectivity, then the raw hit count, with
+		 * the name last for display determinism only.
+		 */
 		usort(
 			$out,
 			static function ( array $a, array $b ) {
-				$order = array( 'strong' => 0, 'possible' => 1, 'unclear' => 2 );
-				$sa    = $order[ $a['match']['strength'] ] ?? 3;
-				$sb    = $order[ $b['match']['strength'] ] ?? 3;
+				$ma = $a['match'];
+				$mb = $b['match'];
 
-				if ( $sa !== $sb ) {
-					return $sa <=> $sb;
+				$ta = Matching_Contract::tier_rank( (string) $ma['tier'] );
+				$tb = Matching_Contract::tier_rank( (string) $mb['tier'] );
+
+				if ( $ta !== $tb ) {
+					return $ta <=> $tb;
 				}
 
-				return $b['match']['selectivity'] <=> $a['match']['selectivity'];
+				foreach ( array( 'team_coverage', 'selectivity', 'likely_hit_count' ) as $key ) {
+					if ( $ma['evidence'][ $key ] !== $mb['evidence'][ $key ] ) {
+						return $mb['evidence'][ $key ] <=> $ma['evidence'][ $key ];
+					}
+				}
+
+				return strcmp( (string) $a['name'], (string) $b['name'] );
 			}
 		);
 
 		return array_slice( $out, 0, $limit );
+	}
+
+	/**
+	 * How many submissions the candidate view considers.
+	 *
+	 * A ceiling rather than a page: filtering a pre-truncated slice with one
+	 * comparator and then re-sorting it with another is how the best candidate
+	 * gets dropped before anything looks at them. Sized so a church would have
+	 * to grow a great deal before it bound, and reported when it does.
+	 */
+	private const CANDIDATE_POOL = 2000;
+
+	/**
+	 * Whether the current user may discover candidates across the intake pool.
+	 *
+	 * The all-teams capability, not merely dashboard access. Asked here so the
+	 * screen, the REST endpoint and the tests share one answer.
+	 */
+	public static function can_discover_candidates(): bool {
+		return current_user_can( Roles::CAP_VIEW_ALL );
 	}
 
 	/**

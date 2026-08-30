@@ -32,6 +32,22 @@ final class Submissions {
 		$profile  = $payload['profile'];
 		$suggested = $payload['suggested_teams'];
 
+		/*
+		 * What this person was shown, fixed at the moment they were shown it.
+		 *
+		 * Calculated here from the sanitised profile rather than accepted from
+		 * the browser: a client-supplied snapshot would be a second answer to
+		 * the same question, and one the client could choose. Carries only
+		 * non-sensitive reasons — team, tier, the gift labels that justified it,
+		 * and the arithmetic — because this is read in more places than the
+		 * profile is and must not become a less-guarded copy of it.
+		 *
+		 * Stored separately from the live matcher on purpose. When the mapping
+		 * or the rules move, the dashboard shows the difference as drift rather
+		 * than rewriting what the participant was originally told.
+		 */
+		$snapshot = Matching::participant_match_snapshot( $profile );
+
 		$inserted = $wpdb->insert(
 			Schema::table( 'submissions' ),
 			array(
@@ -45,12 +61,14 @@ final class Submissions {
 				'languages'           => wp_json_encode( $payload['languages'] ) ?: '[]',
 				'suggested_teams'     => wp_json_encode( $suggested ) ?: '[]',
 				'profile_json'        => wp_json_encode( $profile ) ?: '{}',
+				'match_snapshot'      => wp_json_encode( $snapshot ) ?: '{}',
+				'match_version'       => Matching_Contract::VERSION . '/' . Gift_Crosswalk::VERSION,
 				'safeguarding_status' => Safeguarding::initial_status( $suggested ),
 				'next_action_at'      => gmdate( 'Y-m-d', strtotime( '+3 days' ) ),
 				'submitted_at'        => $now,
 				'updated_at'          => $now,
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+			array( '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
 		);
 
 		if ( ! $inserted ) {

@@ -372,7 +372,25 @@ final class Placements {
 		foreach ( $rows as $row ) {
 			$submission_id = (int) $row->submission_id;
 
-			// One ranking per person, not one per row.
+			/*
+			 * One ranking per person, not one per row.
+			 *
+			 * This is the report-only review path for legacy `match` rows —
+			 * placements created back when a ranking was allowed to grant a
+			 * ministry leader access. Nothing creates them any more, and
+			 * nothing here deletes one: it lists them for a human to decide
+			 * about, which is the only safe way to change who can see whom.
+			 *
+			 * The raw decode is deliberate and safe in this one place. It runs
+			 * from the reconciliation tool under an explicit capability check,
+			 * never from a request, and its output is team slugs for comparison
+			 * rather than anything shown to a scoped leader.
+			 *
+			 * Legacy profiles were written before gift ids were carried, so
+			 * most now fail partition validation and rank nothing at all. That
+			 * is reported honestly — the row is listed for review with its
+			 * reason — rather than being read as "the ranking changed its mind".
+			 */
 			if ( ! isset( $ranking[ $submission_id ] ) ) {
 				$profile                   = json_decode( (string) $row->profile_json, true );
 				$ranking[ $submission_id ] = array_column(
