@@ -17,6 +17,10 @@ Built for a dedicated WordPress install at `serve.fellowshipdubai.com`.
 
 ```
 wordpress-plugin/serve-dashboard/   the entire product, one deployable plugin
+docker-compose.yml                  a throwaway WordPress at localhost/serve
+docker/                             the two config files that stack needs
+tools/dev-up.ps1                    bring it up, Windows
+tools/dev-up.sh                     bring it up, macOS and Linux
 tools/build-release.sh              produces the installable zip
 tools/run-tests.php                 the plugin test runner
 tools/run-unit-tests.php            the matching arithmetic, without WordPress
@@ -24,6 +28,7 @@ tools/deploy-local.ps1              install into a local WordPress, backup first
 tools/run-js-tests.mjs              the assessment test runner
 tests/                              what must never quietly regress
 tests/js/                           the same, for the assessment JavaScript
+docs/local-docker.md                running the whole thing on your own machine
 docs/leader-guide.md                for the ministry leaders who use it
 docs/deployment-runbook.md          taking it live, in order
 docs/planning-center-prepare.md     field ownership, before any integration
@@ -60,6 +65,9 @@ before deleting anything: both implementations carried the same 73 option ids,
 ```bash
 SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
 ```
+
+No WordPress on the machine? The local Docker stack has one, and PHP:
+`docker compose run --rm -e SERVE_TEST_OK=1 cli php /repo/tools/run-tests.php --wp=/var/www/html/serve`.
 
 **Point this at a scratch install, never at one holding real profiles.** It
 creates submissions, users and placements and deletes them again. Three guards
@@ -234,27 +242,51 @@ profile. If no consent page exists, no share action is offered at all.
 
 ## Local development
 
-The plugin needs a WordPress install with MySQL — XAMPP, Laragon, or any LAMP
-stack. There is nothing to compile:
+One command, and the whole thing is at **http://localhost/serve** — assessment,
+dashboard, both public pages, and a mailbox catching the confirmation emails.
+Docker Desktop is the only requirement; no PHP, MySQL or WordPress on the
+machine itself.
+
+```powershell
+.\tools\dev-up.ps1 -Seed      # Windows
+```
+
+```bash
+tools/dev-up.sh --seed        # macOS, Linux, Git Bash
+```
+
+`-Seed` adds five invented profiles and capacity for five teams, because an
+empty dashboard shows very little. Every name in it is fictional, and it is the
+same `dev/seed-demo.php` the release zip excludes.
+
+The plugin folder is mounted rather than copied, so an edit is live on the next
+request. Full details — the tests, reading the captured email, moving off a busy
+port 80 — are in [`docs/local-docker.md`](docs/local-docker.md).
+
+The Mailpit container is worth the trouble it saves. A submission stays
+invisible to leaders until the person clicks the link in their confirmation
+email, so an install with no working mail looks exactly like an assessment that
+swallows people, and the difference is not visible from any screen.
+
+Against an existing WordPress instead — XAMPP, Laragon, or any LAMP stack —
+there is still nothing to compile:
 
 ```bash
 wp plugin activate serve-dashboard
-```
-
-To review the dashboard with content in it:
-
-```bash
 wp eval-file wp-content/plugins/serve-dashboard/dev/seed-demo.php
 ```
 
-That seeds five invented profiles and capacity for five teams. Development only —
-every name in it is fictional.
+If that install holds real profiles, use
+[`tools/deploy-local.ps1`](tools/deploy-local.ps1) rather than copying by hand.
+It backs the database up first and stops if the backup did not work.
 
 ## Further reading
 
 - [`wordpress-plugin/serve-dashboard/README.md`](wordpress-plugin/serve-dashboard/README.md)
   — architecture, the data model, accessibility and responsive behaviour, and the
   three places the build deliberately departs from the concept mockups.
+- [`docs/local-docker.md`](docs/local-docker.md) — the one-command local stack:
+  what it starts, how to edit against it, and what to do when port 80 is taken.
 - [`docs/deployment-runbook.md`](docs/deployment-runbook.md) — going live on
   `serve.fellowshipdubai.com`: mail first, the setup steps that look like bugs
   when skipped, the go-live gate, and rollback.

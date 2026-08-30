@@ -1,0 +1,16 @@
+# BEGIN WordPress
+# Copied over the one the WordPress image writes for itself, which hardcodes
+# `RewriteBase /`. This install is at /serve, so with that file every pretty
+# permalink — the assessment page included — is a 404 while the front page
+# looks fine. WP-CLI cannot correct it: writing .htaccess needs an Apache it
+# can detect, and the CLI container is not one.
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /serve/
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /serve/index.php [L]
+</IfModule>
+# END WordPress

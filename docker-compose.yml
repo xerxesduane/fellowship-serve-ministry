@@ -1,0 +1,117 @@
+# A throwaway WordPress on your own machine, serving this plugin at
+# http://localhost/serve.
+#
+# Nothing here is a deployment target. It exists so the assessment and the
+# dashboard can be clicked through end to end — including the confirmation
+# email, which is the step that decides whether a profile is visible at all and
+# so cannot be checked on an install with no mail.
+#
+#   tools/dev-up.ps1        (Windows)
+#   tools/dev-up.sh         (macOS, Linux, Git Bash)
+#
+# Port 80 in use? Put this in a .env file beside this one and re-run:
+#   SERVE_PORT=8080
+#   SERVE_URL=http://localhost:8080/serve
+# Both, always: WordPress stores absolute URLs, so the port has to be in the
+# site address as well as in the published port.
+
+name: serve-local
+
+services:
+  db:
+    image: mariadb:10.6
+    environment:
+      MARIADB_ROOT_PASSWORD: serve
+      MARIADB_DATABASE: serve_wp
+      MARIADB_USER: serve
+      MARIADB_PASSWORD: serve
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      # The plugin's activation creates tables the moment WordPress boots, so
+      # nothing may start before the server is actually accepting queries.
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  wordpress:
+    image: wordpress:php8.2-apache
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${SERVE_PORT:-80}:80"
+    # WordPress core is installed into a subdirectory rather than the document
+    # root, which is what puts the site at /serve without a rewrite in front of
+    # it. The image's entrypoint unpacks into its working directory.
+    working_dir: /var/www/html/serve
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: serve_wp
+      WORDPRESS_DB_USER: serve
+      WORDPRESS_DB_PASSWORD: serve
+      # Only so the admin notice can name the right port when this stack has
+      # been moved off 80.
+      SERVE_MAIL_PORT: "${SERVE_MAIL_PORT:-8025}"
+      WORDPRESS_CONFIG_EXTRA: |
+        define( 'WP_ENVIRONMENT_TYPE', 'local' );
+        define( 'WP_HOME', '${SERVE_URL:-http://localhost/serve}' );
+        define( 'WP_SITEURL', '${SERVE_URL:-http://localhost/serve}' );
+        define( 'WP_DEBUG', true );
+        define( 'WP_DEBUG_DISPLAY', true );
+        define( 'WP_DEBUG_LOG', true );
+        define( 'DISALLOW_FILE_EDIT', true );
+    volumes:
+      - wp-data:/var/www/html
+      - ./docker/apache-serve.conf:/etc/apache2/sites-enabled/000-default.conf:ro
+      # Mounted, not copied: edits in the working tree are live on the next
+      # request, which is the whole point of running it here.
+      - ./wordpress-plugin/serve-dashboard:/var/www/html/serve/wp-content/plugins/serve-dashboard
+      - ./docker/mu-plugins:/var/www/html/serve/wp-content/mu-plugins:ro
+
+  # Catches every wp_mail() instead of dropping it. The verification link is a
+  # real link and clicking it is the only way to see the unverified-profile
+  # filter behave.
+  mail:
+    image: axllent/mailpit:latest
+    ports:
+      - "${SERVE_MAIL_PORT:-8025}:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+  # Not started by `up` — the scripts invoke it with `run --rm`.
+  cli:
+    image: wordpress:cli-php8.2
+    profiles: ["cli"]
+    user: "33:33"
+    working_dir: /var/www/html/serve
+    depends_on:
+      db:
+        condition: service_healthy
+    # The image's wp-config.php resolves these at runtime rather than baking
+    # them in, so a WP-CLI container without them looks for a host called
+    # `mysql` and reports the database as down.
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: serve_wp
+      WORDPRESS_DB_USER: serve
+      WORDPRESS_DB_PASSWORD: serve
+    volumes:
+      - wp-data:/var/www/html
+      - ./wordpress-plugin/serve-dashboard:/var/www/html/serve/wp-content/plugins/serve-dashboard
+      - ./docker/mu-plugins:/var/www/html/serve/wp-content/mu-plugins:ro
+      # The image carries PHP, so the repository's own runners work here too
+      # without a PHP install on the host. See docs/local-docker.md.
+      - ./tools:/repo/tools:ro
+      - ./tests:/repo/tests:ro
+      # tests/test-lifecycle.php reads uninstall.php out of the repository
+      # rather than the installed copy — deliberately, so a mutation aimed at
+      # the source is what the test sees. Without this mount that one test
+      # fails on a missing file and says nothing about the plugin.
+      - ./wordpress-plugin/serve-dashboard:/repo/wordpress-plugin/serve-dashboard:ro
+
+volumes:
+  db-data:
+  wp-data:
