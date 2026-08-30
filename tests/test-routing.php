@@ -376,7 +376,15 @@ test(
 
 		wp_set_current_user( $leader );
 
-		$request  = new \WP_REST_Request( 'GET', '/serve/v1/people' );
+		/*
+		 * An explicit page size. Leaving it out relied on the endpoint's
+		 * default, and this test passed for a while only because the table
+		 * happened to hold one person — the moment demo data existed, the row
+		 * being looked for fell off a one-row page.
+		 */
+		$request = new \WP_REST_Request( 'GET', '/serve/v1/people' );
+		$request->set_param( 'per_page', 100 );
+
 		$response = \Serve_Dashboard\Rest_Dashboard::people( $request );
 		$rows     = $response->get_data()['people'];
 

@@ -18,6 +18,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 final class Rest_Dashboard {
 
+	/** What one page of the people list holds when the caller does not say. */
+	private const DEFAULT_PER_PAGE = 25;
+
 	public static function register(): void {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
 	}
@@ -500,8 +503,24 @@ final class Rest_Dashboard {
 	 * @param \WP_REST_Request $request
 	 */
 	public static function people( \WP_REST_Request $request ): \WP_REST_Response {
-		$per_page = max( 1, min( 100, (int) $request->get_param( 'per_page' ) ) );
-		$page     = max( 1, (int) $request->get_param( 'page' ) );
+		/*
+		 * An absent per_page means "the usual page", not one row.
+		 *
+		 * `(int) null` is 0, so max( 1, min( 100, 0 ) ) collapsed to 1. Nothing
+		 * over HTTP hits this — the route declares a default of 25 and the REST
+		 * server applies it before the callback runs — so this is only reachable
+		 * by calling the method directly, which is what a test does. It is
+		 * defence in depth rather than a live defect, and it is here because a
+		 * method that behaves differently depending on how it was reached is
+		 * how a test comes to pass for a reason nobody intended: this one
+		 * passed only while the table held a single person.
+		 */
+		$requested = $request->get_param( 'per_page' );
+		$per_page  = null === $requested || '' === $requested
+			? self::DEFAULT_PER_PAGE
+			: max( 1, min( 100, (int) $requested ) );
+
+		$page = max( 1, (int) $request->get_param( 'page' ) );
 
 		$rows = Submissions::query(
 			array(
