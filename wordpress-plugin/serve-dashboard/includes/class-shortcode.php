@@ -153,7 +153,6 @@ final class Shortcode {
 					'consent'   => __( 'Please tick the box so we know you agree.', 'serve-dashboard' ),
 					// Labels for the "what you are about to share" summary.
 					'summaryGifts' => __( 'Your likely gifts', 'serve-dashboard' ),
-					'summaryTeams' => __( 'Teams this points to', 'serve-dashboard' ),
 					'summaryTime'  => __( 'Time you can give', 'serve-dashboard' ),
 				),
 			)

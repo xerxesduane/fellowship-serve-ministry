@@ -116,15 +116,27 @@
 
 		const rows = [];
 		const gifts = (profile.spiritualGifts && profile.spiritualGifts.likely) || [];
-		const teams = (profile.recommendedMinistries || []).map(function (m) { return m.ministry; });
 		const availability = profile.availability || {};
 
 		if (gifts.length) {
 			rows.push([config.strings.summaryGifts, gifts.join(', ')]);
 		}
-		if (teams.length) {
-			rows.push([config.strings.summaryTeams, teams.join(', ')]);
-		}
+
+		/*
+		 * No team summary here.
+		 *
+		 * This read profile.recommendedMinistries, which the browser stopped
+		 * producing when ranking moved to the server — so the row had silently
+		 * not appeared for some time, under a heading the page still shipped.
+		 * Dead rather than wrong, but the fix is not to repopulate it: the
+		 * authoritative teams come from the server's own ranking, this page has
+		 * not asked for them, and a stale or client-era list is exactly what
+		 * must not drive what somebody believes they are consenting to.
+		 *
+		 * The teams are shown on the results page the person has just come
+		 * from, computed server-side. What this page is for is the consent
+		 * decision itself.
+		 */
 		if (availability.hours) {
 			const timing = (availability.timing || []).join(', ');
 			rows.push([config.strings.summaryTime, timing ? availability.hours + ' · ' + timing : availability.hours]);

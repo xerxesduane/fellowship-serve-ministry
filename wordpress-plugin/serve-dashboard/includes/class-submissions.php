@@ -32,6 +32,22 @@ final class Submissions {
 		$profile  = $payload['profile'];
 		$suggested = $payload['suggested_teams'];
 
+		/*
+		 * What this person was shown, fixed at the moment they were shown it.
+		 *
+		 * Calculated here from the sanitised profile rather than accepted from
+		 * the browser: a client-supplied snapshot would be a second answer to
+		 * the same question, and one the client could choose. Carries only
+		 * non-sensitive reasons — team, tier, the gift labels that justified it,
+		 * and the arithmetic — because this is read in more places than the
+		 * profile is and must not become a less-guarded copy of it.
+		 *
+		 * Stored separately from the live matcher on purpose. When the mapping
+		 * or the rules move, the dashboard shows the difference as drift rather
+		 * than rewriting what the participant was originally told.
+		 */
+		$snapshot = Matching::participant_match_snapshot( $profile );
+
 		$inserted = $wpdb->insert(
 			Schema::table( 'submissions' ),
 			array(
@@ -45,12 +61,14 @@ final class Submissions {
 				'languages'           => wp_json_encode( $payload['languages'] ) ?: '[]',
 				'suggested_teams'     => wp_json_encode( $suggested ) ?: '[]',
 				'profile_json'        => wp_json_encode( $profile ) ?: '{}',
+				'match_snapshot'      => wp_json_encode( $snapshot ) ?: '{}',
+				'match_version'       => Matching_Contract::VERSION . '/' . Gift_Crosswalk::VERSION,
 				'safeguarding_status' => Safeguarding::initial_status( $suggested ),
 				'next_action_at'      => gmdate( 'Y-m-d', strtotime( '+3 days' ) ),
 				'submitted_at'        => $now,
 				'updated_at'          => $now,
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+			array( '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
 		);
 
 		if ( ! $inserted ) {
@@ -63,40 +81,41 @@ final class Submissions {
 
 		$submission_id = (int) $wpdb->insert_id;
 
-		Consent::record( $submission_id );
+		/*
+		 * Consent is the legal basis for holding any of this, so a submission
+		 * that could not record one is not a submission. The insert result was
+		 * discarded and the participant was told it worked either way, leaving
+		 * a stored profile with nothing recording why the church may keep it.
+		 */
+		if ( ! Consent::record( $submission_id ) ) {
+			$wpdb->delete( Schema::table( 'submissions' ), array( 'id' => $submission_id ), array( '%d' ) );
 
-		// Pre-create placement rows for the suggested teams. This is what makes
-		// a submission visible to the right ministry leader without exposing it
-		// to every leader.
-		foreach ( $suggested as $slug ) {
-			$team = Teams::get_by_slug( (string) $slug );
-			if ( ! $team ) {
-				continue;
-			}
-
-			$wpdb->insert(
-				Schema::table( 'placements' ),
-				array(
-					'submission_id' => $submission_id,
-					'team_id'       => (int) $team->id,
-					'status'        => Schema::STATUS_SUBMITTED,
-					'source'        => Placements::SOURCE_MATCH,
-					'notes'         => '',
-					'created_at'    => $now,
-					'updated_at'    => $now,
-				),
-				array( '%d', '%d', '%s', '%s', '%s', '%s', '%s' )
+			return new \WP_Error(
+				'serve_consent_failed',
+				__( 'We could not record your consent, so nothing has been saved. Please try again.', 'serve-dashboard' ),
+				array( 'status' => 500 )
 			);
 		}
 
 		/*
-		 * Nobody matched, so somebody still owns the first conversation.
+		 * No placement rows are created from the ranking. This is the change.
 		 *
-		 * `suggested_teams` is left empty on purpose: the person matched no team
-		 * and their profile keeps saying so. This creates an owner, not a claim
-		 * of fit, and the row records which of the two it is.
+		 * They used to be, one per suggested team, and Roles::can_view_submission()
+		 * grants access on the existence of a placement row — so being ranked
+		 * against a team was the same event as that team's leader gaining a
+		 * pastoral profile to read. A heuristic over eighteen self-assessed
+		 * answers is not consent to disclose somebody's painful history to a
+		 * particular ministry, and it is not a human deciding anything.
+		 *
+		 * `suggested_teams` is still recorded. It is the record of what the
+		 * person was shown at the end of their journey, which a leader has to
+		 * be able to see; it is no longer an authorisation.
+		 *
+		 * Every new submission goes to central intake instead, and a coordinator
+		 * assigns a team after reading it. That assignment is audited, names a
+		 * person, and is what may create scoped leader access.
 		 */
-		$catchall = Placements::assign_catchall( $submission_id, $suggested );
+		$intake = Placements::assign_intake_owner( $submission_id );
 
 		Audit::log(
 			Audit::ACTION_SUBMITTED,
@@ -104,7 +123,10 @@ final class Submissions {
 			$submission_id,
 			array(
 				'suggested_teams' => $suggested,
-				'catchall_team'   => $catchall ?: null,
+				'intake_team'     => $intake ?: null,
+				// Explicitly recorded so the history shows the ranking did not
+				// hand anybody access on the day this arrived.
+				'match_placements_created' => 0,
 			)
 		);
 
@@ -112,9 +134,16 @@ final class Submissions {
 		 * The row exists but stays invisible to leaders until the address is
 		 * proven. See Verification for why an anonymous endpoint needs this.
 		 */
-		Verification::issue( $submission_id );
+		$verified_sent = Verification::issue( $submission_id );
 
-		// The journey is finished; a half-written copy of it serves no purpose.
+		/*
+		 * The draft is cleared only once the durable state is actually valid.
+		 *
+		 * It used to go unconditionally, immediately after writes whose results
+		 * nobody read — so a failed verification dispatch destroyed the only
+		 * other copy of the journey while the participant was told to check an
+		 * email that was never sent, leaving them nothing to return to.
+		 */
 		Draft::clear_for_email( (string) $payload['email'] );
 
 		/**
@@ -125,7 +154,16 @@ final class Submissions {
 		 */
 		do_action( 'serve_dashboard_submission_created', $submission_id, $payload );
 
-		return $submission_id;
+		/*
+		 * An array rather than the bare id, so the caller can tell the person
+		 * the truth about their confirmation email. It used to return the id
+		 * and the endpoint said "check your email" regardless of whether the
+		 * mailer had answered.
+		 */
+		return array(
+			'submission_id'     => $submission_id,
+			'verification_sent' => $verified_sent,
+		);
 	}
 
 	/**
@@ -386,7 +424,47 @@ final class Submissions {
 			);
 		}
 
+		/*
+		 * Team ownership, before any state moves.
+		 *
+		 * This checked only that the caller could *see* the person. A ministry
+		 * leader who could open a profile through their own team could name any
+		 * team id in the same request and have it honoured — another ministry's
+		 * team, a deactivated one, or an id belonging to no row at all. The
+		 * last of those was the worst: block_reason() returns "" for a team it
+		 * cannot load, so the safeguarding gate waved it through, the submission
+		 * was updated, and Placements::ensure() wrote a placement row pointing
+		 * at a team that does not exist. placements_for() INNER JOINs teams, so
+		 * the row was then invisible everywhere while the person read as Placed.
+		 *
+		 * Asked before the first write, so a rejected transition leaves nothing
+		 * behind. can_manage_team() covers existence, activity and ownership in
+		 * one place, because three callers checking two of the three is how the
+		 * gap appeared.
+		 */
+		if ( $team_id && ! Roles::can_manage_team( $team_id ) ) {
+			return new \WP_Error(
+				'serve_team_forbidden',
+				__( 'That team is not one you lead, or it is no longer running.', 'serve-dashboard' ),
+				array( 'status' => 403 )
+			);
+		}
+
 		if ( $team_id ) {
+			/*
+			 * Raised before the gate is asked, not read from what intake
+			 * happened to record. safeguarding_status was initialised from the
+			 * teams the assessment suggested, so a person routed by hand to
+			 * Fellowship Kids months later still carried "not required" — and
+			 * block_reason() compares against exactly that column, so the gate
+			 * it is supposed to close was open. Raising first makes the manual
+			 * route reach the same state the suggested route would have.
+			 */
+			$raised = Safeguarding::raise_for_team( $id, $team_id );
+			if ( is_wp_error( $raised ) ) {
+				return $raised;
+			}
+
 			$blocked = Safeguarding::block_reason( $id, $team_id, $status );
 			if ( '' !== $blocked ) {
 				return new \WP_Error( 'serve_safeguarding_blocked', $blocked, array( 'status' => 409 ) );
@@ -447,8 +525,17 @@ final class Submissions {
 			 * leader still could not see them, and its headcount never moved.
 			 * Only reachable for somebody with no suggestions, which used to be
 			 * rare and is now a designed outcome.
+			 *
+			 * A human moving somebody onto a team is the audited operational
+			 * decision the whole model turns on, so the row records that rather
+			 * than inheriting the default source. `match` is a heuristic and
+			 * must never be the recorded reason a leader gained access.
 			 */
-			Placements::ensure( $id, $team_id );
+			$source = self::assignment_source( $extra );
+
+			if ( ! Placements::ensure( $id, $team_id, $source ) ) {
+				return self::rollback_status( $id, $previous, 'serve_placement_failed' );
+			}
 
 			/*
 			 * A trial or a placement on a real team completes whatever the
@@ -459,7 +546,7 @@ final class Submissions {
 				Placements::retire_catchall( $id, $team_id );
 			}
 
-			$wpdb->update(
+			$placed = $wpdb->update(
 				Schema::table( 'placements' ),
 				array(
 					'status'         => $status,
@@ -474,6 +561,16 @@ final class Submissions {
 				array( '%s', '%s', '%d', '%s' ),
 				array( '%d', '%d' )
 			);
+
+			/*
+			 * The two halves have to agree. This return value was discarded, so
+			 * a placement write that failed left the person reading as Placed
+			 * globally while their team's row still said Submitted — and the
+			 * leader was told it worked. Put the status back and say so instead.
+			 */
+			if ( false === $placed ) {
+				return self::rollback_status( $id, $previous, 'serve_placement_failed' );
+			}
 		}
 
 		Audit::log(
@@ -488,6 +585,72 @@ final class Submissions {
 		);
 
 		return true;
+	}
+
+	/**
+	 * Why a placement row is being created, for the audit trail.
+	 *
+	 * Never `match`. A ranking is a heuristic; the record of why a ministry
+	 * leader can read somebody's profile has to name a decision a person took.
+	 *
+	 * @param array<string,mixed> $extra
+	 */
+	private static function assignment_source( array $extra ): string {
+		$source = isset( $extra['source'] ) ? (string) $extra['source'] : '';
+
+		return in_array( $source, Placements::assignment_sources(), true )
+			? $source
+			: Placements::SOURCE_INTAKE_TRIAGE;
+	}
+
+	/**
+	 * Put a status back after a dependent write failed.
+	 *
+	 * The alternative is what happened before: report the failure while leaving
+	 * the submission holding the new status anyway, so the next person to look
+	 * sees a placement that never happened. MySQL's default engine gives us
+	 * transactions, but wpdb offers no portable handle on them across the
+	 * multisite and shared-hosting configurations this plugin has to survive,
+	 * and a compensating write is legible in the audit log in a way a silent
+	 * rollback is not.
+	 *
+	 * @param object|null $previous Row as it was before the update.
+	 * @return \WP_Error
+	 */
+	private static function rollback_status( int $id, ?object $previous, string $code ): \WP_Error {
+		global $wpdb;
+
+		if ( $previous ) {
+			$wpdb->update(
+				Schema::table( 'submissions' ),
+				array(
+					'status'         => $previous->status,
+					'next_action_at' => $previous->next_action_at,
+					'snooze_until'   => $previous->snooze_until,
+					'updated_at'     => $previous->updated_at,
+				),
+				array( 'id' => $id ),
+				array( '%s', '%s', '%s', '%s' ),
+				array( '%d' )
+			);
+		}
+
+		Audit::log(
+			Audit::ACTION_STATUS_CHANGED,
+			'submission',
+			$id,
+			array(
+				'rolled_back' => true,
+				'reason'      => $code,
+				'to'          => $previous->status ?? null,
+			)
+		);
+
+		return new \WP_Error(
+			$code,
+			__( 'That move could not be recorded against the team, so nothing was changed. Please try again.', 'serve-dashboard' ),
+			array( 'status' => 500 )
+		);
 	}
 
 	/**

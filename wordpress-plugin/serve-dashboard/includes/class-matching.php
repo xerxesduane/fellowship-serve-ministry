@@ -1,21 +1,40 @@
 <?php
 /**
- * Explainable matching.
+ * Explainable matching, on canonical gift ids.
  *
- * The product brief and the presentation's own speaker notes both describe the
- * match percentages in the concept mockups as illustrative. They are not
- * produced by a scoring model, and this plugin does not have one: the
- * assessment ranks ministries on spiritual-gift name overlap alone.
+ * This class does not emit a percentage and does not have a scoring model. The
+ * assessment records one required three-way answer per gift and nothing else
+ * that has been validated against a ministry, so what comes out is a
+ * qualitative tier plus the gifts that produced it — enough for a leader to
+ * agree or disagree with, which a number would not be.
  *
- * So this class deliberately does not emit a percentage. It emits a qualitative
- * strength and, more importantly, the reasons behind it — drawn across gifts,
- * heart, abilities and experience — so a leader can judge the suggestion rather
- * than trust a number. A suggestion is a conversation starter, never a decision.
+ * Three separations the code has to keep visible, because conflating them is
+ * what went wrong before:
  *
- * Personality is handled separately and on purpose. See `personality_notes()`:
- * it describes *how* somebody is likely to serve rather than *which* team they
- * belong on, so it is surfaced once per person alongside the suggestions and is
- * kept out of ranking and strength entirely.
+ *   rank_profile()                every active team with evidence and diagnostics
+ *   recommendations_for_profile() what the participant and the dashboard show
+ *   participant_match_snapshot()  the immutable record of what they were shown
+ *
+ * None of them is an authorisation. A tier is a heuristic over self-assessed
+ * answers; access comes from an audited human assignment, and lives in
+ * Placements and Roles.
+ *
+ * Two dimensions are handled and named separately on purpose:
+ *
+ * Personality — see `personality_notes()`. The workbook is explicit that
+ * personality governs *how* a gift is exercised, not which team somebody
+ * belongs on, and nothing in the teams table describes what a role is like, so
+ * it would fire identically for all sixteen. Reported once per person, kept out
+ * of tier and ordering entirely.
+ *
+ * Heart, abilities and experience — see `context()`. Still shown, clearly
+ * labelled, and deliberately unscored. They used to reach tier through keyword
+ * overlap against an editable free-text vocabulary, which meant an
+ * administrator typing a word into the Teams screen could carry somebody to a
+ * strength that created a placement row and opened their profile to that team.
+ * Free-text vocabulary is not an access-control mechanism. Structured,
+ * owner-approved option-id mappings can corroborate a tier — see
+ * Corroboration — and the registry for them ships empty.
  *
  * @package ServeDashboard
  */
@@ -30,81 +49,229 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 final class Matching {
 
-	public const STRENGTH_STRONG   = 'strong';
-	public const STRENGTH_POSSIBLE = 'possible';
-	public const STRENGTH_UNCLEAR  = 'unclear';
-
-	/**
-	 * Marking this many of the 18 gifts "likely" means the answers do not
-	 * distinguish between them.
-	 *
-	 * Someone answering agreeably — "yes, that sounds like me" to everything —
-	 * used to come out with several confident matches, because raw overlap
-	 * counts reward claiming more. That is the opposite of useful: the more
-	 * someone claims, the *less* any single overlap tells you.
+	/*
+	 * Tier constants live on the contract. These aliases remain because a
+	 * release's worth of callers and stored strings use them, and because
+	 * "strong" means the same thing on both sides.
 	 */
-	private const UNDIFFERENTIATED_AT = 12;
-
-	/** Minimum share of a person's claimed gifts that must be relevant. */
-	private const MIN_SELECTIVITY = 0.25;
+	public const STRENGTH_STRONG   = Matching_Contract::TIER_STRONG;
+	public const STRENGTH_POSSIBLE = Matching_Contract::TIER_SUGGESTED;
+	public const STRENGTH_UNCLEAR  = Matching_Contract::TIER_EXPLORE;
 
 	/**
 	 * @return array<string,string>
 	 */
 	public static function strength_labels(): array {
-		return array(
-			self::STRENGTH_STRONG   => __( 'Strong match', 'serve-dashboard' ),
-			self::STRENGTH_POSSIBLE => __( 'Possible match', 'serve-dashboard' ),
-			self::STRENGTH_UNCLEAR  => __( 'Needs a conversation', 'serve-dashboard' ),
-		);
+		return Matching_Contract::tier_labels();
 	}
 
 	/**
-	 * Build the explained suggestion for one profile against one team.
+	 * How many Strong/Suggested teams a profile gets.
 	 *
-	 * Takes a profile rather than a submission row, and that is the whole
-	 * reason a person can now be shown the same reasoning their leader sees:
-	 * the evidence is a pure function of what somebody answered and what a team
-	 * is about, so it can be worked out before a submission exists at all.
+	 * Three, and the same three everywhere: shown to the person, written into
+	 * their snapshot, and displayed on the dashboard. One number governing all
+	 * of it is what lets those agree.
+	 */
+	public static function suggestion_limit(): int {
+		/**
+		 * Filters how many recommended teams a profile gets.
+		 *
+		 * @param int $limit Default 3.
+		 */
+		return max( 1, (int) apply_filters( 'serve_dashboard_suggestion_limit', Matching_Contract::MAX_RECOMMENDATIONS ) );
+	}
+
+	/**
+	 * Build the explained evidence for one profile against one team.
 	 *
-	 * It used to take the row as well, for the one reason that read it — the
-	 * multilingual "Speaks X, Y" line, which turned out not to be evidence for
-	 * any particular team. Removing that left the parameter vestigial.
+	 * Takes a profile rather than a submission row, which is what lets a person
+	 * be shown the same reasoning their leader sees: the evidence is a pure
+	 * function of what somebody answered and what a team is recognised by, so
+	 * it can be worked out before a submission exists.
 	 *
 	 * @param object              $team    Row from the teams table.
 	 * @param array<string,mixed> $profile Decoded profile (may be redacted).
+	 * @param Gift_Ratings|null   $ratings Parsed once by the caller when ranking
+	 *                                     every team, since it is per-profile
+	 *                                     work that does not vary by team.
 	 * @return array<string,mixed>
 	 */
-	public static function explain( object $team, array $profile ): array {
-		$team_gifts = array_map( 'strtolower', Teams::gift_list( $team ) );
-		$vocabulary = self::vocabulary( $team );
-		$reasons    = array();
+	public static function explain( object $team, array $profile, ?Gift_Ratings $ratings = null ): array {
+		$ratings  = $ratings ?? Gift_Ratings::from_profile( $profile );
+		$resolved = Gift_Crosswalk::resolve( Teams::gift_list( $team ) );
+		$scorable = $resolved['ids'];
 
-		// 1. Spiritual gifts. The only dimension the underlying ranking uses,
-		// so it carries the most weight here too — but it is named as one
-		// factor among several rather than presented as the whole answer.
-		$likely      = (array) ( $profile['spiritualGifts']['likely'] ?? array() );
-		$gift_overlap = array_values(
-			array_filter(
-				$likely,
-				static fn( $gift ) => is_scalar( $gift ) && in_array( strtolower( (string) $gift ), $team_gifts, true )
-			)
+		// Unique canonical ids on both sides, so a team listing two terms that
+		// mean one gift cannot count a participant's answer twice.
+		$likely_hits   = array_values( array_intersect( $ratings->likely(), $scorable ) );
+		$possible_hits = array_values( array_intersect( $ratings->possible(), $scorable ) );
+
+		$all_likely     = $ratings->all_likely_count();
+		$corroborations = Corroboration::for_team( (string) $team->slug, $profile );
+
+		$tier = Matching_Contract::tier(
+			count( $likely_hits ),
+			count( $possible_hits ),
+			$all_likely,
+			count( $scorable ),
+			count( $corroborations ),
+			$ratings->is_valid()
 		);
 
-		foreach ( $gift_overlap as $gift ) {
+		$reasons = array();
+
+		foreach ( $likely_hits as $id ) {
 			$reasons[] = array(
 				'dimension' => 'gifts',
+				'weight'    => 'likely',
+				'gift_id'   => $id,
 				'label'     => sprintf(
 					/* translators: 1: spiritual gift, 2: ministry team name. */
-					__( '%1$s aligns with %2$s', 'serve-dashboard' ),
-					$gift,
+					__( 'Your likely gift of %1$s aligns with %2$s', 'serve-dashboard' ),
+					Gift_Taxonomy::label( $id ),
 					$team->name
 				),
 			);
 		}
 
-		// 2. Heart. A stated passion that names the team, or a word the team
-		// name shares, is a strong signal because the person volunteered it.
+		/*
+		 * Possible gifts are shown and can order two Explore results against
+		 * each other, but the contract will not let them satisfy a Strong or
+		 * Suggested threshold on their own. Describing "I may have this gift"
+		 * as a strong match is exactly the false precision this avoids.
+		 */
+		foreach ( $possible_hits as $id ) {
+			$reasons[] = array(
+				'dimension' => 'gifts',
+				'weight'    => 'possible',
+				'gift_id'   => $id,
+				'label'     => sprintf(
+					/* translators: 1: spiritual gift, 2: ministry team name. */
+					__( '%1$s is a gift you may have, and %2$s draws on it', 'serve-dashboard' ),
+					Gift_Taxonomy::label( $id ),
+					$team->name
+				),
+			);
+		}
+
+		foreach ( $corroborations as $dimension ) {
+			$reasons[] = array(
+				'dimension' => $dimension,
+				'weight'    => 'corroborating',
+				'gift_id'   => '',
+				'label'     => sprintf(
+					/* translators: 1: SHAPE dimension, 2: ministry team name. */
+					__( 'Your %1$s answers also point towards %2$s', 'serve-dashboard' ),
+					$dimension,
+					$team->name
+				),
+			);
+		}
+
+		return array(
+			'team_id'          => (int) $team->id,
+			'team_slug'        => (string) $team->slug,
+			'team_name'        => $team->name,
+
+			'tier'             => $tier,
+			'tier_label'       => Matching_Contract::tier_label( $tier ),
+			// Kept so a release's worth of callers and templates keep working.
+			'strength'         => $tier,
+			'strength_label'   => Matching_Contract::tier_label( $tier ),
+
+			'reasons'          => $reasons,
+
+			/*
+			 * Heart, abilities and experience: shown, never scored, and
+			 * computed from the same capability-aware profile everything else
+			 * reads — so a leader who may not see the Experiences section
+			 * cannot receive a line derived from it either.
+			 */
+			'context'          => self::context( $team, $profile ),
+
+			/*
+			 * Everything the tier was decided from, kept for the audit trail
+			 * and for explaining an old result after the rules move.
+			 */
+			'evidence'         => array(
+				'likely_hits'        => $likely_hits,
+				'likely_labels'      => Gift_Taxonomy::labels( $likely_hits ),
+				'possible_hits'      => $possible_hits,
+				'possible_labels'    => Gift_Taxonomy::labels( $possible_hits ),
+				'likely_hit_count'   => count( $likely_hits ),
+				'possible_hit_count' => count( $possible_hits ),
+				'all_likely_count'   => $all_likely,
+				'scorable_ids'       => $scorable,
+				'scorable_count'     => count( $scorable ),
+				'selectivity'        => round( Matching_Contract::selectivity( count( $likely_hits ), $all_likely ), 4 ),
+				'team_coverage'      => round( Matching_Contract::coverage( count( $likely_hits ), count( $scorable ) ), 4 ),
+				'possible_coverage'  => round( Matching_Contract::coverage( count( $possible_hits ), count( $scorable ) ), 4 ),
+				'corroborations'     => $corroborations,
+				'unmapped_terms'     => $resolved['unmapped'],
+				'partition_valid'    => $ratings->is_valid(),
+			),
+
+			'versions'         => self::versions(),
+
+			// Retained under its old name; several templates read it.
+			'selectivity'      => round( Matching_Contract::selectivity( count( $likely_hits ), $all_likely ), 2 ),
+			'gift_overlap'     => count( $likely_hits ),
+			'gifts_claimed'    => $all_likely,
+			'dimensions_hit'   => count( array_unique( array_column( $reasons, 'dimension' ) ) ),
+
+			'undifferentiated' => Matching_Contract::is_undifferentiated( $all_likely ),
+			'caveat'           => self::caveat( $ratings ),
+
+			// Context about the team, never evidence about the person.
+			'has_opening'      => self::has_opening( $team ),
+			'opening_note'     => self::opening_note( $team ),
+
+			'profile_redacted' => ! empty( $profile['_redacted'] ),
+			'from_assessment'  => false,
+		);
+	}
+
+	/**
+	 * The mapping and rule versions a result was produced under.
+	 *
+	 * Stored with every snapshot so the dashboard can say "the rules have
+	 * changed since this person was told" instead of quietly restating today's
+	 * answer as what they saw.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function versions(): array {
+		return array(
+			'taxonomy'      => Gift_Taxonomy::VERSION,
+			'crosswalk'     => Gift_Crosswalk::VERSION,
+			'contract'      => Matching_Contract::VERSION,
+			'corroboration' => Corroboration::VERSION,
+		);
+	}
+
+	/**
+	 * Supporting context from heart, abilities and experience.
+	 *
+	 * Read by a human, weighed by nobody. This is the old `term_overlap`
+	 * evidence with its effect on the outcome removed: it never enters a tier,
+	 * a threshold or the comparator, and it cannot create or widen access.
+	 *
+	 * It stays because it is genuinely useful in a conversation — "a heart for
+	 * Elementary Children" is worth a leader seeing next to Fellowship Kids —
+	 * and because deleting it would leave team-first discovery with nothing but
+	 * gift overlap, which is the narrowing the church already fixed once.
+	 *
+	 * Experiences appear only when the caller's profile still contains them,
+	 * which is decided by Submissions::profile() and CAP_VIEW_SENSITIVE. There
+	 * is no path here that reads evidence the caller may not read.
+	 *
+	 * @param array<string,mixed> $profile
+	 * @return array<int,array<string,string>>
+	 */
+	private static function context( object $team, array $profile ): array {
+		$vocabulary = self::vocabulary( $team );
+		$out        = array();
+
 		$heart = array_merge(
 			(array) ( $profile['heart']['roles'] ?? array() ),
 			(array) ( $profile['heart']['people'] ?? array() ),
@@ -112,53 +279,21 @@ final class Matching {
 		);
 
 		foreach ( self::term_overlap( $heart, $vocabulary ) as $term ) {
-			$reasons[] = array(
+			$out[] = array(
 				'dimension' => 'heart',
-				'label'     => sprintf(
-					/* translators: %s: the person's stated passion. */
-					__( '%s is one of their stated passions', 'serve-dashboard' ),
-					$term
-				),
+				/* translators: %s: the person's stated passion. */
+				'label'     => sprintf( __( '%s is one of their stated passions', 'serve-dashboard' ), $term ),
 			);
 		}
 
-		// 3. Abilities. The assessment has always collected these and, before
-		// 1.12.0, nothing had ever used them.
-		$abilities = (array) ( $profile['abilities'] ?? array() );
-
-		foreach ( self::term_overlap( $abilities, $vocabulary ) as $term ) {
-			$reasons[] = array(
+		foreach ( self::term_overlap( (array) ( $profile['abilities'] ?? array() ), $vocabulary ) as $term ) {
+			$out[] = array(
 				'dimension' => 'abilities',
-				'label'     => sprintf(
-					/* translators: %s: a relevant ability. */
-					__( 'Relevant ability: %s', 'serve-dashboard' ),
-					$term
-				),
+				/* translators: %s: a relevant ability. */
+				'label'     => sprintf( __( 'Relevant ability: %s', 'serve-dashboard' ), $term ),
 			);
 		}
 
-		/*
-		 * Speaking more than one language is not a reason for any particular
-		 * team, and it used to be filed as one.
-		 *
-		 * It fired identically for all sixteen teams, so every multilingual
-		 * person gained the abilities dimension everywhere whether a single
-		 * ability of theirs matched or not — inflating the dimension count that
-		 * ranking sorts on, and helping satisfy the two-dimension requirement
-		 * for "Strong match" with evidence that says nothing about the team.
-		 * That is exactly the reasoning that keeps personality out of this list,
-		 * and it applied here too; it was found by seeding demo people with real
-		 * languages and watching unrelated teams climb.
-		 *
-		 * Languages are still in front of the leader: they are part of the
-		 * Abilities section of the profile, they are their own column in the
-		 * people list, and they are a filter on it. In a congregation speaking
-		 * six languages that is worth surfacing — but as something a leader
-		 * reads about a person, not as evidence for a team.
-		 */
-
-		// 4. Experience. Redacted profiles legitimately have none of this, and
-		// the absence must not read as "no relevant experience".
 		if ( isset( $profile['experiences'] ) ) {
 			$experiences = array();
 			foreach ( (array) $profile['experiences'] as $values ) {
@@ -166,158 +301,285 @@ final class Matching {
 			}
 
 			foreach ( self::term_overlap( $experiences, $vocabulary ) as $term ) {
-				$reasons[] = array(
+				$out[] = array(
 					'dimension' => 'experience',
-					'label'     => sprintf(
-						/* translators: %s: a relevant past experience. */
-						__( 'Past experience may transfer: %s', 'serve-dashboard' ),
-						$term
-					),
+					/* translators: %s: a relevant past experience. */
+					'label'     => sprintf( __( 'Past experience may transfer: %s', 'serve-dashboard' ), $term ),
 				);
 			}
 		}
 
-		/*
-		 * 5. Personality is deliberately absent from this list.
-		 *
-		 * The workbook is explicit that personality governs how and where a
-		 * person exercises a gift, not which team they belong on: two people
-		 * with the same gift of evangelism express it differently if one is
-		 * introverted and the other extroverted.
-		 *
-		 * It is also constant across teams. Nothing in the teams table
-		 * describes what a role is actually like, so the same four tendencies
-		 * would fire identically for every suggestion — carrying no
-		 * information about any of them. Adding it to `$reasons` would inflate
-		 * both the dimension count and the reason count for every team at
-		 * once, which is worse than useless: it would let any team with two
-		 * gift overlaps reach "Strong match" on evidence that says nothing
-		 * about that team, defeating the corroboration rule below.
-		 *
-		 * So it is reported by `personality_notes()`, once per person, as
-		 * context for the conversation. Making it genuinely team-specific
-		 * needs per-team role attributes that do not exist yet.
-		 */
-
-		$claimed    = count( $likely );
-		$dimensions = count( array_unique( array_column( $reasons, 'dimension' ) ) );
-		$strength   = self::strength( count( $gift_overlap ), count( $reasons ), $claimed, $dimensions );
-
-		return array(
-			'team_id'          => (int) $team->id,
-			// The slug, so nothing downstream has to slugify a display name.
-			// Doing that is what needed a str_replace for the assessment's en
-			// dash, and what let a renamed team quietly stop resolving.
-			'team_slug'        => (string) $team->slug,
-			'team_name'        => $team->name,
-			'strength'         => $strength,
-			'strength_label'   => self::strength_labels()[ $strength ],
-			'reasons'          => $reasons,
-			'dimensions_hit'   => $dimensions,
-			'gift_overlap'     => count( $gift_overlap ),
-			'gifts_claimed'    => $claimed,
-			// How much of what this person claims is actually relevant here.
-			// Surfaced so a leader can see the reasoning, not just its verdict.
-			'selectivity'      => $claimed > 0 ? round( count( $gift_overlap ) / $claimed, 2 ) : 0.0,
-			'undifferentiated' => self::is_undifferentiated( $claimed ),
-			'caveat'           => self::is_undifferentiated( $claimed )
-				? self::undifferentiated_note( $claimed )
-				: '',
-			'has_opening'      => self::has_opening( $team ),
-			'opening_note'     => self::opening_note( $team ),
-			'profile_redacted' => ! empty( $profile['_redacted'] ),
-			/*
-			 * Whether the assessment itself named this team, i.e. whether the
-			 * person has seen it on their own profile. Only `rank()` knows, so
-			 * it overwrites this; the default is here so every caller of
-			 * `explain()` gets the key rather than an undefined index.
-			 */
-			'from_assessment'  => false,
-		);
+		return $out;
 	}
 
 	/**
-	 * How many teams a profile is worth suggesting.
+	 * Better-evidenced first, and deterministic.
 	 *
-	 * Three, and the same three everywhere: shown to the person, stored as
-	 * `suggested_teams`, and turned into the placement rows that decide which
-	 * leaders may open the profile. It was briefly five while the person was
-	 * still being shown a separate gift-only list of three, and one number
-	 * governing all of it is what lets those two finally agree — five stored
-	 * would have widened access, and five shown against three stored would have
-	 * made the "not on their profile" flag lie about teams the person had seen.
-	 */
-	public static function suggestion_limit(): int {
-		/**
-		 * Filters how many suggested teams a profile gets.
-		 *
-		 * @param int $limit Default 3.
-		 */
-		return max( 1, (int) apply_filters( 'serve_dashboard_suggestion_limit', 3 ) );
-	}
-
-	/**
-	 * Better-evidenced suggestion first.
+	 * Tier, then how many approved structured dimensions corroborate it, then
+	 * how much of the team this person covers, then how selective that is, then
+	 * the raw likely count, then possible coverage. Slug last, and only so that
+	 * two genuinely equal teams appear in a stable order between requests —
+	 * alphabetical position is not evidence and `co_match` says so explicitly.
 	 *
-	 * Distinct SHAPE dimensions, then how many readable reasons there are, then
-	 * how selective the gift overlap is. Team need is deliberately absent: a
-	 * vacancy is not evidence that a person fits.
-	 *
-	 * Reasons used to come last and selectivity second, which quietly undid the
-	 * point of ranking every team. Selectivity is a gifts-only measure —
-	 * overlapping gifts divided by gifts claimed — so somebody who marked one
-	 * gift scored a perfect 1.0 against all five teams sharing it, and those
-	 * five filled the list ahead of a team with five separate reasons drawn from
-	 * their abilities. Gifts would have gone on deciding the suggestions while
-	 * appearing not to. It stays as the final tie-break, where it settles teams
-	 * whose evidence is otherwise equal.
-	 *
-	 * This does not touch `strength()`. Reaching "Strong match" still needs two
-	 * overlapping gifts and a second dimension corroborating them: ordering is
-	 * about which conversation to have first, and a strength label is a claim
-	 * about the evidence. Non-gift evidence alone can lead the list, and tops
-	 * out at "Possible match" while doing so.
+	 * Team need, vacancies, headcount, safeguarding state, table order and
+	 * timestamps are all absent. A vacancy is not evidence that a person fits.
 	 *
 	 * @param array<string,mixed> $a
 	 * @param array<string,mixed> $b
 	 */
 	private static function compare( array $a, array $b ): int {
-		if ( $a['dimensions_hit'] !== $b['dimensions_hit'] ) {
-			return $b['dimensions_hit'] <=> $a['dimensions_hit'];
+		foreach ( self::comparable( $a ) as $key => $value ) {
+			$other = self::comparable( $b )[ $key ];
+
+			if ( $value !== $other ) {
+				// Tier rank sorts ascending; every other measure descending.
+				return 'tier' === $key ? $value <=> $other : $other <=> $value;
+			}
 		}
 
-		if ( count( $a['reasons'] ) !== count( $b['reasons'] ) ) {
-			return count( $b['reasons'] ) <=> count( $a['reasons'] );
-		}
-
-		return $b['selectivity'] <=> $a['selectivity'];
+		return strcmp( (string) $a['team_slug'], (string) $b['team_slug'] );
 	}
 
 	/**
-	 * The teams worth suggesting for one profile, best-evidenced first.
+	 * The ordered measures two matches are compared on, before the slug.
 	 *
-	 * Every active team is considered. This is the change: the suggestions used
-	 * to be whichever three the assessment's own `recommendMinistries()` picked
-	 * in the browser, which ranks on spiritual-gift name overlap and nothing
-	 * else. `explain()` then decorated that already-narrowed set with heart,
-	 * abilities and experience — so those dimensions could improve the *order*
-	 * of three teams chosen on gifts alone, but could never put forward a team
-	 * the gift ranking had missed. Somebody whose real fit was a passion or a
-	 * past job simply never saw that team unless a leader happened to come at
-	 * it from the team side.
+	 * Extracted so `co_match` can ask the same question the sort asked, rather
+	 * than a second copy of it that could drift.
 	 *
-	 * What the assessment suggested is still carried, always, and flagged: it
-	 * is what the person was told at the end of their journey and what their
-	 * downloaded profile says, so a leader has to be able to see it even when
-	 * the evidence now ranks it low. Nothing here rewrites `suggested_teams` —
-	 * that column is the record of what the person saw, and the placement rows
-	 * built from it are what scope a ministry leader's visibility. Widening
-	 * suggestions must not widen who can see whom.
+	 * @param array<string,mixed> $match
+	 * @return array<string,int|float>
+	 */
+	private static function comparable( array $match ): array {
+		return array(
+			'tier'              => Matching_Contract::tier_rank( (string) $match['tier'] ),
+			'corroborations'    => count( $match['evidence']['corroborations'] ),
+			'team_coverage'     => (float) $match['evidence']['team_coverage'],
+			'selectivity'       => (float) $match['evidence']['selectivity'],
+			'likely_hit_count'  => (int) $match['evidence']['likely_hit_count'],
+			'possible_coverage' => (float) $match['evidence']['possible_coverage'],
+		);
+	}
+
+	/**
+	 * Every active team, ranked, with the assessment's own picks always present.
 	 *
-	 * A team that has since been deactivated drops out even if the assessment
-	 * named it. Suggesting a team the church has closed is worse than a gap in
-	 * the history.
+	 * A team the church has deactivated drops out even if the assessment named
+	 * it: suggesting a closed team is worse than a gap in the history.
 	 *
+	 * @param array<string,mixed> $profile
+	 * @param string[]            $from_assessment Slugs the assessment named, if known.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function rank_profile( array $profile, ?int $limit = null, array $from_assessment = array() ): array {
+		$limit           = $limit ?? self::suggestion_limit();
+		$from_assessment = array_map( 'strval', $from_assessment );
+
+		// Parsed once. It is per-profile work and does not vary by team.
+		$ratings = Gift_Ratings::from_profile( $profile );
+
+		$ranked = array();
+		foreach ( Teams::all() as $team ) {
+			$match                    = self::explain( $team, $profile, $ratings );
+			$match['from_assessment'] = in_array( (string) $team->slug, $from_assessment, true );
+
+			$ranked[] = $match;
+		}
+
+		usort( $ranked, array( self::class, 'compare' ) );
+		$ranked = self::mark_co_matches( $ranked );
+
+		$out   = array();
+		$taken = 0;
+
+		foreach ( $ranked as $match ) {
+			$has_evidence = $match['evidence']['likely_hit_count'] > 0
+				|| $match['evidence']['possible_hit_count'] > 0;
+
+			if ( $has_evidence && $taken < $limit ) {
+				$out[] = $match;
+				++$taken;
+				continue;
+			}
+
+			// What the person was told at the end of their journey, whether or
+			// not today's evidence still supports it. A leader has to be able
+			// to answer "but it said Prayer".
+			if ( $match['from_assessment'] ) {
+				$out[] = $match;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Flag runs of teams that are equal on every measure that counts.
+	 *
+	 * Without this the display numbers them 1, 2, 3 and the person reads the
+	 * order as a finding. Two teams identical through possible-hit coverage are
+	 * separated only by their slug, which is not evidence about anyone, and
+	 * saying so is more honest than manufacturing a winner.
+	 *
+	 * @param array<int,array<string,mixed>> $ranked Already sorted.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function mark_co_matches( array $ranked ): array {
+		$count = count( $ranked );
+
+		foreach ( $ranked as $i => $match ) {
+			$equal = false;
+
+			if ( $i > 0 && self::comparable( $ranked[ $i - 1 ] ) === self::comparable( $match ) ) {
+				$equal = true;
+			}
+
+			if ( $i + 1 < $count && self::comparable( $ranked[ $i + 1 ] ) === self::comparable( $match ) ) {
+				$equal = true;
+			}
+
+			// Only meaningful where there is something to be equal about.
+			$ranked[ $i ]['co_match'] = $equal
+				&& Matching_Contract::TIER_NONE !== $match['tier'];
+		}
+
+		return $ranked;
+	}
+
+	/**
+	 * What the participant and the dashboard show, as one decided answer.
+	 *
+	 * Up to three Strong/Suggested teams; failing that, up to two Explore
+	 * options that have real evidence; failing that, nothing, said plainly.
+	 * Never padded, never forced.
+	 *
+	 * @param array<string,mixed> $profile
+	 * @param string[]            $from_assessment
+	 * @return array{state:string,tier:string,teams:array<int,array<string,mixed>>,caveat:string,unmapped_likely:string[],versions:array<string,string>}
+	 */
+	public static function recommendations_for_profile( array $profile, array $from_assessment = array() ): array {
+		$ratings = Gift_Ratings::from_profile( $profile );
+		$ranked  = self::rank_profile( $profile, PHP_INT_MAX, $from_assessment );
+
+		$recommended = array();
+		$explore     = array();
+
+		foreach ( $ranked as $match ) {
+			if ( in_array( $match['tier'], array( Matching_Contract::TIER_STRONG, Matching_Contract::TIER_SUGGESTED ), true ) ) {
+				$recommended[] = $match;
+			} elseif ( Matching_Contract::TIER_EXPLORE === $match['tier'] ) {
+				$explore[] = $match;
+			}
+		}
+
+		if ( $recommended ) {
+			$teams = array_slice( $recommended, 0, self::suggestion_limit() );
+
+			return array(
+				'state'           => 'ready',
+				// The best tier present, which is what the page headline says.
+				'tier'            => $teams[0]['tier'],
+				'teams'           => $teams,
+				'caveat'          => self::caveat( $ratings ),
+				'unmapped_likely' => Gift_Taxonomy::labels( $ratings->unmapped_likely() ),
+				'versions'        => self::versions(),
+			);
+		}
+
+		if ( $explore ) {
+			return array(
+				'state'           => 'explore',
+				'tier'            => Matching_Contract::TIER_EXPLORE,
+				'teams'           => array_slice( $explore, 0, Matching_Contract::MAX_EXPLORE ),
+				'caveat'          => self::caveat( $ratings ),
+				'unmapped_likely' => Gift_Taxonomy::labels( $ratings->unmapped_likely() ),
+				'versions'        => self::versions(),
+			);
+		}
+
+		return array(
+			'state'           => 'none',
+			'tier'            => Matching_Contract::TIER_NONE,
+			'teams'           => array(),
+			'caveat'          => self::caveat( $ratings ),
+			'unmapped_likely' => Gift_Taxonomy::labels( $ratings->unmapped_likely() ),
+			'versions'        => self::versions(),
+		);
+	}
+
+	/**
+	 * The immutable record of what one participant was shown.
+	 *
+	 * Server-generated from sanitised canonical data. Nothing a client sends —
+	 * team ids, tiers, reasons, a whole snapshot — is trusted or copied in.
+	 *
+	 * Carries only non-sensitive reasons: team identity, tier, the gift ids and
+	 * labels that produced it, the arithmetic behind them, and the versions in
+	 * force. No heart, abilities, experience or personality, because a stored
+	 * snapshot is read in more places than the profile is and must not become a
+	 * second, less-guarded copy of the sensitive sections.
+	 *
+	 * @param array<string,mixed> $profile
+	 * @return array<string,mixed>
+	 */
+	public static function participant_match_snapshot( array $profile ): array {
+		$result = self::recommendations_for_profile( $profile );
+
+		$teams = array();
+		foreach ( $result['teams'] as $match ) {
+			$teams[] = array(
+				'team_id'    => $match['team_id'],
+				'team_slug'  => $match['team_slug'],
+				'team_name'  => $match['team_name'],
+				'tier'       => $match['tier'],
+				'co_match'   => ! empty( $match['co_match'] ),
+				'gifts'      => $match['evidence']['likely_labels'],
+				'evidence'   => array(
+					'likely_hit_count'   => $match['evidence']['likely_hit_count'],
+					'possible_hit_count' => $match['evidence']['possible_hit_count'],
+					'all_likely_count'   => $match['evidence']['all_likely_count'],
+					'scorable_count'     => $match['evidence']['scorable_count'],
+					'selectivity'        => $match['evidence']['selectivity'],
+					'team_coverage'      => $match['evidence']['team_coverage'],
+					'corroborations'     => $match['evidence']['corroborations'],
+				),
+			);
+		}
+
+		return array(
+			'state'           => $result['state'],
+			'tier'            => $result['tier'],
+			'teams'           => $teams,
+			'caveat'          => $result['caveat'],
+			'unmapped_likely' => $result['unmapped_likely'],
+			'versions'        => $result['versions'],
+			'created_at'      => current_time( 'mysql', true ),
+		);
+	}
+
+	/**
+	 * The teams worth putting in front of somebody, Strong and Suggested only.
+	 *
+	 * @param array<string,mixed> $profile
+	 * @param string[]            $from_assessment
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function suggestions_for_profile( array $profile, array $from_assessment = array() ): array {
+		$result = self::recommendations_for_profile( $profile, $from_assessment );
+
+		return 'ready' === $result['state'] ? $result['teams'] : array();
+	}
+
+	/**
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function suggestions_for_submission( object $submission, array $profile ): array {
+		return self::suggestions_for_profile(
+			$profile,
+			Submissions::decode_list( $submission->suggested_teams )
+		);
+	}
+
+	/**
 	 * @return array<int,array<string,mixed>>
 	 */
 	public static function rank( object $submission, array $profile, ?int $limit = null ): array {
@@ -329,117 +591,19 @@ final class Matching {
 	}
 
 	/**
-	 * The ranking itself, from a profile alone.
-	 *
-	 * Separated so the public assessment can show a person the same ranked
-	 * teams, with the same reasons, that their leader will see — computed by
-	 * this one implementation rather than a second one written in JavaScript
-	 * that would drift from it within a release.
-	 *
-	 * @param array<string,mixed> $profile
-	 * @param string[]            $from_assessment Slugs the assessment named, if known.
 	 * @return array<int,array<string,mixed>>
 	 */
-	public static function rank_profile( array $profile, ?int $limit = null, array $from_assessment = array() ): array {
-		$limit           = $limit ?? self::suggestion_limit();
-		$from_assessment = array_map( 'strval', $from_assessment );
-
-		$ranked = array();
-		foreach ( Teams::all() as $team ) {
-			$match                    = self::explain( $team, $profile );
-			$match['from_assessment'] = in_array( (string) $team->slug, $from_assessment, true );
-
-			$ranked[] = $match;
-		}
-
-		usort( $ranked, array( self::class, 'compare' ) );
-
-		/*
-		 * Take the best-evidenced up to the limit, and keep every team the
-		 * assessment named whether it made the cut or not. Appending from an
-		 * already-sorted list means the result stays in evidence order, and a
-		 * named team with no evidence at all sorts to the bottom on its own.
-		 */
-		$out   = array();
-		$taken = 0;
-
-		foreach ( $ranked as $match ) {
-			if ( $match['reasons'] && $taken < $limit ) {
-				$out[] = $match;
-				++$taken;
-				continue;
-			}
-
-			if ( $match['from_assessment'] ) {
-				$out[] = $match;
-			}
-		}
-
-		return $out;
+	public static function for_submission( object $submission, array $profile ): array {
+		return self::suggestions_for_submission( $submission, $profile );
 	}
 
 	/**
-	 * The suggestions themselves: strong matches, and nothing weaker.
+	 * The team slugs a new submission records as what the person was shown.
 	 *
-	 * A suggestion is a claim that this person and this team fit. "Possible"
-	 * was never that claim — it is the ranking saying it found something but
-	 * not enough of it, and putting that in front of a ministry leader as a
-	 * suggestion spends their attention on the matches least likely to be
-	 * right. `strength()` already sets a real bar for strong: two shared gifts,
-	 * corroboration from a second S.H.A.P.E. dimension, three reasons, and
-	 * enough selectivity that the overlap is not just a long gift list catching
-	 * everything. Whatever clears that is worth a leader's time. What does not
-	 * is worth a conversation instead, which is what the empty state says.
-	 *
-	 * Filtered across the whole ranking and capped afterwards, never the other
-	 * way round. Order is by evidence rather than by strength, so a person's
-	 * only strong match can sit below two possible ones -- filtering the top
-	 * three would have thrown it away and left them with nothing.
-	 *
-	 * @param array<string,mixed> $profile
-	 * @param string[]            $from_assessment Slugs the assessment named, if known.
-	 * @return array<int,array<string,mixed>>
-	 */
-	public static function suggestions_for_profile( array $profile, array $from_assessment = array() ): array {
-		$strong = array();
-
-		foreach ( self::rank_profile( $profile, PHP_INT_MAX, $from_assessment ) as $match ) {
-			if ( self::STRENGTH_STRONG === ( $match['strength'] ?? '' ) ) {
-				$strong[] = $match;
-			}
-		}
-
-		return array_slice( $strong, 0, self::suggestion_limit() );
-	}
-
-	/**
-	 * The same, for a submission whose assessment picks are on record.
-	 *
-	 * @return array<int,array<string,mixed>>
-	 */
-	public static function suggestions_for_submission( object $submission, array $profile ): array {
-		return self::suggestions_for_profile(
-			$profile,
-			Submissions::decode_list( $submission->suggested_teams )
-		);
-	}
-
-	/**
-	 * The team slugs a new submission should be recorded against.
-	 *
-	 * This is what `suggested_teams` is built from, and therefore what decides
-	 * the placement rows and which ministry leaders may open the profile. It
-	 * used to come from `recommendMinistries()` in the browser: spiritual-gift
-	 * name overlap against a hardcoded copy of the team list, which could not
-	 * see a team renamed, added or retired on the Teams screen, and which padded
-	 * itself up to three with Serve, Welcome and Administration when nothing
-	 * matched.
-	 *
-	 * Ranked here instead, across all five S.H.A.P.E. dimensions, against the
-	 * teams as they actually are. A profile the ranking finds no evidence for
-	 * gets an empty list and no placement rows, which is the honest answer: a
-	 * pastor sees everyone and the dashboard puts people nobody has spoken to
-	 * first.
+	 * This is `suggested_teams`, and it is now only a record. It used to build
+	 * the placement rows that decided which ministry leaders could open the
+	 * profile; it does not any more, and nothing downstream may treat it as an
+	 * authorisation. See Placements::assign_intake_owner().
 	 *
 	 * @param array<string,mixed> $profile
 	 * @return string[]
@@ -448,7 +612,7 @@ final class Matching {
 		$slugs = array();
 
 		foreach ( self::suggestions_for_profile( $profile ) as $match ) {
-			if ( ! empty( $match['reasons'] ) && '' !== $match['team_slug'] ) {
+			if ( '' !== $match['team_slug'] ) {
 				$slugs[] = $match['team_slug'];
 			}
 		}
@@ -457,38 +621,54 @@ final class Matching {
 	}
 
 	/**
-	 * Every suggested team for a submission, best-explained first.
+	 * The caveat a result carries, if any.
 	 *
-	 * @return array<int,array<string,mixed>>
+	 * Ordered by how much it invalidates: an unreadable partition first, then
+	 * answers that do not discriminate. Both are phrased as something to
+	 * explore rather than as a fault — somebody new to the language of
+	 * spiritual gifts may genuinely not know yet, and that is a conversation.
 	 */
-	public static function for_submission( object $submission, array $profile ): array {
-		return self::suggestions_for_submission( $submission, $profile );
+	private static function caveat( Gift_Ratings $ratings ): string {
+		if ( ! $ratings->is_valid() ) {
+			return $ratings->invalid_reason();
+		}
+
+		if ( Matching_Contract::is_undifferentiated( $ratings->all_likely_count() ) ) {
+			return self::undifferentiated_note( $ratings->all_likely_count() );
+		}
+
+		return '';
+	}
+
+	public static function is_undifferentiated( int $claimed_gifts ): bool {
+		return Matching_Contract::is_undifferentiated( $claimed_gifts );
+	}
+
+	public static function undifferentiated_note( int $claimed_gifts ): string {
+		return sprintf(
+			/* translators: 1: number of gifts marked likely, 2: total gifts. */
+			__( 'This person marked %1$d of the %2$d gifts as likely, so their answers do not point clearly to one team. Worth exploring together rather than relying on a suggestion.', 'serve-dashboard' ),
+			$claimed_gifts,
+			count( Gift_Taxonomy::ids() )
+		);
 	}
 
 	/**
 	 * What a person's temperament suggests about how they would serve.
 	 *
-	 * The assessment has collected the four personality couplets since the
-	 * beginning and has shown them on the profile, but nothing has ever
-	 * interpreted them — while the presentation lists personality among the
-	 * five things matching considers. This closes that gap in the only
-	 * direction the data honestly supports.
+	 * Notes about the person, not about any one team, which is the workbook's
+	 * own position: personality affects the manner in which a gift is
+	 * exercised, and serving against the grain of it "creates tension and
+	 * discomfort, requires extra effort and energy, and produces less than the
+	 * best results". Useful for shaping a role. Useless for choosing between
+	 * two teams, and never a reason to rule somebody out.
 	 *
-	 * These are notes about the person, not about any one team, and that is
-	 * the workbook's own position: personality affects the manner in which a
-	 * gift is exercised, and serving against the grain of it "creates tension
-	 * and discomfort, requires extra effort and energy, and produces less than
-	 * the best results". Useful for shaping a role. Useless for choosing
-	 * between two teams, and never a reason to rule somebody out — the
-	 * workbook is equally clear that there is no right or wrong temperament
-	 * and that the church needs opposites.
-	 *
-	 * Returned once per person rather than per suggestion, because repeating
-	 * an identical block under every team would imply it discriminated between
+	 * Returned once per person rather than per suggestion, because repeating an
+	 * identical block under every team would imply it discriminated between
 	 * them.
 	 *
 	 * @param array<string,mixed> $profile Decoded profile.
-	 * @return array<int,array<string,string>> Tendency and what it suggests.
+	 * @return array<int,array<string,string>>
 	 */
 	public static function personality_notes( array $profile ): array {
 		$out = array();
@@ -521,20 +701,17 @@ final class Matching {
 	 * the assessment's wording does not silently empty this list. An unknown
 	 * label returns an empty string and is skipped: inventing a note for a
 	 * tendency nobody recognises would be worse than saying nothing.
-	 *
-	 * Every note is phrased as something to explore. None of them says a
-	 * person is unsuited to anything.
 	 */
 	private static function personality_note( string $label ): string {
 		$notes = array(
-			'extroverted'  => __( 'Gains energy from people and variety, so a role with plenty of contact is likely to suit.', 'serve-dashboard' ),
-			'introverted'  => __( 'Gains energy from quiet reflection and listens well. Depth with a few people may suit better than a busy front-of-house role.', 'serve-dashboard' ),
-			'expressive'   => __( 'Open and verbal about their thoughts, so a role where speaking up is expected should feel natural.', 'serve-dashboard' ),
-			'controlled'   => __( 'Tends to keep their thoughts to themselves. Worth asking directly what they would like rather than waiting for them to offer it.', 'serve-dashboard' ),
-			'routine'      => __( 'More comfortable where expectations are clear, and likes finishing one thing before starting the next.', 'serve-dashboard' ),
-			'variety'      => __( 'More fulfilled by work that changes, and does not need one task closed before the next begins.', 'serve-dashboard' ),
-			'cooperative'  => __( 'Sees other points of view easily and likes being part of a team effort.', 'serve-dashboard' ),
-			'competitive'  => __( 'Motivated by a challenge, which raises their effort when there are obstacles to get past.', 'serve-dashboard' ),
+			'extroverted' => __( 'Gains energy from people and variety, so a role with plenty of contact is likely to suit.', 'serve-dashboard' ),
+			'introverted' => __( 'Gains energy from quiet reflection and listens well. Depth with a few people may suit better than a busy front-of-house role.', 'serve-dashboard' ),
+			'expressive'  => __( 'Open and verbal about their thoughts, so a role where speaking up is expected should feel natural.', 'serve-dashboard' ),
+			'controlled'  => __( 'Tends to keep their thoughts to themselves. Worth asking directly what they would like rather than waiting for them to offer it.', 'serve-dashboard' ),
+			'routine'     => __( 'More comfortable where expectations are clear, and likes finishing one thing before starting the next.', 'serve-dashboard' ),
+			'variety'     => __( 'More fulfilled by work that changes, and does not need one task closed before the next begins.', 'serve-dashboard' ),
+			'cooperative' => __( 'Sees other points of view easily and likes being part of a team effort.', 'serve-dashboard' ),
+			'competitive' => __( 'Motivated by a challenge, which raises their effort when there are obstacles to get past.', 'serve-dashboard' ),
 		);
 
 		$haystack = strtolower( $label );
@@ -549,70 +726,11 @@ final class Matching {
 	}
 
 	/**
-	 * Qualitative strength, normalised against how much the person claimed.
+	 * Everything a team's work can be recognised by, for context only.
 	 *
-	 * Three matching gifts out of four claimed is strong evidence. The same
-	 * three out of eighteen is noise. Raw overlap cannot tell those apart,
-	 * which is why selectivity is part of the test.
-	 *
-	 * "Strong" additionally requires corroboration from a second SHAPE
-	 * dimension, so gifts alone can never reach it.
-	 *
-	 * @param int $gift_hits    Gifts shared with this team.
-	 * @param int $reason_count Total reasons found.
-	 * @param int $claimed      How many gifts the person marked likely.
-	 * @param int $dimensions   Distinct SHAPE dimensions supporting the match.
-	 */
-	private static function strength( int $gift_hits, int $reason_count, int $claimed, int $dimensions ): string {
-		// Undifferentiated answers can never produce a strong match. The
-		// honest reading is "we cannot tell from this — go and talk".
-		if ( self::is_undifferentiated( $claimed ) ) {
-			return $gift_hits > 0 ? self::STRENGTH_POSSIBLE : self::STRENGTH_UNCLEAR;
-		}
-
-		$selectivity = $claimed > 0 ? $gift_hits / $claimed : 0.0;
-
-		if ( $gift_hits >= 2
-			&& $dimensions >= 2
-			&& $reason_count >= 3
-			&& $selectivity >= self::MIN_SELECTIVITY ) {
-			return self::STRENGTH_STRONG;
-		}
-
-		if ( $gift_hits >= 1 || $reason_count >= 2 ) {
-			return self::STRENGTH_POSSIBLE;
-		}
-
-		return self::STRENGTH_UNCLEAR;
-	}
-
-	public static function is_undifferentiated( int $claimed_gifts ): bool {
-		return $claimed_gifts >= self::UNDIFFERENTIATED_AT;
-	}
-
-	/**
-	 * Note shown when someone's gift answers do not discriminate.
-	 *
-	 * Deliberately phrased as something to explore rather than as a fault:
-	 * a person new to the language of spiritual gifts may genuinely not know
-	 * yet, and that is a conversation, not a data problem.
-	 */
-	public static function undifferentiated_note( int $claimed_gifts ): string {
-		return sprintf(
-			/* translators: %d: number of gifts marked likely. */
-			__( 'This person marked %d of the 18 gifts as likely, so their answers do not point clearly to one team. Worth exploring together rather than relying on a suggestion.', 'serve-dashboard' ),
-			$claimed_gifts
-		);
-	}
-
-	/**
-	 * Everything a team's work can be recognised by.
-	 *
-	 * The team name alone was not enough and was the reason heart, abilities
-	 * and experience almost never produced a reason: a passion for "Elementary
-	 * Children" shares no word with "Fellowship Kids", so the person looked
-	 * like a gifts-only match for a team they were plainly suited to. Teams now
-	 * carry a seeded vocabulary as well, editable on the Teams screen.
+	 * Editable on the Teams screen, and no longer able to affect a tier. That
+	 * separation is the point: administrative vocabulary is display copy, and
+	 * display copy must not be able to open a profile.
 	 *
 	 * @return string[]
 	 */
@@ -629,7 +747,7 @@ final class Matching {
 	/**
 	 * A person's own answers that this team's vocabulary recognises.
 	 *
-	 * Crude on purpose: it only ever produces a reason a human can read and
+	 * Crude on purpose: it only ever produces a line a human can read and
 	 * immediately agree or disagree with, so a false positive is visible rather
 	 * than buried inside a score. The value returned is always the person's own
 	 * wording, never the vocabulary word that matched it.
@@ -665,11 +783,11 @@ final class Matching {
 		foreach ( $values as $value ) {
 			/*
 			 * Only scalars. A profile reaching this from storage has been
-			 * through sanitize_profile() and holds strings, but the public
-			 * suggestion endpoint is handed whatever a caller sends: an array
-			 * where a string belongs used to be cast to "Array" — emitting a
-			 * PHP warning per value, so a 200-byte request could fill a log on
-			 * any site with WP_DEBUG_LOG on. Skipped rather than stringified,
+			 * through sanitize_profile() and holds strings, but a public
+			 * endpoint is handed whatever a caller sends: an array where a
+			 * string belongs used to be cast to "Array" — emitting a PHP
+			 * warning per value, so a small request could fill a log on any
+			 * site with WP_DEBUG_LOG on. Skipped rather than stringified,
 			 * because "Array" is not something a person answered.
 			 */
 			if ( ! is_scalar( $value ) ) {

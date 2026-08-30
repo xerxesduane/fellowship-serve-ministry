@@ -21,6 +21,19 @@ import {
 import { buildProfile, emptyAnswers, profileToText } from "./profile.js";
 import { escapeHtml, icon } from "./render.js";
 import { resultsHandoff } from "./handoff.js";
+import {
+  EMPTY,
+  ERROR,
+  LOADING,
+  READY,
+  cleared,
+  failed,
+  initialState,
+  profileKey,
+  received,
+  requested,
+  shouldRequest,
+} from "./suggestions.js";
 
 const STORAGE_KEY = "fellowship-dubai-shape-v2";
 // The SERVE dashboard reads the computed profile from here, so a leader can be
@@ -362,48 +375,69 @@ function profileSection(letter, title, body) {
  * Held in module state rather than threaded through render(): the results page
  * renders synchronously and this arrives later.
  */
-let serverSuggestions = null;
-let suggestionsAsked = false;
+let suggestionState = initialState();
 
 function requestSuggestions(profile) {
-  if (suggestionsAsked || !SERVE_CONFIG.suggestUrl) return;
-  suggestionsAsked = true;
+  if (!SERVE_CONFIG.suggestUrl) return;
+
+  const key = profileKey(profile);
+  if (!shouldRequest(suggestionState, key)) return;
+
+  suggestionState = requested(suggestionState, key);
 
   /*
-   * Only the sections that carry answers. The server ignores anything else, but
-   * there is no reason to put a name, an email or a phone number on the wire
-   * for a calculation that does not use them.
+   * Gift ratings, and nothing else.
+   *
+   * This used to send heart, abilities, experiences and personality as well —
+   * including the Experiences section, which holds painful history and every
+   * "Other" free-text answer a person typed. None of it was needed: with the
+   * corroboration registry empty, the matcher reads gift ratings and the team
+   * configuration and nothing more.
+   *
+   * Sharing that material with the SERVE team is a separate decision the person
+   * has not made yet at this point in the journey — the consent step comes
+   * after this page. Previewing a team match is not a reason to transmit it,
+   * and "the server ignores it" is not the same as "it was never sent".
    */
-  const payload = {
-    spiritualGifts: profile.spiritualGifts,
-    heart: profile.heart,
-    abilities: profile.abilities,
-    experiences: profile.experiences,
-    personality: profile.personality,
-  };
+  const payload = { spiritualGifts: profile.spiritualGifts };
 
   fetch(SERVE_CONFIG.suggestUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ profile: payload }),
   })
-    .then((response) => (response.ok ? response.json() : null))
+    .then((response) => (response.ok ? response.json() : Promise.reject(new Error("http"))))
     .then((data) => {
-      if (!data || !Array.isArray(data.suggestions) || !data.suggestions.length) return;
-      serverSuggestions = data.suggestions;
+      suggestionState = received(suggestionState, key, data);
       render({ animate: false });
     })
     .catch(() => {
       /*
-       * Deliberately silent. The gift-only list is already on screen and is a
-       * true statement about their gifts; replacing a working results page with
-       * an error because a refinement did not load would be the worse outcome.
+       * Rendered rather than swallowed. This was deliberately silent, on the
+       * argument that a working results page beat an error — which was true
+       * while the browser still had its own gift-only ranking to fall back on.
+       * It has not had one since ranking moved to the server, so silence left
+       * the person on "Working these out…" indefinitely with no way to tell
+       * that anything had gone wrong.
        */
+      suggestionState = failed(suggestionState, key);
+      render({ animate: false });
     });
 }
 
+/** The shell every result state shares, so the heading never moves. */
+function recommendationsShell(intro, body, caveat = "") {
+  return `<article class="recommendations-section"><header><p class="eyebrow">Personalized starting points</p><h2>Where your gifts point</h2><p>${intro}</p></header>${
+    caveat ? `<p class="ministry-caveat">${escapeHtml(caveat)}</p>` : ""
+  }${body}</article>`;
+}
+
 function ministryRecommendations(profile) {
-  if (serverSuggestions) {
+  requestSuggestions(profile);
+
+  const state = suggestionState;
+
+  if (state.status === READY) {
     /*
      * Two reasons visible, the rest folded away.
      *
@@ -412,38 +446,99 @@ function ministryRecommendations(profile) {
      * is worth a conversation, which is all this page is for; the remainder is
      * a <details> so nothing is lost and it needs no JavaScript to open.
      */
-    const cards = serverSuggestions.map((item, index) => {
-      const shown = item.reasons.slice(0, 2);
-      const rest = item.reasons.slice(2);
+    const cards = state.suggestions.map((item) => {
+      const reasons = Array.isArray(item.reasons) ? item.reasons : [];
+      const shown = reasons.slice(0, 2);
+      const rest = reasons.slice(2);
 
-      const list = (reasons) => `<ul class="ministry-why">${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>`;
+      const list = (items) => `<ul class="ministry-why">${items.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>`;
 
       const why = shown.length
         ? `${list(shown)}${rest.length ? `<details class="ministry-more"><summary>${rest.length} more ${rest.length === 1 ? "reason" : "reasons"}</summary>${list(rest)}</details>` : ""}`
         : "<p>A flexible place to explore your S.H.A.P.E. with a ministry leader.</p>";
 
-      return `<li><span>${index + 1}</span><div><h3>${escapeHtml(item.team)}</h3><p class="ministry-strength">${escapeHtml(item.strengthLabel)}</p>${why}</div></li>`;
+      /*
+       * Deliberately not numbered.
+       *
+       * The list used to print 1, 2, 3, which reads as a ranking — and where
+       * two teams are separated only by their slug, that ordering is not
+       * evidence about anybody. Teams the server marks as co-matches say so
+       * instead of being silently placed above or below one another.
+       */
+      const coMatch = item.coMatch
+        ? '<p class="ministry-comatch">Equally well supported as the other team(s) shown here.</p>'
+        : "";
+
+      return `<li><div><h3>${escapeHtml(item.team)}</h3><p class="ministry-strength">${escapeHtml(item.tierLabel || item.strengthLabel || "")}</p>${coMatch}${why}</div></li>`;
     }).join("");
 
-    const caveat = serverSuggestions.find((item) => item.caveat);
+    const strong = state.suggestions.some((item) => item.tier === "strong");
+    const intro = strong
+      ? "Based on your spiritual gifts. Your interests, availability, experience and each ministry's own requirements still matter — these are conversation starters, not a placement."
+      : "No single strong gift match stands out yet. These teams are worth exploring with a S.H.A.P.E. advisor.";
 
-    return `<article class="recommendations-section"><header><p class="eyebrow">Personalized starting points</p><h2>Where your S.H.A.P.E. points</h2><p>Weighed across everything you told us — your gifts, what you care about, what you can do, and what you have lived through. Conversation starters, not a final assignment.</p></header>${
-      caveat ? `<p class="ministry-caveat">${escapeHtml(caveat.caveat)}</p>` : ""
-    }<ol class="ministry-recommendations">${cards}</ol></article>`;
+    const caveat = state.suggestions.find((item) => item.caveat);
+
+    return recommendationsShell(
+      intro,
+      `<ol class="ministry-recommendations ministry-recommendations--unranked">${cards}</ol>${unmappedNote(state)}`,
+      caveat ? caveat.caveat : ""
+    );
   }
 
-  requestSuggestions(profile);
+  if (state.status === EMPTY) {
+    /*
+     * A complete, successful answer, and it renders immediately.
+     *
+     * `{ suggestions: [] }` used to be discarded by a truthiness check, so the
+     * people the software had least to say about were the ones left watching a
+     * spinner forever. Saying so plainly is a better result than a forced
+     * match, and the copy is careful not to read as a failure: somebody new to
+     * the language of spiritual gifts may genuinely not know yet.
+     */
+    return recommendationsShell(
+      "Your answers do not point clearly to one team yet.",
+      `<p class="ministry-empty">That is not a failed result. A conversation and a trial serving opportunity will tell you far more than a forced match would, and the SERVE team has your profile either way.</p>${unmappedNote(state)}`
+    );
+  }
 
-  /*
-   * Nothing to fall back to any more, and that is the honest state rather
-   * than a worse one. The browser no longer ranks teams, so if the request
-   * has not answered there is no second opinion to show — and inventing one
-   * from spiritual gifts alone is exactly what this stopped doing.
-   *
-   * Their answers are already saved and the server has ranked them for the
-   * leader either way, so this says so plainly instead of looking broken.
-   */
-  return `<article class="recommendations-section"><header><p class="eyebrow">Personalized starting points</p><h2>Where your S.H.A.P.E. points</h2><p>Working these out from everything you told us…</p></header><p class="ministry-caveat">If this does not appear in a moment, nothing is lost: your answers are saved, and the SERVE team will have your suggested teams alongside them.</p></article>`;
+  if (state.status === ERROR) {
+    /*
+     * Says what happened, and leaves the finished profile usable. Everything
+     * above this section — gifts, heart, abilities, personality, experience —
+     * is theirs and is unaffected by a failed request for team suggestions.
+     */
+    return recommendationsShell(
+      "We could not work these out just now.",
+      '<p class="ministry-empty">Nothing is lost: your profile above is complete and you can save or share it as normal. Try reloading this page, or talk to the SERVE team and they will go through it with you.</p>'
+    );
+  }
+
+  // LOADING, and the first render before the request has been made.
+  return recommendationsShell(
+    "Working these out from your gift answers…",
+    '<p class="ministry-caveat">If this does not appear in a moment, nothing is lost: your answers are saved and you can still share your profile.</p>'
+  );
+}
+
+/**
+ * Likely gifts the ministry table does not currently measure.
+ *
+ * Stated as a fact about the table rather than resolved to the nearest-looking
+ * ministry, which is the whole argument of the crosswalk: unmapped means
+ * unknown coverage, not "unlikely", and never permission to guess.
+ */
+function unmappedNote(state) {
+  const unmapped = state.suggestions.length && Array.isArray(state.suggestions[0].unmappedLikely)
+    ? state.suggestions[0].unmappedLikely
+    : [];
+
+  if (!unmapped.length) return "";
+
+  const names = unmapped.map((gift) => escapeHtml(gift)).join(", ");
+  const isOne = unmapped.length === 1;
+
+  return `<p class="ministry-caveat">${names} ${isOne ? "is one of your likely gifts" : "are among your likely gifts"}, but the current Fellowship ministry table does not map ${isOne ? "that gift" : "those gifts"} yet, so ${isOne ? "it was" : "they were"} not counted towards the teams above — and ${isOne ? "it was" : "they were"} not quietly treated as something else. Worth raising with a S.H.A.P.E. advisor.</p>`;
 }
 
 function ministryTable() {
@@ -481,7 +576,13 @@ function ministryTable() {
  * so the address could be appended in one and not the other.
  */
 function takeawayText(profile) {
-  const text = profileToText(answers, profile, serverSuggestions);
+  /*
+   * The same state the page is rendering from, so the downloaded copy, the
+   * printed page and the emailed text carry the recommendations the person
+   * actually saw — including "no clear match yet", which is a real result and
+   * used to be indistinguishable from "the request had not answered".
+   */
+  const text = profileToText(answers, profile, suggestionState);
 
   return SERVING_FORM
     ? `${text}\n\nCURRENT SERVING OPPORTUNITIES\n${SERVING_FORM}`
@@ -638,6 +739,20 @@ root.addEventListener("click", (event) => {
     servingFormOpen = false;
     Object.keys(searches).forEach((key) => delete searches[key]);
     openGroups.clear();
+
+    /*
+     * The recommendations go too.
+     *
+     * They did not, and the in-flight marker did not either — so on a shared
+     * device, the next person to reach their results saw the previous person's
+     * teams. Worse, because the "already asked" flag survived, no new request
+     * was ever made, so the stale list was all they would ever see. One line
+     * that clears everything, and a keyed state so a response still in flight
+     * from the previous profile is dropped when it lands rather than painted
+     * over whoever is on screen now.
+     */
+    suggestionState = cleared();
+
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* no-op */ }
   }
   if (action === "gift") answers.gifts[button.dataset.gift] = button.dataset.value;

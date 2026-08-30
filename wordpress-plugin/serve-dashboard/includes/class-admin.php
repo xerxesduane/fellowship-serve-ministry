@@ -134,21 +134,61 @@ final class Admin {
 	/**
 	 * @return array<int,object>
 	 */
-	public static function placements_for( int $submission_id ): array {
+	/**
+	 * Placement rows for one person, scoped to what the caller may act on.
+	 *
+	 * This returned every row for the person regardless of who asked, and the
+	 * drawer builds its team chooser from exactly this list — so a leader who
+	 * could see somebody through their own team was offered every other team
+	 * that person sits on as a destination. set_status() did not check team
+	 * ownership either, so the offer worked: an ordinary leader could mark
+	 * somebody Placed on a team they have nothing to do with, moving another
+	 * ministry's record and its headcount.
+	 *
+	 * Scoped by the same rule as everything else. A pastor holds CAP_VIEW_ALL
+	 * and still sees the whole picture, which is the point of the role; a
+	 * ministry leader sees their own teams' rows and is offered nothing else.
+	 *
+	 * @param bool $all_scopes Internal callers that have already decided who
+	 *                         may see what — the reconciliation report, the
+	 *                         retention sweep — pass true. Nothing reachable
+	 *                         from a request should.
+	 * @return array<int,object>
+	 */
+	public static function placements_for( int $submission_id, bool $all_scopes = false ): array {
 		global $wpdb;
 
 		$placements = Schema::table( 'placements' );
 		$teams      = Schema::table( 'teams' );
 
+		$where  = array( 'p.submission_id = %d' );
+		$params = array( $submission_id );
+
+		if ( ! $all_scopes ) {
+			$visible = Roles::visible_team_ids();
+
+			// Null means unrestricted, so no clause at all. An empty array is
+			// the opposite and must not be allowed to fall through as one.
+			if ( null !== $visible ) {
+				if ( empty( $visible ) ) {
+					return array();
+				}
+
+				$in      = implode( ',', array_fill( 0, count( $visible ), '%d' ) );
+				$where[] = "p.team_id IN ({$in})";
+				$params  = array_merge( $params, $visible );
+			}
+		}
+
 		return (array) $wpdb->get_results(
 			$wpdb->prepare(
-				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names are not user input.
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names are not user input; placeholders built from a counted int array.
 				"SELECT p.*, t.name AS team_name, t.requires_safeguarding
 				 FROM {$placements} p
 				 INNER JOIN {$teams} t ON t.id = p.team_id
-				 WHERE p.submission_id = %d
-				 ORDER BY t.name ASC",
-				$submission_id
+				 WHERE " . implode( ' AND ', $where ) . '
+				 ORDER BY t.name ASC',
+				$params
 			)
 		);
 	}

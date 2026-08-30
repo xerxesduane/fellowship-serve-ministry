@@ -19,10 +19,21 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 final class Consent {
 
-	public static function record( int $submission_id ): void {
+	/**
+	 * Write the consent record for a submission.
+	 *
+	 * Returns whether it was actually stored. This was `void`: the insert
+	 * result went unread and the audit entry was written whether or not there
+	 * was anything to audit, so a failed insert produced a profile the church
+	 * was holding with no record of the basis for holding it — and an audit log
+	 * asserting the opposite.
+	 *
+	 * @return bool
+	 */
+	public static function record( int $submission_id ): bool {
 		global $wpdb;
 
-		$wpdb->insert(
+		$inserted = $wpdb->insert(
 			Schema::table( 'consents' ),
 			array(
 				'submission_id'    => $submission_id,
@@ -36,12 +47,18 @@ final class Consent {
 			array( '%d', '%s', '%s', '%d', '%s', '%s', '%s' )
 		);
 
+		if ( ! $inserted ) {
+			return false;
+		}
+
 		Audit::log(
 			Audit::ACTION_CONSENT_RECORDED,
 			'submission',
 			$submission_id,
 			array( 'policy_version' => Privacy::POLICY_VERSION )
 		);
+
+		return true;
 	}
 
 	public static function for_submission( int $submission_id ): ?object {

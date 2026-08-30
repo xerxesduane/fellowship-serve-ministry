@@ -18,6 +18,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 final class Rest_Dashboard {
 
+	/** What one page of the people list holds when the caller does not say. */
+	private const DEFAULT_PER_PAGE = 25;
+
 	public static function register(): void {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
 	}
@@ -115,7 +118,16 @@ final class Rest_Dashboard {
 								'gap'     => max( 0, (int) $team->target_headcount - (int) $team->current_headcount ),
 								'safeguarded' => (bool) (int) $team->requires_safeguarding,
 							),
-							'candidates' => Teams::candidates( (int) $request['id'] ),
+							/*
+							 * Discovery reads across the intake pool, so it
+							 * belongs to the SERVE-wide role. An ordinary
+							 * leader is told that plainly instead of being
+							 * handed an empty list that looks like "nobody
+							 * fits" — which is what the circular query used to
+							 * produce for them.
+							 */
+							'canDiscover' => Teams::can_discover_candidates(),
+							'candidates'  => Teams::candidates( (int) $request['id'] ),
 						)
 					);
 				},
@@ -491,8 +503,24 @@ final class Rest_Dashboard {
 	 * @param \WP_REST_Request $request
 	 */
 	public static function people( \WP_REST_Request $request ): \WP_REST_Response {
-		$per_page = max( 1, min( 100, (int) $request->get_param( 'per_page' ) ) );
-		$page     = max( 1, (int) $request->get_param( 'page' ) );
+		/*
+		 * An absent per_page means "the usual page", not one row.
+		 *
+		 * `(int) null` is 0, so max( 1, min( 100, 0 ) ) collapsed to 1. Nothing
+		 * over HTTP hits this — the route declares a default of 25 and the REST
+		 * server applies it before the callback runs — so this is only reachable
+		 * by calling the method directly, which is what a test does. It is
+		 * defence in depth rather than a live defect, and it is here because a
+		 * method that behaves differently depending on how it was reached is
+		 * how a test comes to pass for a reason nobody intended: this one
+		 * passed only while the table held a single person.
+		 */
+		$requested = $request->get_param( 'per_page' );
+		$per_page  = null === $requested || '' === $requested
+			? self::DEFAULT_PER_PAGE
+			: max( 1, min( 100, (int) $requested ) );
+
+		$page = max( 1, (int) $request->get_param( 'page' ) );
 
 		$rows = Submissions::query(
 			array(
@@ -569,7 +597,24 @@ final class Rest_Dashboard {
 				),
 				'shape'          => self::shape_dimensions( $profile, $submission ),
 				'redacted'       => ! empty( $profile['_redacted'] ),
+
+				/*
+				 * Three different questions, answered separately.
+				 *
+				 * `snapshot`   — what this person was told at the end of their
+				 *                journey. Fixed, and never recomputed.
+				 * `matches`    — what the matcher says today, from the evidence
+				 *                this caller is allowed to read.
+				 * `placements` — who has actually been assigned, by a human.
+				 *
+				 * They used to be one list, so "the software suggested this",
+				 * "the software would suggest this now" and "somebody decided
+				 * this" were indistinguishable — and only the third of those is
+				 * a reason anybody can see the profile.
+				 */
+				'snapshot'       => self::snapshot_for( $submission ),
 				'matches'        => Matching::for_submission( $submission, $profile ),
+				'drift'          => self::drift_note( $submission ),
 				/*
 				 * Sent once, not per match. Personality shapes how a person
 				 * serves rather than which team they belong on, so it sits
@@ -585,21 +630,22 @@ final class Rest_Dashboard {
 				'unmatched'      => empty( Submissions::decode_list( $submission->suggested_teams ) ),
 
 				/*
-				 * Every active team, so somebody who matched nothing can still
-				 * be recorded onto whichever team the conversation settled on.
-				 * Sent only when it is needed: the ordinary case chooses from
-				 * the placements below and this would be noise.
+				 * The teams this caller may actually assign somebody to.
+				 *
+				 * Sent always, and scoped. It used to be every active team,
+				 * sent only when `suggested_teams` was empty — which made the
+				 * dropdown a function of the ranking, and offered a ministry
+				 * leader every team in the church whenever the matcher had
+				 * found nothing. Now that a recommendation creates no placement
+				 * rows, keying the chooser off the ranking would leave a
+				 * coordinator able to record a conversation only against the
+				 * intake owner.
+				 *
+				 * A pastor gets every active team; a ministry leader gets the
+				 * teams they lead and nothing else, matching what set_status()
+				 * will actually accept from them.
 				 */
-				'allTeams'       => empty( Submissions::decode_list( $submission->suggested_teams ) )
-					? array_map(
-						static fn( $t ) => array(
-							'teamId'      => (int) $t->id,
-							'teamName'    => $t->name,
-							'safeguarded' => (bool) (int) $t->requires_safeguarding,
-						),
-						Teams::all()
-					)
-					: array(),
+				'assignableTeams' => self::assignable_teams(),
 				'placements'     => array_map(
 					static fn( $p ) => array(
 						'teamId'   => (int) $p->team_id,
@@ -709,6 +755,93 @@ final class Rest_Dashboard {
 	}
 
 	/**
+	 * What the participant was shown, as stored.
+	 *
+	 * Never recomputed. A null column means the submission predates the record
+	 * being kept, and that is reported as exactly that: rows created under the
+	 * old string-comparison matcher were produced by rules that could not see
+	 * ten of the ministry table's terms, so recalculating them today and
+	 * presenting the result as "what they saw" would assert something that was
+	 * never true of anybody.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	private static function snapshot_for( object $submission ): ?array {
+		$raw = json_decode( (string) ( $submission->match_snapshot ?? '' ), true );
+
+		if ( ! is_array( $raw ) || ! $raw ) {
+			return null;
+		}
+
+		return $raw;
+	}
+
+	/**
+	 * Whether the rules have moved since this person was told their result.
+	 *
+	 * A short note rather than a silent recalculation. If the mapping or the
+	 * contract has been revised, the historical claim stays as it was and the
+	 * leader is told the current analysis below it was produced under different
+	 * rules — which is the difference between explaining a result and quietly
+	 * replacing it.
+	 */
+	private static function drift_note( object $submission ): string {
+		$stored = (string) ( $submission->match_version ?? '' );
+
+		if ( '' === $stored ) {
+			return __( 'This profile predates the record of what the participant was shown, so only the current analysis is available.', 'serve-dashboard' );
+		}
+
+		$current = Matching_Contract::VERSION . '/' . Gift_Crosswalk::VERSION;
+
+		if ( $stored === $current ) {
+			return '';
+		}
+
+		return sprintf(
+			/* translators: 1: stored version, 2: current version. */
+			__( 'The matching rules have changed since this person saw their result (%1$s, now %2$s). What they were shown is unchanged above; the current analysis below may rank teams differently.', 'serve-dashboard' ),
+			$stored,
+			$current
+		);
+	}
+
+	/**
+	 * Active teams the current user may assign somebody to.
+	 *
+	 * The same rule Roles::can_manage_team() enforces on the way in, so the UI
+	 * cannot offer a destination the transition will refuse. Deactivated teams
+	 * are absent from Teams::all(), which is what keeps a closed team from
+	 * acquiring new people through a stale browser tab.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function assignable_teams(): array {
+		if ( ! current_user_can( Roles::CAP_MANAGE_PLACE ) ) {
+			return array();
+		}
+
+		$visible = Roles::visible_team_ids();
+
+		$out = array();
+		foreach ( Teams::all() as $team ) {
+			// Null is the all-teams capability. An empty array is a leader with
+			// no teams at all, and must not be read as "no restriction".
+			if ( null !== $visible && ! in_array( (int) $team->id, $visible, true ) ) {
+				continue;
+			}
+
+			$out[] = array(
+				'teamId'      => (int) $team->id,
+				'teamName'    => $team->name,
+				'safeguarded' => (bool) (int) $team->requires_safeguarding,
+			);
+		}
+
+		return $out;
+	}
+
+	/**
 	 * Shape one submission row for a list.
 	 *
 	 * Lists deliberately carry less than the detail view: enough to prioritise,
@@ -741,11 +874,62 @@ final class Rest_Dashboard {
 				 * Small Group is no longer flattened to Grow Small Group by
 				 * title-casing a slug.
 				 */
-				$profile   = json_decode( (string) $row->profile_json, true );
-				$suggested = array_column(
-					Matching::suggestions_for_profile( is_array( $profile ) ? $profile : array() ),
-					'team_name'
+				/*
+				 * Read from the stored snapshot. No profile is decoded here at
+				 * all, and that is the fix rather than a side effect.
+				 *
+				 * This called json_decode( $row->profile_json ) and ranked the
+				 * whole thing, regardless of who was asking. So a team name in
+				 * this column could be derived from a painful Experience that
+				 * the same leader is forbidden to read in the drawer — and a
+				 * derived name is still an inference from that evidence.
+				 * Redaction that only covers the place the text is displayed is
+				 * not redaction.
+				 *
+				 * It also made the two views disagree: the drawer ranked a
+				 * redacted profile and the list ranked the full one, so one
+				 * person could carry a team here that the panel could not
+				 * explain.
+				 *
+				 * The snapshot holds team names, tiers and gift labels and
+				 * nothing sensitive, by construction. Every caller who may see
+				 * the row may see all of it, the list and the drawer are
+				 * reading the same record, and a list request no longer decodes
+				 * sixteen profiles to render a column.
+				 */
+				$snapshot = json_decode( (string) ( $row->match_snapshot ?? '' ), true );
+				$snapshot = is_array( $snapshot ) ? $snapshot : array();
+
+				/*
+				 * Recommendations only, not everything the snapshot holds.
+				 *
+				 * A snapshot for somebody with no clear match still lists the
+				 * teams they were offered to explore with an advisor — real
+				 * evidence, honestly shown to them, and emphatically not the
+				 * same claim as "these teams suit you". Printing those in a
+				 * column beside everyone else's strong matches would put the
+				 * weakest results and the strongest under one heading, and
+				 * would make `unmatched` false for exactly the people the flag
+				 * exists to surface.
+				 *
+				 * The explore options are kept in the snapshot and shown in the
+				 * drawer, where there is room to say what tier they are.
+				 */
+				$recommended = array_filter(
+					(array) ( $snapshot['teams'] ?? array() ),
+					static fn( $team ) => in_array(
+						$team['tier'] ?? '',
+						array( Matching_Contract::TIER_STRONG, Matching_Contract::TIER_SUGGESTED ),
+						true
+					)
 				);
+
+				$suggested = array_column( $recommended, 'team_name' );
+
+				// Null snapshot means the row predates the record being kept,
+				// which is not the same as "nothing matched" and must not be
+				// shown as it.
+				$has_snapshot = array() !== $snapshot;
 
 				return array(
 					'id'             => (int) $row->id,
@@ -754,12 +938,14 @@ final class Rest_Dashboard {
 					'gifts'          => array_slice( Submissions::decode_list( $row->gifts_likely ), 0, 3 ),
 					'languages'      => Submissions::decode_list( $row->languages ),
 					'suggestedTeams' => $suggested,
+					'hasSnapshot'    => $has_snapshot,
 
 					/*
-					 * No team matched, by the same ranking the column above
+					 * No team matched, from the same record the column above
 					 * shows, so the flag and the column can never disagree.
+					 * A row with no snapshot is unknown rather than unmatched.
 					 */
-					'unmatched'      => empty( $suggested ),
+					'unmatched'      => $has_snapshot && empty( $suggested ),
 					'status'         => $row->status,
 					'statusLabel'    => $labels[ $row->status ] ?? $row->status,
 					'nextActionAt'   => $row->next_action_at,

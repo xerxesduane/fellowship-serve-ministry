@@ -360,3 +360,46 @@
 .serve-teams-table td.serve-cell-flag {
 	text-align: center;
 }
+
+/*
+ * The ministry-gift crosswalk audit on the Teams screen.
+ *
+ * Folded away by default: on a correctly configured site it is a list of
+ * things that are working as intended — terms the assessment does not
+ * measure — and that should not read as a page full of warnings. Colour is
+ * never the only signal; each line names its team and says what it means.
+ */
+.serve-config-audit {
+	margin: 1em 0;
+	padding: 0.75em 1em;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+}
+
+.serve-config-audit > summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.serve-config-audit__list {
+	margin: 0.5em 0 0;
+	padding-left: 1.2em;
+	list-style: disc;
+}
+
+.serve-config-audit__list li {
+	margin-bottom: 0.4em;
+}
+
+.serve-config-audit__error {
+	color: #8a1f11;
+}
+
+.serve-config-audit__warning {
+	color: #7a5c00;
+}
+
+.serve-config-audit__info {
+	color: #50575e;
+}

@@ -75,7 +75,7 @@ $people = array(
 		'name'        => 'Daniel Okonkwo',
 		'email'       => 'daniel.demo@example.com',
 		'tenure'      => 60,
-		'likely'      => array( 'Leadership', 'Teaching', 'Vision' ),
+		'likely'      => array( 'Leadership', 'Teaching', 'Apostle' ),
 		'teams'       => array( 'youth-ministry', 'grow-young-adults' ),
 		'langs'       => array( 'English' ),
 		'due'         => '-1 day',
@@ -103,7 +103,7 @@ $people = array(
 		'name'        => 'Priya Nair',
 		'email'       => 'priya.demo@example.com',
 		'tenure'      => 6,
-		'likely'      => array( 'Organization', 'Assisting' ),
+		'likely'      => array( 'Administration', 'Service', 'Wisdom' ),
 		'teams'       => array( 'administration', 'events' ),
 		'langs'       => array( 'Malayalam', 'Hindi', 'English' ),
 		'due'         => '+2 days',
@@ -131,7 +131,7 @@ $people = array(
 		'name'        => 'Marcus Vance',
 		'email'       => 'marcus.demo@example.com',
 		'tenure'      => 12,
-		'likely'      => array( 'Creativity', 'Faith' ),
+		'likely'      => array( 'Faith', 'Encouragement', 'Discernment' ),
 		'teams'       => array( 'worship', 'production' ),
 		'langs'       => array( 'English' ),
 		'due'         => '+9 days',
@@ -160,7 +160,7 @@ $people = array(
 		'name'        => 'Sara Haddad',
 		'email'       => 'sara.demo@example.com',
 		'tenure'      => 36,
-		'likely'      => array( 'Prayer', 'Discernment', 'Mercy' ),
+		'likely'      => array( 'Healing', 'Discernment', 'Mercy' ),
 		'teams'       => array( 'prayer' ),
 		'langs'       => array( 'Arabic', 'French', 'English' ),
 		'due'         => '-11 days',
@@ -212,11 +212,67 @@ foreach ( $people as $person ) {
 		)
 	);
 
+	/*
+	 * A complete gift partition, like a real one.
+	 *
+	 * The assessment requires an answer to every one of the eighteen gifts, so
+	 * a profile naming three "likely" and two "possible" and leaving the rest
+	 * absent is a shape no participant can produce. Matching validates the
+	 * partition now and caps an incomplete one at "explore with an advisor" —
+	 * correctly — so seeding flat profiles would make every demo person look
+	 * like a broken result. Whatever is not named is unlikely, which is what
+	 * the workbook means by the third option.
+	 */
+	$likely_labels = $person['likely'];
+
+	/*
+	 * The stock "possible" pair, minus anything this person already marked
+	 * likely. One gift cannot be two answers, and the assessment has no way to
+	 * express it — so leaving the overlap in produced an invalid partition,
+	 * which the matcher correctly refuses to draw a strong result from. Caught
+	 * by giving somebody Service as a likely gift and watching her drop to
+	 * "explore with an advisor" for no visible reason.
+	 */
+	$likely_ids      = array_filter( array_map( array( Gift_Taxonomy::class, 'id_for_label' ), $likely_labels ) );
+	$possible_labels = array_values(
+		array_filter(
+			array( 'Service', 'Giving' ),
+			static fn( $label ) => ! in_array( Gift_Taxonomy::id_for_label( $label ), $likely_ids, true )
+		)
+	);
+
+	/*
+	 * Resolved to ids before the remainder is worked out.
+	 *
+	 * Comparing labels was not enough: "Organization" is the assessment's
+	 * alternate name for Administration, so naming it as likely while
+	 * "Administration" fell into the unlikely remainder put one gift in two
+	 * buckets — an invalid partition, which the matcher correctly refuses to
+	 * produce a strong result from. Gift_Ratings reported it; this is the
+	 * seeder's side of the same fix.
+	 */
+	$named = array();
+	foreach ( array_merge( $likely_labels, $possible_labels ) as $label ) {
+		$id = Gift_Taxonomy::id_for_label( (string) $label );
+		if ( '' === $id ) {
+			\WP_CLI::warning( "Not one of the 18 assessed gifts, so no participant could answer it: {$label}" );
+			continue;
+		}
+		$named[ $id ] = true;
+	}
+
+	$rest = array();
+	foreach ( Gift_Taxonomy::gifts() as $id => $gift ) {
+		if ( ! isset( $named[ $id ] ) ) {
+			$rest[] = $gift['label'];
+		}
+	}
+
 	$profile = array(
 		'spiritualGifts' => array(
-			'likely'   => $person['likely'],
-			'possible' => array( 'Service', 'Giving' ),
-			'unlikely' => array( 'Healing' ),
+			'likely'   => $likely_labels,
+			'possible' => $possible_labels,
+			'unlikely' => $rest,
 		),
 		'heart'          => array(
 			'roles'  => $person['roles'],
@@ -234,22 +290,14 @@ foreach ( $people as $person ) {
 		'recommendedNextStep' => $person['next_step'],
 
 		/*
-		 * What the assessment itself would have produced: its gift-only top
-		 * picks. Left as the person's own teams on purpose — the dashboard
-		 * ranks every team now, and the difference between these and what a
-		 * leader sees is exactly what the "not on their profile" flag marks.
+		 * `recommendedMinistries` is gone.
+		 *
+		 * The browser stopped producing it when ranking moved to the server,
+		 * and sanitize_profile() has never stored it — so seeding it wrote a
+		 * field nothing reads, into demo rows whose whole purpose is to look
+		 * like real ones. What the person was shown lives in the match
+		 * snapshot now, written by Submissions::create() from these answers.
 		 */
-		'recommendedMinistries' => array_map(
-			static function ( $slug ) {
-				$team = Teams::get_by_slug( $slug );
-
-				return array(
-					'ministry'     => $team ? $team->name : $slug,
-					'matchedGifts' => $team ? array_slice( Teams::gift_list( $team ), 0, 3 ) : array(),
-				);
-			},
-			$person['teams']
-		),
 	);
 
 	$now = current_time( 'mysql', true );
@@ -276,13 +324,17 @@ foreach ( $people as $person ) {
 		$wpdb->update(
 			Schema::table( 'submissions' ),
 			array(
-				'gifts_likely' => wp_json_encode( $person['likely'] ),
-				'languages'    => wp_json_encode( $person['langs'] ),
-				'profile_json' => wp_json_encode( $profile ),
-				'updated_at'   => $now,
+				'gifts_likely'   => wp_json_encode( $person['likely'] ),
+				'languages'      => wp_json_encode( $person['langs'] ),
+				'profile_json'   => wp_json_encode( $profile ),
+				// Rewritten with the answers, or a re-run leaves the dashboard
+				// showing a snapshot the profile below it no longer supports.
+				'match_snapshot' => wp_json_encode( Matching::participant_match_snapshot( $profile ) ),
+				'match_version'  => Matching_Contract::VERSION . '/' . Gift_Crosswalk::VERSION,
+				'updated_at'     => $now,
 			),
 			array( 'id' => $existing ),
-			array( '%s', '%s', '%s', '%s' ),
+			array( '%s', '%s', '%s', '%s', '%s', '%s' ),
 			array( '%d' )
 		);
 
@@ -304,6 +356,14 @@ foreach ( $people as $person ) {
 			'languages'           => wp_json_encode( $person['langs'] ),
 			'suggested_teams'     => wp_json_encode( $person['teams'] ),
 			'profile_json'        => wp_json_encode( $profile ),
+			/*
+			 * The same snapshot Submissions::create() writes, from the same
+			 * answers. Demo rows exist to make the dashboard look like a real
+			 * one, and a row with no snapshot renders as "predates the record"
+			 * — a state a freshly seeded person cannot be in.
+			 */
+			'match_snapshot'      => wp_json_encode( Matching::participant_match_snapshot( $profile ) ),
+			'match_version'       => Matching_Contract::VERSION . '/' . Gift_Crosswalk::VERSION,
 			'safeguarding_status' => Safeguarding::initial_status( $person['teams'] ),
 			'next_action_at'      => gmdate( 'Y-m-d', strtotime( $person['due'] ) ),
 			'submitted_at'        => $now,
@@ -315,6 +375,18 @@ foreach ( $people as $person ) {
 	$submission_id = (int) $wpdb->insert_id;
 	Consent::record( $submission_id );
 
+	/*
+	 * Placement rows stand for a decision a coordinator took, not for a match.
+	 *
+	 * The seeder wrote them with no source at all, which defaulted to `match` —
+	 * so seeded data demonstrated exactly the behaviour this release removed: a
+	 * ranking handing a ministry leader somebody's profile. A developer looking
+	 * at the dashboard to understand the model would have been shown the old
+	 * one.
+	 *
+	 * These people are further along the pipeline than a fresh submission, so
+	 * they have been triaged; that is what the rows say.
+	 */
 	foreach ( $person['teams'] as $slug ) {
 		$team = Teams::get_by_slug( $slug );
 		if ( ! $team ) {
@@ -328,6 +400,7 @@ foreach ( $people as $person ) {
 				'submission_id' => $submission_id,
 				'team_id'       => (int) $team->id,
 				'status'        => $person['status'],
+				'source'        => Placements::SOURCE_INTAKE_TRIAGE,
 				'notes'         => '',
 				'created_at'    => $now,
 				'updated_at'    => $now,

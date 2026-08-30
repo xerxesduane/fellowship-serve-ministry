@@ -222,14 +222,19 @@ test(
 		wp_set_current_user( 0 );
 
 		/*
-		 * Enough to reach a strong match, because only strong matches are
-		 * suggested now. One gift can never get there: strong requires two
-		 * shared gifts and a second S.H.A.P.E. dimension behind them.
+		 * Three mapped likely gifts, so this clears the gift-only strong route.
+		 * The abilities and personality are here to prove they travel nowhere
+		 * and change nothing, not because the match needs them.
 		 */
-		$profile = array(
-			'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
-			'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
-			'personality'    => array( 'Be Introverted', 'Prefer Routine' ),
+		$profile = Fixtures::gift_profile(
+			array( 'administration', 'leadership', 'wisdom' ),
+			array(),
+			array(
+				'abilities'   => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				'personality' => array( 'Be Introverted', 'Prefer Routine' ),
+				'experiences' => array( 'painful' => array( 'A bereavement' ) ),
+				'contact'     => array( 'email' => 'someone@example.test' ),
+			)
 		);
 
 		$response = serve_preview( $profile );
@@ -237,24 +242,38 @@ test(
 
 		$data = $response->get_data();
 		$a->ok( ! empty( $data['suggestions'] ), 'and returns suggestions' );
+		$a->same( 'ready', $data['state'], 'with an explicit state rather than a bare array' );
 
 		$teams = array_column( $data['suggestions'], 'team' );
-		$a->same( 'Administration', $teams[0], 'ranked on all the evidence, not just gifts' );
+		$a->ok( in_array( 'Administration', $teams, true ), 'the team the gifts point to is among them' );
 
-		// The same answer the dashboard gives for the same profile. Compared
-		// against the suggestions rather than the ranking, because the ranking
-		// is the explanation and the suggestions are what both sides are shown.
+		// The same answer the dashboard gives for the same profile.
 		$ranked = array_column( Matching::suggestions_for_profile( $profile ), 'team_name' );
 		$a->same( $ranked, $teams, 'identical to what a leader is shown' );
 
 		// And nothing weaker travels to either of them.
 		foreach ( $data['suggestions'] as $suggestion ) {
-			$a->same( 'strong', $suggestion['strength'], 'every suggestion is a strong match' );
+			$a->ok(
+				in_array( $suggestion['tier'], array( 'strong', 'suggested' ), true ),
+				'every suggestion cleared the bar'
+			);
 		}
 
-		// Reasons quote the person back to themselves; personality travels too.
-		$a->contains( 'Counting ability', implode( ' | ', $data['suggestions'][0]['reasons'] ), 'with readable reasons' );
-		$a->same( 2, count( $data['personality'] ), 'and the personality notes' );
+		/*
+		 * The reasons name gifts, not free text.
+		 *
+		 * They used to quote abilities back, which meant an editable keyword
+		 * field could put words on this page — and, worse, carry a team to a
+		 * strength that granted its leader the profile. Gifts are the only
+		 * scored evidence now, so they are the only thing a reason can cite.
+		 */
+		$reasons = implode( ' | ', $data['suggestions'][0]['reasons'] );
+		$a->contains( 'Administration', $reasons, 'with readable reasons naming the actual gifts' );
+		$a->lacks( 'Counting ability', $reasons, 'and nothing drawn from free-text abilities' );
+
+		// Personality is no longer returned at all: it never influenced a team,
+		// and the results page already has the person's own answers.
+		$a->not( isset( $data['personality'] ), 'personality does not travel back' );
 	}
 );
 
@@ -294,6 +313,51 @@ test(
 
 		// Nothing it was handed comes back out, and nothing it ignored is quoted.
 		$a->lacks( $secret, (string) wp_json_encode( $response->get_data() ), 'and it echoes none of it back' );
+	}
+);
+
+test(
+	'the preview ignores every sensitive section, whatever a client sends',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( 0 );
+
+		/*
+		 * The browser used to send heart, abilities, experiences and
+		 * personality here — before the consent step, where the person decides
+		 * whether the church may hold any of it. The Experiences section holds
+		 * painful history and every "Other" free-text answer they typed, and it
+		 * was travelling so a team name could be previewed.
+		 *
+		 * The browser no longer sends it. This asserts the endpoint refuses it
+		 * too, because "our client does not send that" is not a property of the
+		 * endpoint and anything at all can post here.
+		 */
+		$secret = 'Particular-' . wp_generate_password( 10, false );
+
+		$bare = serve_preview(
+			Fixtures::gift_profile( array( 'faith', 'discernment', 'mercy' ) )
+		)->get_data();
+
+		$loaded = serve_preview(
+			Fixtures::gift_profile(
+				array( 'faith', 'discernment', 'mercy' ),
+				array(),
+				array(
+					'experiences' => array( 'What painful experiences have shaped you?' => array( $secret ) ),
+					'heart'       => array( 'roles' => array( $secret ), 'people' => array(), 'causes' => array() ),
+					'abilities'   => array( $secret ),
+					'personality' => array( 'Be Introverted' ),
+					'contact'     => array( 'name' => $secret, 'email' => $secret . '@example.test' ),
+				)
+			)
+		)->get_data();
+
+		$a->same(
+			(string) wp_json_encode( $bare ),
+			(string) wp_json_encode( $loaded ),
+			'the answer is byte-identical with and without every sensitive section'
+		);
+		$a->lacks( $secret, (string) wp_json_encode( $loaded ), 'and none of it is quoted back' );
 	}
 );
 
@@ -409,19 +473,25 @@ test(
 			intake_payload(
 				array(
 					'email'   => $email,
-					'profile' => array(
-						// Answers that genuinely point at Administration, strongly
-						// enough to be suggested rather than merely considered.
-						'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
-						'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+					'profile' => Fixtures::gift_profile(
+						// Answers that genuinely point at Administration.
+						array( 'administration', 'leadership', 'wisdom' ),
+						array(),
+						array(
+							'abilities' => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
 
-						// And a claim to three teams they say nothing about.
-						'recommendedMinistries' => array(
-							array( 'ministry' => 'Youth Ministry', 'matchedGifts' => array() ),
-							array( 'ministry' => 'Production', 'matchedGifts' => array() ),
-							array( 'ministry' => 'Livestream Team', 'matchedGifts' => array() ),
-						),
-						'rankedTeams'           => array( array( 'team' => 'Youth Ministry' ) ),
+							// And a claim to three teams they say nothing about,
+							// in every shape a client has ever used to make one.
+							'recommendedMinistries' => array(
+								array( 'ministry' => 'Youth Ministry', 'matchedGifts' => array() ),
+								array( 'ministry' => 'Production', 'matchedGifts' => array() ),
+								array( 'ministry' => 'Livestream Team', 'matchedGifts' => array() ),
+							),
+							'rankedTeams'   => array( array( 'team' => 'Youth Ministry' ) ),
+							'matchSnapshot' => array(
+								'teams' => array( array( 'team_slug' => 'youth-ministry', 'tier' => 'strong' ) ),
+							),
+						)
 					),
 				)
 			),
@@ -434,7 +504,7 @@ test(
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-				'SELECT id, suggested_teams, profile_json FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
+				'SELECT id, suggested_teams, profile_json, match_snapshot FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
 				$email
 			)
 		);
@@ -473,19 +543,44 @@ test(
 		$profile = json_decode( (string) $row->profile_json, true );
 		$a->not( isset( $profile['recommendedMinistries'] ), 'the posted list is not stored' );
 		$a->not( isset( $profile['rankedTeams'] ), 'nor any other ranking the browser invents' );
+		$a->not( isset( $profile['matchSnapshot'] ), 'nor a snapshot it tried to supply' );
 
-		// Placement rows follow the stored slugs exactly, nothing more.
-		$placed = $wpdb->get_col(
+		/*
+		 * And the stored snapshot is the server's own answer, not theirs.
+		 *
+		 * This is the stronger version of the same guarantee: the snapshot is
+		 * what the dashboard and the list both read, so a client able to write
+		 * it would be choosing what every leader is told about this person.
+		 */
+		$snapshot = json_decode( (string) $row->match_snapshot, true ) ?: array();
+		$snap_slugs = array_column( (array) ( $snapshot['teams'] ?? array() ), 'team_slug' );
+		$a->not( in_array( 'youth-ministry', $snap_slugs, true ), 'the forged snapshot team is absent' );
+		$a->ok( in_array( 'administration', $snap_slugs, true ), 'and the earned one is present' );
+
+		/*
+		 * No placement row follows from any of it.
+		 *
+		 * These used to be created one per suggested team, which is what made
+		 * the browser's claim an access-control question in the first place.
+		 * Nothing is created from a ranking now — only the central intake
+		 * owner, so a coordinator can read the profile and decide.
+		 */
+		$sources = $wpdb->get_col(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-				'SELECT t.slug FROM ' . Schema::table( 'placements' ) . ' p'
-				. ' INNER JOIN ' . Schema::table( 'teams' ) . ' t ON t.id = p.team_id'
-				. ' WHERE p.submission_id = %d ORDER BY t.slug',
+				'SELECT source FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d',
 				(int) $row->id
 			)
 		);
-		sort( $stored );
-		$a->same( $stored, array_map( 'strval', (array) $placed ), 'placement rows match the ranked teams and nothing else' );
+		$a->not(
+			in_array( \Serve_Dashboard\Placements::SOURCE_MATCH, (array) $sources, true ),
+			'no placement row is sourced to the matcher'
+		);
+		$a->same(
+			array( \Serve_Dashboard\Placements::SOURCE_CATCHALL ),
+			array_values( array_unique( (array) $sources ) ),
+			'only the central intake owner exists'
+		);
 
 		// And a leader of a team it tried to claim still cannot open them.
 		$wpdb->update(
@@ -610,11 +705,10 @@ test(
 			intake_payload(
 				array(
 					'email'   => $email,
-					'profile' => array(
-						// What the browser now sends for somebody who matched nothing.
-						'spiritualGifts'        => array( 'likely' => array() ),
-						'recommendedMinistries' => array(),
-					),
+					// Every one of the eighteen gifts answered, all of them
+					// "unlikely" — the real shape of somebody who matched
+					// nothing, rather than a profile that simply omits them.
+					'profile' => Fixtures::gift_profile( array() ),
 				)
 			),
 			$f

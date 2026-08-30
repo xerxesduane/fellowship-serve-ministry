@@ -23,7 +23,7 @@ final class Schema {
 	 * Bumped whenever a CREATE TABLE statement below changes, so that
 	 * maybe_upgrade() knows to re-run dbDelta.
 	 */
-	public const DB_VERSION = '1.9.0';
+	public const DB_VERSION = '1.10.0';
 
 	public const OPTION_DB_VERSION = 'serve_dashboard_db_version';
 
@@ -254,6 +254,8 @@ final class Schema {
 			languages text NOT NULL,
 			suggested_teams text NOT NULL,
 			profile_json longtext NOT NULL,
+			match_snapshot longtext DEFAULT NULL,
+			match_version varchar(64) DEFAULT NULL,
 			verified_at datetime DEFAULT NULL,
 			verify_token char(64) DEFAULT NULL,
 			verify_sent_at datetime DEFAULT NULL,
@@ -524,6 +526,22 @@ final class Schema {
 		 * `false` rather than `''` as the default is the whole point: an
 		 * administrator who has deliberately cleared the field must not have it
 		 * refilled on the next upgrade.
+		 */
+		/*
+		 * Schema 1.10.0 stores what each participant was actually shown, with
+		 * the mapping and contract versions in force at the time.
+		 *
+		 * Purely additive, and deliberately not backfilled. Rows created before
+		 * this column existed were produced under a different matcher — one
+		 * comparing display strings, which could not see ten of the ministry
+		 * table's terms — so recomputing them today and writing the result into
+		 * a column named "what they were shown" would put a claim in the
+		 * database that was never true of anybody.
+		 *
+		 * A null snapshot means "predates the record", and the dashboard says
+		 * exactly that rather than substituting today's answer. Anyone wanting
+		 * to know how those profiles rank now can read the current analysis,
+		 * which is labelled as current analysis.
 		 */
 		if ( '' !== $from && version_compare( $from, '1.8.0', '<' )
 			&& false === get_option( Assessment::OPTION_SERVING_FORM, false ) ) {

@@ -3,7 +3,7 @@
  * Plugin Name:       SERVE Dashboard
  * Plugin URI:        https://serve.fellowshipdubai.com/
  * Description:       Stores completed S.H.A.P.E. profiles and gives ministry leaders a scoped, auditable view of who is ready to serve, what follow-up is due, and where teams are short of people.
- * Version:           1.27.2
+ * Version:           1.28.0
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            Fellowship Dubai
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SERVE_DASHBOARD_VERSION', '1.27.2' );
+define( 'SERVE_DASHBOARD_VERSION', '1.28.0' );
 define( 'SERVE_DASHBOARD_FILE', __FILE__ );
 define( 'SERVE_DASHBOARD_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SERVE_DASHBOARD_URL', plugin_dir_url( __FILE__ ) );
@@ -54,6 +54,17 @@ foreach (
 		'class-hardening.php',
 		'class-security-status.php',
 		'class-submissions.php',
+		/*
+		 * The matching stack, innermost first. Nothing here touches the
+		 * database or WordPress state at load time, which is what lets the
+		 * taxonomy and contract be exercised by a runner with no WordPress at
+		 * all — see tools/run-unit-tests.php.
+		 */
+		'class-gift-taxonomy.php',
+		'class-gift-crosswalk.php',
+		'class-matching-contract.php',
+		'class-corroboration.php',
+		'class-gift-ratings.php',
 		'class-matching.php',
 		'class-planning-center.php',
 		'class-metrics.php',

@@ -315,10 +315,34 @@ final class Rest {
 
 		self::bump_rate_limit();
 
+		/*
+		 * "Check your email" is only said when an email actually went.
+		 *
+		 * The endpoint used to say it unconditionally. Verification::issue()
+		 * has always reported a failed dispatch honestly — it withholds
+		 * verify_sent_at and audits VERIFY_MAIL_FAIL — but nothing read the
+		 * answer, so a site with a broken mailer sent every participant to wait
+		 * for a message that did not exist, while their profile sat unverified
+		 * and invisible to the leaders who could have helped. The token stays
+		 * valid either way, so the same link can go out once the mailer is
+		 * fixed; what must not survive is the claim that it was sent.
+		 */
+		if ( empty( $result['verification_sent'] ) ) {
+			return new \WP_REST_Response(
+				array(
+					'ok'       => true,
+					'verified' => false,
+					'message'  => __( 'Your profile is saved, but our confirmation email could not be sent just now. Nothing is lost and nothing is shared yet — please contact the SERVE team so they can confirm your address.', 'serve-dashboard' ),
+				),
+				201
+			);
+		}
+
 		return new \WP_REST_Response(
 			array(
-				'ok'      => true,
-				'message' => __( 'Almost done — please check your email and open the confirmation link. Your profile is not shared with anyone until you do.', 'serve-dashboard' ),
+				'ok'       => true,
+				'verified' => true,
+				'message'  => __( 'Almost done — please check your email and open the confirmation link. Your profile is not shared with anyone until you do.', 'serve-dashboard' ),
 			),
 			201
 		);
@@ -512,54 +536,72 @@ final class Rest {
 		self::bump_rate_limit( 'preview' );
 
 		/*
-		 * Only the sections matching actually reads, flattened to strings.
+		 * The three gift buckets, and nothing else at all.
 		 *
-		 * Anything else the browser included — a name, an email, a note to self
-		 * — is dropped rather than walked, quoted back or reaching a log. The
-		 * shapes are pinned as well as the keys: an array where a string belongs
-		 * used to reach a string cast and emit a PHP warning for every value, so
-		 * a 200-byte request could grow a log without limit on any site with
-		 * WP_DEBUG_LOG enabled. string_list() keeps scalars and discards the
-		 * rest, exactly as the submission path does.
+		 * This used to accept heart, abilities, experiences and personality as
+		 * well — and the browser sent all of them. The Experiences section
+		 * holds painful history and every "Other" free-text answer somebody
+		 * typed, and it was travelling to the server purely so a team name
+		 * could be previewed, before the consent step where the person decides
+		 * whether the church may hold any of it. Sharing it is a separate
+		 * purpose from matching on it, and this endpoint only ever needed the
+		 * second.
+		 *
+		 * With the corroboration registry empty the matcher reads gift ratings
+		 * and the team configuration and nothing more, so there is nothing to
+		 * lose by refusing the rest. If owner-approved structured mappings are
+		 * enabled later, this whitelist grows by the specific non-sensitive
+		 * option ids that version requires — never by a whole section.
+		 *
+		 * The shapes are pinned as well as the keys: an array where a string
+		 * belongs used to reach a string cast and emit a PHP warning for every
+		 * value, so a small request could grow a log without limit on a site
+		 * with WP_DEBUG_LOG enabled.
 		 */
 		$considered = array(
 			'spiritualGifts' => array(
-				'likely' => self::string_list( $profile['spiritualGifts']['likely'] ?? array() ),
+				'likely'   => self::string_list( $profile['spiritualGifts']['likely'] ?? array() ),
+				'possible' => self::string_list( $profile['spiritualGifts']['possible'] ?? array() ),
+				'unlikely' => self::string_list( $profile['spiritualGifts']['unlikely'] ?? array() ),
 			),
-			'heart'          => array(
-				'roles'  => self::string_list( $profile['heart']['roles'] ?? array() ),
-				'people' => self::string_list( $profile['heart']['people'] ?? array() ),
-				'causes' => self::string_list( $profile['heart']['causes'] ?? array() ),
-			),
-			'abilities'      => self::string_list( $profile['abilities'] ?? array() ),
-			'experiences'    => array_map(
-				array( __CLASS__, 'string_list' ),
-				array_filter( (array) ( $profile['experiences'] ?? array() ), 'is_array' )
-			),
-			'personality'    => self::string_list( $profile['personality'] ?? array() ),
 		);
 
+		$result = Matching::recommendations_for_profile( $considered );
+
 		$out = array();
-		/*
-		 * Strong matches only, exactly as the leader's screen and the stored
-		 * column now are. Showing the person a team the dashboard does not
-		 * suggest would leave them expecting a conversation nobody is going to
-		 * start.
-		 */
-		foreach ( Matching::suggestions_for_profile( $considered ) as $match ) {
+		foreach ( $result['teams'] as $match ) {
 			$out[] = array(
-				'team'          => $match['team_name'],
-				'strength'      => $match['strength'],
-				'strengthLabel' => $match['strength_label'],
-				'reasons'       => array_column( $match['reasons'], 'label' ),
-				'caveat'        => $match['caveat'],
+				'team'           => $match['team_name'],
+				'tier'           => $match['tier'],
+				'tierLabel'      => $match['tier_label'],
+				// Retained so an older cached script keeps rendering.
+				'strength'       => $match['tier'],
+				'strengthLabel'  => $match['tier_label'],
+				'coMatch'        => ! empty( $match['co_match'] ),
+				'gifts'          => $match['evidence']['likely_labels'],
+				'reasons'        => array_column( $match['reasons'], 'label' ),
+				'caveat'         => $result['caveat'],
+				'unmappedLikely' => $result['unmapped_likely'],
 			);
 		}
 
+		/*
+		 * A stable shape for every outcome. An empty `suggestions` array is a
+		 * complete, successful answer — the honest response for somebody with
+		 * no clear match — and the results page renders it immediately rather
+		 * than treating it as "not finished yet".
+		 *
+		 * Personality is no longer returned: it is not sent any more, it never
+		 * influenced a team, and the results page already shows the person
+		 * their own personality answers from their own browser.
+		 */
 		return new \WP_REST_Response(
 			array(
-				'suggestions' => $out,
-				'personality' => Matching::personality_notes( $considered ),
+				'suggestions'    => $out,
+				'state'          => $result['state'],
+				'caveat'         => $result['caveat'],
+				'unmappedLikely' => $result['unmapped_likely'],
+				'versions'       => $result['versions'],
 			)
 		);
 	}

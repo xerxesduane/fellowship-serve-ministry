@@ -120,18 +120,60 @@ export function buildProfile(answers) {
 }
 
 /**
+ * What the takeaway document says about teams, in the page's own words.
+ *
+ * Reads the same request state the results page renders from, so the printed,
+ * copied and emailed copies cannot disagree with the screen. It used to take a
+ * bare array, which collapsed three different situations — a completed result
+ * with no strong match, a request that failed, and a request still in flight —
+ * into one sentence claiming the last of them.
+ */
+function teamsSection(state) {
+  const heading = "WHERE YOUR GIFTS POINT";
+
+  if (!state || state.status === "idle" || state.status === "loading") {
+    return `${heading}\nThese had not finished loading when this copy was made. Your answers are saved, and the SERVE team will have them.`;
+  }
+
+  if (state.status === "error") {
+    return `${heading}\nWe could not work these out just now. Nothing is lost — your profile above is complete, and the SERVE team can go through it with you.`;
+  }
+
+  if (state.status === "empty" || !state.suggestions.length) {
+    return `${heading}\nYour answers do not point clearly to one team yet. That is not a failed result: a conversation and a trial serving opportunity will tell you more than a forced match would.`;
+  }
+
+  const lines = state.suggestions.map((item) => {
+    const label = item.tierLabel || item.strengthLabel || "";
+    const reasons = Array.isArray(item.reasons) ? item.reasons.slice(0, 4) : [];
+    const why = reasons.length ? `\n   ${reasons.join("\n   ")}` : "";
+
+    // No numbering: where two teams are separated only by their slug, an
+    // ordered list would read as a ranking the evidence does not support.
+    return `- ${item.team} (${label})${item.coMatch ? " — equally well supported" : ""}${why}`;
+  });
+
+  const unmapped = state.suggestions[0] && Array.isArray(state.suggestions[0].unmappedLikely)
+    ? state.suggestions[0].unmappedLikely
+    : [];
+
+  const note = unmapped.length
+    ? `\n\nNot counted: ${unmapped.join(", ")}. The current Fellowship ministry table does not map ${unmapped.length === 1 ? "that gift" : "those gifts"} yet, and ${unmapped.length === 1 ? "it was" : "they were"} not treated as anything else.`
+    : "";
+
+  return `${heading}\nBased on your spiritual gifts. Your interests, availability, experience and each ministry's requirements still matter.\n\n${lines.join("\n")}${note}`;
+}
+
+/**
  * The profile as text, for copying, emailing and printing.
  *
- * `ranked` is the server's ranking, once the results page has fetched it. It is
- * passed in rather than read from the profile because the profile object is what
- * gets submitted, and the suggestions are no longer part of it: the server ranks
- * them from the answers at submission time, so a copy travelling inside the
+ * `state` is the results page's request state, once it has one. It is passed in
+ * rather than read from the profile because the profile object is what gets
+ * submitted, and the recommendations are no longer part of it: the server works
+ * them out from the answers at submission time, so a copy travelling inside the
  * payload would be a second answer to the same question.
- *
- * Absent when the request has not answered, and the text says so rather than
- * substituting something weaker.
  */
-export function profileToText(answers, profile, ranked = null) {
+export function profileToText(answers, profile, state = null) {
   const lines = [
     "MY S.H.A.P.E. PROFILE - FELLOWSHIP DUBAI",
     answers.profile.name ? `Name: ${answers.profile.name}` : "",
@@ -145,9 +187,7 @@ export function profileToText(answers, profile, ranked = null) {
     "EXPERIENCES",
     ...Object.entries(profile.experiences).map(([label, values]) => `${label}: ${values.join(", ") || "None selected"}`),
     `AVAILABILITY\nService priority: ${profile.availability.priority}\nTime per week: ${profile.availability.hours}\nBest times: ${profile.availability.timing.join(", ") || "Not specified"}`,
-    ranked && ranked.length
-      ? `WHERE YOUR S.H.A.P.E. POINTS\n${ranked.map((item, index) => `${index + 1}. ${item.team} (${item.strengthLabel})${item.reasons.length ? `\n   ${item.reasons.slice(0, 4).join("\n   ")}` : ""}`).join("\n")}`
-      : "WHERE YOUR S.H.A.P.E. POINTS\nWe could not work these out just now. Your answers are saved, and a ministry leader will have them.",
+    teamsSection(state),
     `RECOMMENDED NEXT STEP\n${profile.recommendedNextStep}`,
   ];
   return lines.filter((line) => line !== "").join("\n\n");

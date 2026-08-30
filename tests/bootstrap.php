@@ -120,6 +120,90 @@ final class Fixtures {
 	}
 
 	/**
+	 * A placement row as an upgraded site actually holds one.
+	 *
+	 * `match` is no longer an accepted source — Placements::ensure() normalises
+	 * anything it does not recognise to a human decision, and intake creates no
+	 * match rows at all. But churches upgrading from an earlier release have
+	 * years of them, created back when a ranking was allowed to grant a
+	 * ministry leader access, and the report-only reconciliation path exists
+	 * entirely for those.
+	 *
+	 * So it is inserted directly. Going through ensure() would produce a row
+	 * with a different source and quietly test nothing, which is what happened
+	 * when these tests were first run against the new code.
+	 */
+	public function legacy_match_placement( int $submission_id, string $slug ): int {
+		global $wpdb;
+
+		$team = \Serve_Dashboard\Teams::get_by_slug( $slug );
+		if ( ! $team ) {
+			throw new Failure( "no such team: $slug" );
+		}
+
+		$now = current_time( 'mysql', true );
+
+		$wpdb->insert(
+			Schema::table( 'placements' ),
+			array(
+				'submission_id' => $submission_id,
+				'team_id'       => (int) $team->id,
+				'status'        => Schema::STATUS_SUBMITTED,
+				'source'        => \Serve_Dashboard\Placements::SOURCE_MATCH,
+				'notes'         => '',
+				'created_at'    => $now,
+				'updated_at'    => $now,
+			),
+			array( '%d', '%d', '%s', '%s', '%s', '%s', '%s' )
+		);
+
+		return (int) $wpdb->insert_id;
+	}
+
+	/**
+	 * A production-shaped profile, built through the real taxonomy.
+	 *
+	 * Every one of the eighteen gifts is placed in exactly one bucket, which is
+	 * what the assessment guarantees: each question is required and offers three
+	 * answers. Anything not named is unlikely.
+	 *
+	 * Values are the display labels the browser writes, not ids, so a fixture
+	 * exercises the same normalisation a real submission does.
+	 *
+	 * This exists because the old fixtures put "Organization" in
+	 * spiritualGifts.likely. The assessment cannot emit that — it emits
+	 * "Administration" — and matching compared display strings, so an impossible
+	 * fixture was the only thing making the gift comparison look like it worked.
+	 * Anything hand-authored here can hide the same class of bug again, so build
+	 * profiles with this.
+	 *
+	 * @param string[]            $likely   Canonical gift ids.
+	 * @param string[]            $possible Canonical gift ids.
+	 * @param array<string,mixed> $extra    Other profile sections.
+	 * @return array<string,mixed>
+	 */
+	public static function gift_profile( array $likely, array $possible = array(), array $extra = array() ): array {
+		foreach ( array_merge( $likely, $possible ) as $id ) {
+			if ( ! \Serve_Dashboard\Gift_Taxonomy::is_gift( $id ) ) {
+				throw new Failure( "fixture asked for '$id', which is not one of the 18 assessed gifts" );
+			}
+		}
+
+		$unlikely = array_values( array_diff( \Serve_Dashboard\Gift_Taxonomy::ids(), $likely, $possible ) );
+
+		return array_merge(
+			array(
+				'spiritualGifts' => array(
+					'likely'   => \Serve_Dashboard\Gift_Taxonomy::labels( $likely ),
+					'possible' => \Serve_Dashboard\Gift_Taxonomy::labels( $possible ),
+					'unlikely' => \Serve_Dashboard\Gift_Taxonomy::labels( $unlikely ),
+				),
+			),
+			$extra
+		);
+	}
+
+	/**
 	 * @param array<string,mixed> $overrides
 	 */
 	public function submission( array $overrides = array() ): int {
@@ -140,14 +224,19 @@ final class Fixtures {
 			$overrides
 		);
 
-		$id = Submissions::create( $payload );
-		if ( is_wp_error( $id ) ) {
-			throw new Failure( 'could not create fixture: ' . $id->get_error_message() );
+		$result = Submissions::create( $payload );
+		if ( is_wp_error( $result ) ) {
+			throw new Failure( 'could not create fixture: ' . $result->get_error_message() );
 		}
 
-		$this->submissions[] = (int) $id;
+		// create() returns the id alongside whether the confirmation email
+		// actually went, so the endpoint can stop claiming one was sent when
+		// the mailer refused.
+		$id = (int) $result['submission_id'];
 
-		return (int) $id;
+		$this->submissions[] = $id;
+
+		return $id;
 	}
 
 	/**
