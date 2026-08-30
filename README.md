@@ -20,6 +20,7 @@ wordpress-plugin/serve-dashboard/   the entire product, one deployable plugin
 tools/build-release.sh              produces the installable zip
 tools/run-tests.php                 the plugin test runner
 tools/run-unit-tests.php            the matching arithmetic, without WordPress
+tools/deploy-local.ps1              install into a local WordPress, backup first
 tools/run-js-tests.mjs              the assessment test runner
 tests/                              what must never quietly regress
 tests/js/                           the same, for the assessment JavaScript
@@ -59,6 +60,18 @@ before deleting anything: both implementations carried the same 73 option ids,
 ```bash
 SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
 ```
+
+**Point this at a scratch install, never at one holding real profiles.** It
+creates submissions, users and placements and deletes them again. Three guards
+stand in the way: it refuses an install declaring itself production, refuses to
+run without `SERVE_TEST_OK=1`, and refuses a database that already holds
+submissions it did not create.
+
+The third exists because the first two ask whether somebody *declared* the
+install safe, and a local WordPress holding a congregation's real answers
+declares nothing at all — so both waved it through. A development database is
+normally empty of people between runs, because the suite cleans up after
+itself, so the check costs a correctly used install nothing.
 
 One hundred and forty-three tests covering the guarantees whose failure would be
 silent: the safeguarding gate, unverified profiles staying invisible, Experiences

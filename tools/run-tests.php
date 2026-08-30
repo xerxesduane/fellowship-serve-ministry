@@ -18,6 +18,10 @@
  * THIS WRITES TO THE DATABASE. It creates submissions, users and placements,
  * and deletes them again afterwards. Point it at a development install.
  *
+ * It refuses an install that declares itself production, refuses to run at all
+ * without SERVE_TEST_OK=1, and refuses a database that already holds
+ * submissions it did not create.
+ *
  * @package ServeDashboard
  */
 
@@ -75,6 +79,57 @@ if ( ! getenv( 'SERVE_TEST_OK' ) ) {
 
 if ( ! class_exists( 'Serve_Dashboard\\Schema' ) ) {
 	fwrite( STDERR, "The serve-dashboard plugin is not active on this install.\n" );
+	exit( 2 );
+}
+
+/*
+ * The third guard, and the one that would actually have caught it.
+ *
+ * The two above ask whether somebody *declared* this install safe. A local
+ * WordPress holding a congregation's real profiles declares nothing at all, so
+ * both of them wave it through — and this runner writes: it creates
+ * submissions, users and placements, and deletes them again. Pointed at a real
+ * database by a mistyped path or a copied command, it operates on real people's
+ * pastoral history.
+ *
+ * So the last question is not about declarations but about the data: does this
+ * database already hold submissions this runner did not create? If it does,
+ * refuse. A development database is normally empty of people between runs,
+ * because the suite cleans up after itself, so this costs a correctly used
+ * install nothing.
+ *
+ * Teams are not counted. Sixteen of them are seeded on activation and are
+ * configuration rather than anybody's data, so requiring an empty teams table
+ * would refuse every properly set-up install.
+ *
+ * SERVE_TEST_ALLOW_EXISTING=1 exists for the case where somebody genuinely
+ * wants to run against a scratch database that has test rows left in it from an
+ * interrupted run. It is deliberately a second, differently named flag: a
+ * person who has SERVE_TEST_OK=1 saved in their shell should still have to stop
+ * and think here.
+ */
+$serve_people = (int) $wpdb->get_var(
+	// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name is not user input.
+	'SELECT COUNT(*) FROM ' . Serve_Dashboard\Schema::table( 'submissions' )
+);
+
+if ( $serve_people > 0 && ! getenv( 'SERVE_TEST_ALLOW_EXISTING' ) ) {
+	fwrite(
+		STDERR,
+		sprintf(
+			"REFUSING TO RUN.\n\n" .
+			"%s on %s already holds %d submission(s) this runner did not create.\n\n" .
+			"These tests write to the database they are pointed at. If those rows are\n" .
+			"real people's profiles, running here would create and delete records\n" .
+			"alongside them, and the Experiences section holds pastoral history.\n\n" .
+			"Point --wp at a development install with an empty submissions table.\n" .
+			"If this really is a scratch database with leftover test rows, set\n" .
+			"SERVE_TEST_ALLOW_EXISTING=1 as well.\n",
+			DB_NAME,
+			DB_HOST,
+			$serve_people
+		)
+	);
 	exit( 2 );
 }
 
