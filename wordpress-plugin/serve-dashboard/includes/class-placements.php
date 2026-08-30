@@ -25,8 +25,57 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 final class Placements {
 
-	/** A row created because the ranking suggested this team. */
+	/**
+	 * A row created because the ranking suggested this team.
+	 *
+	 * Legacy, and kept only so the rows already in the database keep saying
+	 * what they have always said. Nothing creates one any more: a heuristic is
+	 * not consent to disclose somebody's profile to a particular ministry, and
+	 * this value being an accepted reason for access was precisely how it
+	 * became one. New rows name a decision a person took — see
+	 * assignment_sources() below.
+	 */
 	public const SOURCE_MATCH = 'match';
+
+	/** A coordinator reviewed the profile and chose this team. */
+	public const SOURCE_INTAKE_TRIAGE = 'intake_triage';
+
+	/** A pastor assigned this team directly. */
+	public const SOURCE_PASTOR_ASSIGNED = 'pastor_assigned';
+
+	/**
+	 * The participant asked to be contacted about this team.
+	 *
+	 * Still a request rather than a grant: it records what they asked for so a
+	 * coordinator can act on it, and does not by itself open the profile.
+	 */
+	public const SOURCE_PARTICIPANT_REQUESTED = 'participant_requested';
+
+	/**
+	 * Sources a new row may legitimately be created with.
+	 *
+	 * SOURCE_MATCH is deliberately absent. Anything handed a source outside
+	 * this list is recorded as intake triage rather than rejected, because the
+	 * caller has already been authorised by then and losing the audit row would
+	 * be worse than recording a conservative reason for it.
+	 *
+	 * @return string[]
+	 */
+	public static function assignment_sources(): array {
+		return array(
+			self::SOURCE_INTAKE_TRIAGE,
+			self::SOURCE_PASTOR_ASSIGNED,
+			self::SOURCE_PARTICIPANT_REQUESTED,
+			self::SOURCE_CATCHALL,
+		);
+	}
+
+	/** Keep an unrecognised source out of the column without losing the row. */
+	private static function normalise_source( string $source ): string {
+		return in_array( $source, self::assignment_sources(), true )
+			? $source
+			: self::SOURCE_INTAKE_TRIAGE;
+	}
 
 	/**
 	 * A row created because nothing matched.
@@ -94,6 +143,41 @@ final class Placements {
 	 *
 	 * @return int The team id used, or 0 if nothing was created.
 	 */
+	/**
+	 * Give every new submission its central intake owner.
+	 *
+	 * This is assign_catchall() generalised, and the generalisation is the
+	 * point. The catch-all used to fire only when the ranking matched nothing,
+	 * because a matched person was already owned — by the ministry teams the
+	 * ranking had just handed placement rows to. Those rows are gone, so
+	 * without this a person the matcher liked would have *no* owner at all
+	 * while a person it could not read had one: exactly backwards.
+	 *
+	 * One owner for everybody, whatever their tier, until a coordinator reads
+	 * the profile and assigns a team. Strong, Suggested, Explore and no-match
+	 * all arrive in the same queue and are all somebody's to answer.
+	 *
+	 * Net effect on who can see whom is a narrowing: up to three ministry teams
+	 * per person before, exactly one configured intake owner now — and pastors,
+	 * who hold CAP_VIEW_ALL and have always seen the whole queue.
+	 *
+	 * @return int The team id used, or 0 if no intake team is configured.
+	 */
+	public static function assign_intake_owner( int $submission_id ): int {
+		if ( $submission_id <= 0 ) {
+			return 0;
+		}
+
+		$team = self::catchall_team();
+		if ( ! $team ) {
+			return 0;
+		}
+
+		return self::ensure( $submission_id, (int) $team->id, self::SOURCE_CATCHALL )
+			? (int) $team->id
+			: 0;
+	}
+
 	public static function assign_catchall( int $submission_id, array $suggested ): int {
 		if ( $suggested || $submission_id <= 0 ) {
 			return 0;
@@ -129,6 +213,18 @@ final class Placements {
 			return false;
 		}
 
+		/*
+		 * The team has to be real and running before a row can point at it.
+		 * Only `$team_id <= 0` was checked, so a fabricated id inserted a
+		 * placement referencing no team at all — invisible to every read path
+		 * (they INNER JOIN teams) while still counting as a row, and a
+		 * deactivated team could quietly acquire new people.
+		 */
+		$team = Teams::get( $team_id );
+		if ( ! $team || empty( $team->is_active ) ) {
+			return false;
+		}
+
 		$table = Schema::table( 'placements' );
 
 		$existing = (int) $wpdb->get_var(
@@ -152,7 +248,7 @@ final class Placements {
 				'submission_id' => $submission_id,
 				'team_id'       => $team_id,
 				'status'        => Schema::STATUS_SUBMITTED,
-				'source'        => self::SOURCE_CATCHALL === $source ? self::SOURCE_CATCHALL : self::SOURCE_MATCH,
+				'source'        => self::normalise_source( $source ),
 				'notes'         => '',
 				'created_at'    => $now,
 				'updated_at'    => $now,

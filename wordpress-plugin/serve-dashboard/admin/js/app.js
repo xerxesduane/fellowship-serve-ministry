@@ -663,15 +663,19 @@ const drawer = {
 		 * question that cannot be asked without one.
 		 */
 		/*
-		 * Ordinarily the choice is between the teams this person was suggested
-		 * to. Somebody the ranking matched to nothing has no such list, and
-		 * without a fallback the conversation could happen and then have nowhere
-		 * to be recorded: the dropdown was empty and Trial serve and Placed were
-		 * unreachable for them, permanently.
+		 * The teams the server will actually accept from this user.
+		 *
+		 * This used to read person.placements — every placement row the person
+		 * had, unscoped — falling back to every active team in the church when
+		 * the ranking had matched nothing. So a ministry leader was routinely
+		 * offered other ministries' teams as destinations, and set_status() did
+		 * not check team ownership, so choosing one worked.
+		 *
+		 * assignableTeams is scoped server-side by the same rule the transition
+		 * enforces, so the chooser can no longer offer a move that will be
+		 * refused — or, worse, accepted when it should not be.
 		 */
-		const choosableTeams = person.placements.length
-			? person.placements
-			: (person.allTeams || []);
+		const choosableTeams = person.assignableTeams || [];
 
 		const teamOptions = choosableTeams
 			.map((p) => `<option value="${esc(p.teamId)}">${esc(p.teamName)}${p.safeguarded ? ' — background check required' : ''}</option>`)
@@ -692,8 +696,8 @@ const drawer = {
 						<label for="serve-stage-team-${esc(person.id)}">On which team</label>
 						${teamOptions
 							? `<select id="serve-stage-team-${esc(person.id)}" data-stage-team-select>${teamOptions}</select>
-								${!person.placements.length ? '<p class="serve-card__hint">No team matched this profile, so every active team is listed. Choose the one the conversation settled on.</p>' : ''}`
-							: '<p class="serve-note serve-note--warn">There are no active teams to place anyone on. Add one on the Teams screen first.</p>'}
+								<p class="serve-card__hint">Choose the team the conversation settled on. Recording it here is what gives that team&#39;s leader access to this profile.</p>`
+							: '<p class="serve-note serve-note--warn">There are no teams you can place anyone on. A pastor can assign you a team on the Teams screen.</p>'}
 					</div>
 
 					<div data-stage-until ${person.status === 'paused' ? '' : 'hidden'}>

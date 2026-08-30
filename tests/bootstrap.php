@@ -140,14 +140,19 @@ final class Fixtures {
 			$overrides
 		);
 
-		$id = Submissions::create( $payload );
-		if ( is_wp_error( $id ) ) {
-			throw new Failure( 'could not create fixture: ' . $id->get_error_message() );
+		$result = Submissions::create( $payload );
+		if ( is_wp_error( $result ) ) {
+			throw new Failure( 'could not create fixture: ' . $result->get_error_message() );
 		}
 
-		$this->submissions[] = (int) $id;
+		// create() returns the id alongside whether the confirmation email
+		// actually went, so the endpoint can stop claiming one was sent when
+		// the mailer refused.
+		$id = (int) $result['submission_id'];
 
-		return (int) $id;
+		$this->submissions[] = $id;
+
+		return $id;
 	}
 
 	/**

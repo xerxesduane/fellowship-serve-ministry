@@ -315,10 +315,34 @@ final class Rest {
 
 		self::bump_rate_limit();
 
+		/*
+		 * "Check your email" is only said when an email actually went.
+		 *
+		 * The endpoint used to say it unconditionally. Verification::issue()
+		 * has always reported a failed dispatch honestly — it withholds
+		 * verify_sent_at and audits VERIFY_MAIL_FAIL — but nothing read the
+		 * answer, so a site with a broken mailer sent every participant to wait
+		 * for a message that did not exist, while their profile sat unverified
+		 * and invisible to the leaders who could have helped. The token stays
+		 * valid either way, so the same link can go out once the mailer is
+		 * fixed; what must not survive is the claim that it was sent.
+		 */
+		if ( empty( $result['verification_sent'] ) ) {
+			return new \WP_REST_Response(
+				array(
+					'ok'       => true,
+					'verified' => false,
+					'message'  => __( 'Your profile is saved, but our confirmation email could not be sent just now. Nothing is lost and nothing is shared yet — please contact the SERVE team so they can confirm your address.', 'serve-dashboard' ),
+				),
+				201
+			);
+		}
+
 		return new \WP_REST_Response(
 			array(
-				'ok'      => true,
-				'message' => __( 'Almost done — please check your email and open the confirmation link. Your profile is not shared with anyone until you do.', 'serve-dashboard' ),
+				'ok'       => true,
+				'verified' => true,
+				'message'  => __( 'Almost done — please check your email and open the confirmation link. Your profile is not shared with anyone until you do.', 'serve-dashboard' ),
 			),
 			201
 		);

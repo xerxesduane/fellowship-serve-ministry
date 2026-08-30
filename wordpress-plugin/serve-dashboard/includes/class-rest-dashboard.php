@@ -585,21 +585,22 @@ final class Rest_Dashboard {
 				'unmatched'      => empty( Submissions::decode_list( $submission->suggested_teams ) ),
 
 				/*
-				 * Every active team, so somebody who matched nothing can still
-				 * be recorded onto whichever team the conversation settled on.
-				 * Sent only when it is needed: the ordinary case chooses from
-				 * the placements below and this would be noise.
+				 * The teams this caller may actually assign somebody to.
+				 *
+				 * Sent always, and scoped. It used to be every active team,
+				 * sent only when `suggested_teams` was empty — which made the
+				 * dropdown a function of the ranking, and offered a ministry
+				 * leader every team in the church whenever the matcher had
+				 * found nothing. Now that a recommendation creates no placement
+				 * rows, keying the chooser off the ranking would leave a
+				 * coordinator able to record a conversation only against the
+				 * intake owner.
+				 *
+				 * A pastor gets every active team; a ministry leader gets the
+				 * teams they lead and nothing else, matching what set_status()
+				 * will actually accept from them.
 				 */
-				'allTeams'       => empty( Submissions::decode_list( $submission->suggested_teams ) )
-					? array_map(
-						static fn( $t ) => array(
-							'teamId'      => (int) $t->id,
-							'teamName'    => $t->name,
-							'safeguarded' => (bool) (int) $t->requires_safeguarding,
-						),
-						Teams::all()
-					)
-					: array(),
+				'assignableTeams' => self::assignable_teams(),
 				'placements'     => array_map(
 					static fn( $p ) => array(
 						'teamId'   => (int) $p->team_id,
@@ -709,6 +710,41 @@ final class Rest_Dashboard {
 	}
 
 	/**
+	 * Active teams the current user may assign somebody to.
+	 *
+	 * The same rule Roles::can_manage_team() enforces on the way in, so the UI
+	 * cannot offer a destination the transition will refuse. Deactivated teams
+	 * are absent from Teams::all(), which is what keeps a closed team from
+	 * acquiring new people through a stale browser tab.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function assignable_teams(): array {
+		if ( ! current_user_can( Roles::CAP_MANAGE_PLACE ) ) {
+			return array();
+		}
+
+		$visible = Roles::visible_team_ids();
+
+		$out = array();
+		foreach ( Teams::all() as $team ) {
+			// Null is the all-teams capability. An empty array is a leader with
+			// no teams at all, and must not be read as "no restriction".
+			if ( null !== $visible && ! in_array( (int) $team->id, $visible, true ) ) {
+				continue;
+			}
+
+			$out[] = array(
+				'teamId'      => (int) $team->id,
+				'teamName'    => $team->name,
+				'safeguarded' => (bool) (int) $team->requires_safeguarding,
+			);
+		}
+
+		return $out;
+	}
+
+	/**
 	 * Shape one submission row for a list.
 	 *
 	 * Lists deliberately carry less than the detail view: enough to prioritise,
@@ -741,9 +777,29 @@ final class Rest_Dashboard {
 				 * Small Group is no longer flattened to Grow Small Group by
 				 * title-casing a slug.
 				 */
-				$profile   = json_decode( (string) $row->profile_json, true );
+				/*
+				 * Through the same redaction the drawer uses, not a raw decode.
+				 *
+				 * json_decode( $row->profile_json ) read the whole profile
+				 * regardless of who was asking, so a team name in this column
+				 * could be derived from a painful Experience the same leader is
+				 * not permitted to read in the panel underneath it. A derived
+				 * name is still an inference from that evidence, and redaction
+				 * that only covers the place the text is displayed is not
+				 * redaction.
+				 *
+				 * It also made the two disagree: the drawer ranked a redacted
+				 * profile and the list ranked the full one, so the same person
+				 * could carry a team here that the panel could not explain.
+				 * Same input, same ranking, same answer.
+				 *
+				 * Logging is off because a list is not a sensitive view: it
+				 * displays no Experience, and one audit row per person per page
+				 * refresh would bury the entries that mean somebody actually
+				 * opened one.
+				 */
 				$suggested = array_column(
-					Matching::suggestions_for_profile( is_array( $profile ) ? $profile : array() ),
+					Matching::suggestions_for_profile( Submissions::profile( $row, false ) ),
 					'team_name'
 				);
 

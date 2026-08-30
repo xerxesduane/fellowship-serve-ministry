@@ -141,6 +141,39 @@ final class Roles {
 		return array_map( 'intval', (array) $ids );
 	}
 
+	/**
+	 * Whether the current user may act on one specific team.
+	 *
+	 * Being able to see a person and being able to move them onto a team are
+	 * different questions, and set_status() only ever asked the first. A leader
+	 * who could open a profile through their own team could name any team id at
+	 * all in the same request — another ministry's, a retired one, or one that
+	 * has never existed — and the transition went through.
+	 *
+	 * Answered here rather than in the caller so every path that writes a
+	 * placement asks the same question. Returns false for a team that does not
+	 * exist and for one that has been deactivated: a closed team must not
+	 * acquire new people, whoever is asking.
+	 */
+	public static function can_manage_team( int $team_id, ?int $user_id = null ): bool {
+		$user_id = $user_id ?? get_current_user_id();
+
+		if ( $team_id <= 0 || ! user_can( $user_id, self::CAP_MANAGE_PLACE ) ) {
+			return false;
+		}
+
+		$team = Teams::get( $team_id );
+		if ( ! $team || empty( $team->is_active ) ) {
+			return false;
+		}
+
+		$team_ids = self::visible_team_ids( $user_id );
+
+		// Null is the all-teams capability; an empty array is a leader with no
+		// teams, which is not the same thing and must not read as one.
+		return null === $team_ids || in_array( $team_id, $team_ids, true );
+	}
+
 	/** Whether the current user may open one specific submission. */
 	public static function can_view_submission( int $submission_id, ?int $user_id = null ): bool {
 		$user_id = $user_id ?? get_current_user_id();
