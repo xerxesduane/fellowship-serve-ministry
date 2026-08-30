@@ -87,17 +87,34 @@ if (-not (Test-Path $BackupDir)) { New-Item -ItemType Directory -Path $BackupDir
 
 $backup = Join-Path $BackupDir "$DbName-before-serve-dashboard-$stamp.sql"
 
-$mysqldump = Get-Command mysqldump -ErrorAction SilentlyContinue
-if (-not $mysqldump) {
+<#
+	Resolve to a plain path string.
+
+	Get-Command returns a CommandInfo, whose executable path is .Source.
+	Get-Item returns a FileInfo, which has no .Source at all — so the fallback
+	branch produced an object that read as found and then invoked as an empty
+	path. The two shapes have to be flattened here rather than at the call site.
+#>
+$dumpExe = $null
+
+$onPath = Get-Command mysqldump -ErrorAction SilentlyContinue
+if ($onPath) {
+	$dumpExe = $onPath.Source
+}
+else {
 	foreach ($guess in @(
 		'C:\xampp\mysql\bin\mysqldump.exe',
-		'C:\laragon\bin\mysql\*\bin\mysqldump.exe'
+		'C:\laragon\bin\mysql\*\bin\mysqldump.exe',
+		'C:\Program Files\MySQL\*\bin\mysqldump.exe'
 	)) {
 		$found = Get-Item $guess -ErrorAction SilentlyContinue | Select-Object -First 1
-		if ($found) { $mysqldump = $found; break }
+		if ($found) { $dumpExe = $found.FullName; break }
 	}
 }
-if (-not $mysqldump) { Fail 'Could not find mysqldump. Add it to PATH, or back the database up by hand first.' }
+
+if (-not $dumpExe -or -not (Test-Path $dumpExe)) {
+	Fail 'Could not find mysqldump. Add it to PATH, or back the database up by hand first.'
+}
 
 if (-not $DbPassword) {
 	$secure = Read-Host "Password for MySQL user '$DbUser' (blank if none)" -AsSecureString
@@ -110,7 +127,17 @@ $dumpArgs = @("--user=$DbUser")
 if ($DbPassword) { $dumpArgs += "--password=$DbPassword" }
 $dumpArgs += @('--single-transaction', '--routines', $DbName)
 
-& $mysqldump.Source @dumpArgs | Out-File -FilePath $backup -Encoding utf8
+<#
+	Redirected by cmd rather than by PowerShell.
+
+	Windows PowerShell 5.1's Out-File -Encoding utf8 writes a byte-order mark,
+	and a BOM at the head of a .sql file makes `mysql < backup.sql` fail on the
+	first statement — so the backup would restore into an error at exactly the
+	moment it was needed. Letting cmd do the redirection keeps the bytes as
+	mysqldump emitted them.
+#>
+$quoted = ($dumpArgs | ForEach-Object { '"' + $_ + '"' }) -join ' '
+& cmd /c "`"$dumpExe`" $quoted > `"$backup`""
 
 # An empty or tiny file means the dump failed however it exited.
 if (-not (Test-Path $backup) -or (Get-Item $backup).Length -lt 1024) {
@@ -160,7 +187,8 @@ else {
 
 # --------------------------------------------------------------- 3. Hand off
 
-$version = (Select-String -Path (Join-Path $plugin 'serve-dashboard.php') -Pattern '^\s*\*\s*Version:\s*(.+)$').Matches[0].Groups[1].Value.Trim()
+$headerMatch = Select-String -Path (Join-Path $plugin 'serve-dashboard.php') -Pattern '^\s*\*\s*Version:\s*(.+)$' | Select-Object -First 1
+$version = if ($headerMatch) { $headerMatch.Matches[0].Groups[1].Value.Trim() } else { 'unknown' }
 
 Write-Host ''
 Write-Host '== Next, by hand ==' -ForegroundColor Cyan
