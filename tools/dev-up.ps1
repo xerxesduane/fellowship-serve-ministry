@@ -69,6 +69,28 @@ function Fail($message) {
 }
 
 <#
+	Does anything at all answer at this URL?
+
+	Any HTTP response counts, a 404 included. The question is whether a server
+	is there, not whether it likes the request.
+#>
+function Test-Site($url, $attempts = 5) {
+	foreach ($attempt in 1..$attempts) {
+		try {
+			$null = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+			return $true
+		}
+		catch {
+			# An error carrying a response is still a live server. Only a
+			# connection that never landed means nothing is listening.
+			if ($null -ne $_.Exception.Response) { return $true }
+		}
+		Start-Sleep -Seconds 2
+	}
+	return $false
+}
+
+<#
 	Run docker and hand back its exit code, saying nothing.
 
 	The output is kept in $script:DockerOutput for the one caller that needs to
@@ -234,6 +256,30 @@ if ($Seed) {
 	Write-Host '== Seeding demo profiles (every name in it is invented) ==' -ForegroundColor Cyan
 	$null = Invoke-Wp eval-file wp-content/plugins/serve-dashboard/dev/seed-demo.php
 	Show-WpOutput
+}
+
+<#
+	Prove the site answers before saying it does.
+
+	A container created while the port was busy keeps the binding in its
+	configuration and then starts without it. Nothing else notices: the
+	database is on the compose network, so WP-CLI installs, activates and seeds
+	perfectly happily, and the only symptom is that localhost answers nothing.
+	Without this the banner below went up over a site that was not there, which
+	is a worse failure than the port conflict it follows.
+#>
+if (-not (Test-Site "$siteUrl/")) {
+	Write-Host '== Nothing is answering yet - recreating the web container ==' -ForegroundColor Yellow
+	$null = Invoke-Docker compose up -d --force-recreate wordpress
+	if (-not (Test-Site "$siteUrl/")) {
+		Fail @"
+The stack is up, but nothing answers at $siteUrl/.
+
+   Two things to look at: 'docker compose logs wordpress' for a PHP or Apache
+   error, and whether something else on this machine holds the port.
+   docs/local-docker.md has the .env file that moves this stack off port 80.
+"@
+	}
 }
 
 Write-Host ''

@@ -28,6 +28,18 @@ done
 
 fail() { echo; echo "STOPPED: $*" >&2; exit 1; }
 
+# Does anything at all answer at this URL? Any HTTP response counts, a 404
+# included — the question is whether a server is there, not whether it likes
+# the request. Skipped rather than failed when curl is absent.
+site_answers() {
+	command -v curl >/dev/null 2>&1 || return 0
+	for _ in 1 2 3 4 5; do
+		if curl -s -o /dev/null --max-time 5 "$1"; then return 0; fi
+		sleep 2
+	done
+	return 1
+}
+
 command -v docker >/dev/null 2>&1 || fail 'Docker is not installed, or not on PATH.'
 docker compose version >/dev/null 2>&1 || fail 'This needs Docker Compose v2 (it ships with Docker Desktop).'
 docker info >/dev/null 2>&1 || fail 'Docker is installed but not running. Start Docker Desktop and try again.'
@@ -110,6 +122,23 @@ fi
 if [ "$SEED" = 1 ]; then
 	echo '== Seeding demo profiles (every name in it is invented) =='
 	wp eval-file wp-content/plugins/serve-dashboard/dev/seed-demo.php
+fi
+
+# Prove the site answers before saying it does. A container created while the
+# port was busy keeps the binding in its configuration and then starts without
+# it — the database is on the compose network, so WP-CLI installs, activates
+# and seeds perfectly happily, and the only symptom is that localhost answers
+# nothing. The banner below went up over a site that was not there.
+if ! site_answers "$SITE_URL/"; then
+	echo '== Nothing is answering yet - recreating the web container =='
+	docker compose up -d --force-recreate wordpress
+	if ! site_answers "$SITE_URL/"; then
+		fail "The stack is up, but nothing answers at $SITE_URL/.
+
+   Two things to look at: 'docker compose logs wordpress' for a PHP or Apache
+   error, and whether something else on this machine holds the port.
+   docs/local-docker.md has the .env file that moves this stack off port 80."
+	fi
 fi
 
 cat <<EOF
