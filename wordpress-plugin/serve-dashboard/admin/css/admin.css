@@ -266,3 +266,97 @@
 	color: #b8401a;
 	font-weight: 600;
 }
+
+/* ── Teams and gaps ─────────────────────────────────────────────────────── */
+
+/*
+ * Ten columns on a `fixed` table each got a tenth of the width. That is far too
+ * little for a comma-separated vocabulary and far too much for a checkbox, so
+ * the keywords textarea overflowed its cell and was painted over the Now
+ * column: the number underneath was unreadable and, on a narrow window,
+ * unclickable.
+ *
+ * Widths add up to 100% so `fixed` has nothing left to distribute.
+ */
+.serve-teams-table {
+	min-width: 1120px;
+}
+
+/* Adds to exactly 100, so `fixed` has nothing left to distribute by guesswork. */
+.serve-teams-table .serve-col-team   { width: 15%; }
+.serve-teams-table .serve-col-about  { width: 25%; }
+.serve-teams-table .serve-col-num    { width: 6.5%; }
+.serve-teams-table .serve-col-gap    { width: 8%; }
+.serve-teams-table .serve-col-leader { width: 13%; }
+.serve-teams-table .serve-col-flag   { width: 7%; }
+.serve-teams-table .serve-col-save   { width: 5.5%; }
+
+/*
+ * "Safeguarded" is one word, so a column too narrow for it does not wrap -- it
+ * breaks the word in half. The width above fits it; this makes sure a theme or
+ * a future column cannot quietly reintroduce "Safeguarde / d".
+ */
+.serve-teams-table thead th {
+	word-break: normal;
+	overflow-wrap: normal;
+}
+
+/*
+ * Below about 1200px the ten columns have nowhere to go. Scrolling the table
+ * keeps every control reachable and at a usable size, which crushing them does
+ * not: this screen is where headcounts and safeguarding flags are set, and a
+ * checkbox squeezed to four pixels is a mis-click waiting to happen.
+ */
+.serve-table-scroll {
+	overflow-x: auto;
+	margin-top: 12px;
+	/* So a focus ring on an edge control is not clipped by the scroll box. */
+	padding: 3px;
+	/*
+	 * Makes this the containing block for anything positioned inside it.
+	 *
+	 * Without it, the absolutely positioned `screen-reader-text` on the Save
+	 * header resolved against the page instead, escaped this box's clipping and
+	 * dragged the whole document 85px wider than the viewport -- a page that
+	 * scrolls sideways, caused by a one-pixel span nobody can see.
+	 */
+	position: relative;
+}
+
+/*
+ * Sized by its column rather than by a character count. `cols` is a guess about
+ * a font that stopped being true the moment the column had a width.
+ */
+.serve-teams-table textarea {
+	width: 100%;
+	box-sizing: border-box;
+	min-height: 5.5em;
+	font-size: 13px;
+	line-height: 1.5;
+	resize: vertical;
+}
+
+/* The number inputs sit in narrow columns and must not spill out of them. */
+.serve-teams-table input.small-text {
+	width: 100%;
+	max-width: 5.5em;
+	box-sizing: border-box;
+}
+
+.serve-teams-table select {
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+/* Vertically align each cell to the top so a tall textarea does not push the
+   numbers beside it into the middle of the row. */
+.serve-teams-table td {
+	vertical-align: top;
+}
+
+/* The checkbox columns read better centred under their headings. */
+.serve-teams-table .serve-col-flag,
+.serve-teams-table td.serve-cell-flag {
+	text-align: center;
+}

@@ -45,20 +45,32 @@ $leaders = get_users(
 		<?php esc_html_e( '“What it is about” is the everyday words a team’s work involves — the people it serves, the tasks it does — separated by commas. Matching reads a person’s passions, abilities and past experience against these, so a heart for Elementary Children can point to Fellowship Kids even when no spiritual gift lines up. Every team starts with a sensible list; edit it when a suggestion looks wrong.', 'serve-dashboard' ); ?>
 	</p>
 
-	<table class="wp-list-table widefat fixed striped">
+	<?php
+	/*
+	 * `fixed` divides the width equally between however many columns there are,
+	 * and there are ten. Every column got a tenth, which is far too little for a
+	 * comma-separated vocabulary and far too much for a checkbox -- so the
+	 * textarea overflowed its cell and was drawn on top of the Now column.
+	 *
+	 * The widths below are what each column actually needs. The wrapper scrolls
+	 * rather than letting ten columns crush each other on a narrow screen.
+	 */
+	?>
+	<div class="serve-table-scroll">
+	<table class="wp-list-table widefat fixed striped serve-teams-table">
 		<thead>
 			<tr>
-				<th scope="col"><?php esc_html_e( 'Team', 'serve-dashboard' ); ?></th>
-				<th scope="col"><?php esc_html_e( 'What it is about', 'serve-dashboard' ); ?></th>
-				<th scope="col"><?php esc_html_e( 'Now', 'serve-dashboard' ); ?></th>
-				<th scope="col"><?php esc_html_e( 'Target', 'serve-dashboard' ); ?></th>
-				<th scope="col"><?php esc_html_e( 'Minimum', 'serve-dashboard' ); ?></th>
-				<th scope="col"><?php esc_html_e( 'Gap', 'serve-dashboard' ); ?></th>
-				<th scope="col"><?php esc_html_e( 'Leader', 'serve-dashboard' ); ?></th>
-				<th scope="col"><?php esc_html_e( 'Safeguarded', 'serve-dashboard' ); ?></th>
-				<th scope="col"><?php esc_html_e( 'Active', 'serve-dashboard' ); ?></th>
+				<th scope="col" class="serve-col-team"><?php esc_html_e( 'Team', 'serve-dashboard' ); ?></th>
+				<th scope="col" class="serve-col-about"><?php esc_html_e( 'What it is about', 'serve-dashboard' ); ?></th>
+				<th scope="col" class="serve-col-num"><?php esc_html_e( 'Now', 'serve-dashboard' ); ?></th>
+				<th scope="col" class="serve-col-num"><?php esc_html_e( 'Target', 'serve-dashboard' ); ?></th>
+				<th scope="col" class="serve-col-num"><?php esc_html_e( 'Minimum', 'serve-dashboard' ); ?></th>
+				<th scope="col" class="serve-col-gap"><?php esc_html_e( 'Gap', 'serve-dashboard' ); ?></th>
+				<th scope="col" class="serve-col-leader"><?php esc_html_e( 'Leader', 'serve-dashboard' ); ?></th>
+				<th scope="col" class="serve-col-flag"><?php esc_html_e( 'Safeguarded', 'serve-dashboard' ); ?></th>
+				<th scope="col" class="serve-col-flag"><?php esc_html_e( 'Active', 'serve-dashboard' ); ?></th>
 				<?php if ( $can_edit ) : ?>
-					<th scope="col"><span class="screen-reader-text"><?php esc_html_e( 'Save', 'serve-dashboard' ); ?></span></th>
+					<th scope="col" class="serve-col-save"><span class="screen-reader-text"><?php esc_html_e( 'Save', 'serve-dashboard' ); ?></span></th>
 				<?php endif; ?>
 			</tr>
 		</thead>
@@ -92,7 +104,7 @@ $leaders = get_users(
 						 * Seeded, so this is tuning rather than data entry.
 						 */
 						?>
-						<textarea name="keywords" rows="2" cols="24" <?php disabled( ! $can_edit ); ?>
+						<textarea name="keywords" rows="4" <?php disabled( ! $can_edit ); ?>
 							aria-describedby="serve-kw-help"
 						><?php echo esc_textarea( implode( ', ', Teams::keyword_list( $team ) ) ); ?></textarea>
 					</td>
@@ -141,10 +153,10 @@ $leaders = get_users(
 							<?php endforeach; ?>
 						</select>
 					</td>
-					<td>
+					<td class="serve-cell-flag">
 						<input type="checkbox" name="requires_safeguarding" value="1" <?php checked( (int) $team->requires_safeguarding, 1 ); ?> <?php disabled( ! $can_edit ); ?>>
 					</td>
-					<td>
+					<td class="serve-cell-flag">
 						<input type="checkbox" name="is_active" value="1" <?php checked( (int) $team->is_active, 1 ); ?> <?php disabled( ! $can_edit ); ?>>
 					</td>
 					<?php if ( $can_edit ) : ?>
@@ -155,6 +167,7 @@ $leaders = get_users(
 		<?php endforeach; ?>
 		</tbody>
 	</table>
+	</div>
 
 	<p class="serve-note">
 		<?php esc_html_e( 'A team marked safeguarded cannot take anyone to trial serve or placement without a cleared background check. Fellowship Kids and Youth Ministry are marked by default.', 'serve-dashboard' ); ?>
