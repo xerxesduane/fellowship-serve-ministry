@@ -212,11 +212,33 @@ foreach ( $people as $person ) {
 		)
 	);
 
+	/*
+	 * A complete gift partition, like a real one.
+	 *
+	 * The assessment requires an answer to every one of the eighteen gifts, so
+	 * a profile naming three "likely" and two "possible" and leaving the rest
+	 * absent is a shape no participant can produce. Matching validates the
+	 * partition now and caps an incomplete one at "explore with an advisor" —
+	 * correctly — so seeding flat profiles would make every demo person look
+	 * like a broken result. Whatever is not named is unlikely, which is what
+	 * the workbook means by the third option.
+	 */
+	$likely_labels   = $person['likely'];
+	$possible_labels = array( 'Service', 'Giving' );
+
+	$named = array_map( 'strtolower', array_merge( $likely_labels, $possible_labels ) );
+	$rest  = array();
+	foreach ( Gift_Taxonomy::gifts() as $gift ) {
+		if ( ! in_array( strtolower( $gift['label'] ), $named, true ) ) {
+			$rest[] = $gift['label'];
+		}
+	}
+
 	$profile = array(
 		'spiritualGifts' => array(
-			'likely'   => $person['likely'],
-			'possible' => array( 'Service', 'Giving' ),
-			'unlikely' => array( 'Healing' ),
+			'likely'   => $likely_labels,
+			'possible' => $possible_labels,
+			'unlikely' => $rest,
 		),
 		'heart'          => array(
 			'roles'  => $person['roles'],
@@ -234,22 +256,14 @@ foreach ( $people as $person ) {
 		'recommendedNextStep' => $person['next_step'],
 
 		/*
-		 * What the assessment itself would have produced: its gift-only top
-		 * picks. Left as the person's own teams on purpose — the dashboard
-		 * ranks every team now, and the difference between these and what a
-		 * leader sees is exactly what the "not on their profile" flag marks.
+		 * `recommendedMinistries` is gone.
+		 *
+		 * The browser stopped producing it when ranking moved to the server,
+		 * and sanitize_profile() has never stored it — so seeding it wrote a
+		 * field nothing reads, into demo rows whose whole purpose is to look
+		 * like real ones. What the person was shown lives in the match
+		 * snapshot now, written by Submissions::create() from these answers.
 		 */
-		'recommendedMinistries' => array_map(
-			static function ( $slug ) {
-				$team = Teams::get_by_slug( $slug );
-
-				return array(
-					'ministry'     => $team ? $team->name : $slug,
-					'matchedGifts' => $team ? array_slice( Teams::gift_list( $team ), 0, 3 ) : array(),
-				);
-			},
-			$person['teams']
-		),
 	);
 
 	$now = current_time( 'mysql', true );

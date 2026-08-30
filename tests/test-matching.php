@@ -23,6 +23,8 @@ declare(strict_types=1);
 namespace Serve_Test;
 
 use Serve_Dashboard\Matching;
+use Serve_Dashboard\Matching_Contract;
+use Serve_Dashboard\Placements;
 use Serve_Dashboard\Schema;
 use Serve_Dashboard\Roles;
 use Serve_Dashboard\Submissions;
@@ -106,11 +108,14 @@ test(
 		 * language so the multilingual reason cannot fire either. Gifts are
 		 * therefore the only dimension supporting this suggestion.
 		 */
-		$profile = array(
-			'spiritualGifts' => array( 'likely' => array( 'Mercy', 'Hospitality' ) ),
-			'heart'          => array( 'roles' => array(), 'people' => array(), 'causes' => array() ),
-			'abilities'      => array(),
-			'personality'    => array( 'Be Extroverted', 'Be Self-expressive', 'Prefer Variety', 'Be Cooperative' ),
+		$profile = Fixtures::gift_profile(
+			array( 'mercy', 'hospitality' ),
+			array(),
+			array(
+				'heart' => array( 'roles' => array(), 'people' => array(), 'causes' => array() ),
+				'abilities' => array(),
+				'personality' => array( 'Be Extroverted', 'Be Self-expressive', 'Prefer Variety', 'Be Cooperative' ),
+			)
 		);
 
 		$match = Matching::explain( $team, $profile );
@@ -127,7 +132,7 @@ test(
 		 * corroboration from a second dimension, and four tendencies that
 		 * apply identically to all sixteen teams are not corroboration.
 		 */
-		$a->same( Matching::STRENGTH_POSSIBLE, $match['strength'], 'it stays a possible match' );
+		$a->same( Matching_Contract::TIER_SUGGESTED, $match['tier'], 'it stays a suggestion, not a strong gift match' );
 
 		// And the notes do exist — they are reported, just not counted.
 		$a->same( 4, count( Matching::personality_notes( $profile ) ), 'the notes are still available to the leader' );
@@ -146,56 +151,66 @@ test(
  * the team-first list pre-filtered on gift overlap too.
  */
 test(
-	'a team supported only by abilities is suggested, and leads the list',
+	'abilities are shown as context and can no longer reach a tier or lead the list',
 	function ( Assert $a, Fixtures $f ) {
 		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
 
 		/*
-		 * Mercy overlaps five teams and none of them is Administration, whose
-		 * vocabulary these five abilities do match. Under the old ranking
-		 * Administration could not appear at all: it was not one of the
-		 * assessment's picks, and nothing outside those picks was considered.
+		 * This test used to assert the opposite, and the opposite was the
+		 * defect.
+		 *
+		 * Five ability keywords matching a team's editable vocabulary produced
+		 * five reasons, five reasons produced a second SHAPE dimension, and
+		 * that was enough to reach the old "Strong match" — which wrote
+		 * suggested_teams, created a placement row, and opened the profile to
+		 * that team's leader. An administrator typing words into a text field
+		 * on the Teams screen was making an access-control decision, and
+		 * nothing said so.
+		 *
+		 * Free-text overlap is unvalidated evidence. It is still shown, under
+		 * `context`, because "a heart for Elementary Children" is worth a
+		 * leader seeing next to Fellowship Kids — but it carries no weight in
+		 * a tier, no weight in the ordering, and it grants nothing.
 		 */
 		$id         = $f->verified_submission( array( 'suggested_teams' => array( 'welcome' ) ) );
 		$submission = Submissions::get( $id );
 
-		$profile = array(
-			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
-			'abilities'      => array(
-				'Counting ability',
-				'Classifying ability',
-				'Evaluating ability',
-				'Editing ability',
-				'Writing ability',
-			),
+		$profile = Fixtures::gift_profile(
+			array( 'mercy' ),
+			array(),
+			array(
+				'abilities' => array(
+					'Counting ability',
+					'Classifying ability',
+					'Evaluating ability',
+					'Editing ability',
+					'Writing ability',
+				),
+			)
 		);
 
-		$ranked = Matching::rank( $submission, $profile );
-		$names  = array_column( $ranked, 'team_name' );
-
-		$a->ok( in_array( 'Administration', $names, true ), 'the team its abilities point to is suggested at all' );
-		$a->same( 'Administration', $names[0], 'and is the best-evidenced suggestion' );
-
 		$admin = null;
-		foreach ( $ranked as $match ) {
+		foreach ( Matching::rank_profile( $profile, PHP_INT_MAX ) as $match ) {
 			if ( 'Administration' === $match['team_name'] ) {
 				$admin = $match;
 			}
 		}
 
-		$a->same( 0, (int) $admin['gift_overlap'], 'not one spiritual gift overlaps it' );
-		$a->same( 5, count( $admin['reasons'] ), 'five abilities do' );
-		$a->same(
-			array( 'abilities' ),
-			array_values( array_unique( array_column( $admin['reasons'], 'dimension' ) ) ),
-			'all from abilities'
+		$a->ok( null !== $admin, 'the team is still considered' );
+		$a->same( 0, (int) $admin['evidence']['likely_hit_count'], 'not one spiritual gift overlaps it' );
+		$a->same( 0, count( $admin['reasons'] ), 'and the abilities produce no scored reason' );
+		$a->same( 5, count( $admin['context'] ), 'they are kept as context for the conversation' );
+
+		// Context alone is not a recommendation, and cannot become one.
+		$a->same( Matching_Contract::TIER_NONE, $admin['tier'], 'so the team reaches no tier at all' );
+		$a->not(
+			in_array( 'administration', Matching::slugs_for_profile( $profile ), true ),
+			'nothing is recorded against them from vocabulary alone'
 		);
 
-		// Evidence with no gift behind it never claims to be strong.
-		$a->same( Matching::STRENGTH_POSSIBLE, $admin['strength'], 'offered as possible, not strong' );
-
-		// The person has not seen this one; their profile lists the assessment picks.
-		$a->not( (bool) $admin['from_assessment'], 'flagged as not on their own profile' );
+		// And the ranking is not led by it.
+		$names = array_column( Matching::rank( $submission, $profile ), 'team_name' );
+		$a->not( 'Administration' === ( $names[0] ?? '' ), 'nor does it lead the list' );
 	}
 );
 
@@ -213,9 +228,12 @@ test(
 		$id         = $f->verified_submission( array( 'suggested_teams' => array( 'prayer' ) ) );
 		$submission = Submissions::get( $id );
 
-		$profile = array(
-			'spiritualGifts' => array( 'likely' => array( 'Organization' ) ),
-			'abilities'      => array( 'Counting ability', 'Classifying ability' ),
+		$profile = Fixtures::gift_profile(
+			array( 'administration' ),
+			array(),
+			array(
+				'abilities' => array( 'Counting ability', 'Classifying ability' ),
+			)
 		);
 
 		$ranked = Matching::rank( $submission, $profile );
@@ -251,13 +269,16 @@ test(
 		$id         = $f->verified_submission();
 		$submission = Submissions::get( $id );
 
-		$profile = array(
-			'spiritualGifts' => array( 'likely' => array() ),
-			'heart'          => array(
-				'people' => array( 'Women' ),
-				'roles'  => array(),
-				'causes' => array(),
-			),
+		$profile = Fixtures::gift_profile(
+			array(),
+			array(),
+			array(
+				'heart' => array(
+					'people' => array( 'Women' ),
+					'roles'  => array(),
+					'causes' => array(),
+				),
+			)
 		);
 
 		$mens   = Teams::get_by_slug( 'grow-men-connect' );
@@ -276,9 +297,12 @@ test(
 		$id         = $f->verified_submission( array( 'suggested_teams' => array( 'welcome' ) ) );
 		$submission = Submissions::get( $id );
 
-		$profile = array(
-			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
-			'abilities'      => array( 'Counting ability', 'Classifying ability', 'Evaluating ability', 'Editing ability', 'Writing ability' ),
+		$profile = Fixtures::gift_profile(
+			array( 'mercy' ),
+			array(),
+			array(
+				'abilities' => array( 'Counting ability', 'Classifying ability', 'Evaluating ability', 'Editing ability', 'Writing ability' ),
+			)
 		);
 
 		$before = array_column( Matching::rank( $submission, $profile ), 'team_name' );
@@ -289,7 +313,17 @@ test(
 		$after = array_column( Matching::rank( $submission, $profile ), 'team_name' );
 
 		$a->same( $before, $after, 'the order is identical with a gaping vacancy in play' );
-		$a->same( 'Administration', $after[0], 'evidence still leads' );
+
+		/*
+		 * Prayer is where the gift evidence points and where the vacancy was
+		 * opened, so it is the sharpest available test that need changes
+		 * nothing: it neither rose nor fell for having forty empty places.
+		 */
+		$a->same(
+			array_search( 'Prayer', $before, true ),
+			array_search( 'Prayer', $after, true ),
+			'and the team with the hole in it did not move'
+		);
 	}
 );
 
@@ -311,13 +345,16 @@ test(
 		$id         = $f->verified_submission( array( 'suggested_teams' => array( 'welcome' ) ) );
 		$submission = Submissions::get( $id );
 
-		$profile = array(
-			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
-			'abilities'      => array( 'Counting ability', 'Classifying ability', 'Evaluating ability', 'Editing ability', 'Writing ability' ),
+		$profile = Fixtures::gift_profile(
+			array( 'mercy' ),
+			array(),
+			array(
+				'abilities' => array( 'Counting ability', 'Classifying ability', 'Evaluating ability', 'Editing ability', 'Writing ability' ),
+			)
 		);
 
-		$top = array_column( Matching::rank( $submission, $profile ), 'team_name' )[0];
-		$a->same( 'Administration', $top, 'Administration is the top suggestion' );
+		$ranked = array_column( Matching::rank( $submission, $profile ), 'team_name' );
+		$a->ok( count( $ranked ) > 0, 'the profile ranks against something' );
 
 		/*
 		 * Re-read from the database rather than trusting the object fetched
@@ -334,23 +371,29 @@ test(
 		);
 
 		/*
-		 * And the mechanism itself: visibility comes from placement rows, which
-		 * are written once at submission time from suggested_teams. Ranking must
-		 * not add to them.
+		 * And the mechanism itself. Visibility comes from placement rows, and
+		 * no row is created from a ranking any more — not from the wider
+		 * ranking, and not from suggested_teams either. Intake writes one
+		 * central owner and a human assigns from there, so there is nothing
+		 * here for a suggestion to widen.
 		 */
 		global $wpdb;
-		$placement_teams = $wpdb->get_col(
+		$sources = $wpdb->get_col(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-				'SELECT team_id FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d',
+				'SELECT source FROM ' . Schema::table( 'placements' ) . ' WHERE submission_id = %d',
 				$id
 			)
 		);
-		$welcome = Teams::get_by_slug( 'welcome' );
+
+		$a->not(
+			in_array( Placements::SOURCE_MATCH, (array) $sources, true ),
+			'no placement row is sourced to the matcher'
+		);
 		$a->same(
-			array( (int) $welcome->id ),
-			array_map( 'intval', (array) $placement_teams ),
-			'and one placement row exists, for the team they were actually shown'
+			array( Placements::SOURCE_CATCHALL ),
+			array_values( array_unique( (array) $sources ) ),
+			'only the central intake owner exists'
 		);
 
 		$leader     = $f->user( Roles::ROLE_LEADER );
@@ -383,14 +426,17 @@ test(
 			array(
 				'display_name'    => 'Ifeoma Balogun',
 				'suggested_teams' => array( 'administration' ),
-				'gifts_likely'    => array( 'Organization' ),
-				'profile'         => array(
-					'spiritualGifts' => array( 'likely' => array( 'Organization' ) ),
-					'heart'          => array(
-						'people' => array( 'Elementary Children' ),
-						'roles'  => array(),
-						'causes' => array(),
-					),
+				'gifts_likely'    => array( 'Administration' ),
+				'profile'         => Fixtures::gift_profile(
+					array( 'administration' ),
+					array(),
+					array(
+						'heart' => array(
+							'people' => array( 'Elementary Children' ),
+							'roles'  => array(),
+							'causes' => array(),
+						),
+					)
 				),
 			)
 		);
@@ -404,7 +450,15 @@ test(
 
 		$a->ok( null !== $found, 'they are a candidate for the team their heart points to' );
 		$a->not( (bool) $found['alreadySuggested'], 'without the assessment having suggested it' );
-		$a->contains( 'Elementary Children', $found['match']['reasons'][0]['label'], 'their own words quoted as the reason' );
+		/*
+		 * Under `context` rather than `reasons`. Heart, abilities and
+		 * experience are shown to whoever may see the profile and carry no
+		 * weight in a tier — but a passion for Elementary Children is still
+		 * exactly why a pastor should look at this person for Fellowship Kids,
+		 * so discovery keeps it.
+		 */
+		$a->contains( 'Elementary Children', $found['match']['context'][0]['label'], 'their own words quoted as the reason' );
+		$a->same( 0, count( $found['match']['reasons'] ), 'and it is not counted as gift evidence' );
 
 		// Fellowship Kids is safeguarded, so the gate is flagged rather than silent.
 		$a->ok( (bool) $found['needsCheck'], 'and the background check is flagged' );
@@ -420,7 +474,7 @@ test(
 
 		$id         = $f->verified_submission( array( 'suggested_teams' => array( 'events' ) ) );
 		$submission = Submissions::get( $id );
-		$profile    = array( 'spiritualGifts' => array( 'likely' => array( 'Organization' ) ) );
+		$profile    = Fixtures::gift_profile( array( 'administration' ) );
 
 		$names = array_column( Matching::rank( $submission, $profile ), 'team_name' );
 		$a->ok( in_array( 'Events', $names, true ), 'suggested while the team is running' );
@@ -547,17 +601,17 @@ test(
 		$mono = $f->verified_submission(
 			array(
 				'languages' => array( 'English' ),
-				'profile'   => array( 'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ) ),
+				'profile'   => Fixtures::gift_profile( array( 'mercy' ) ),
 			)
 		);
 		$poly = $f->verified_submission(
 			array(
 				'languages' => array( 'Tagalog', 'Arabic', 'English' ),
-				'profile'   => array( 'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ) ),
+				'profile'   => Fixtures::gift_profile( array( 'mercy' ) ),
 			)
 		);
 
-		$profile = array( 'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ) );
+		$profile = Fixtures::gift_profile( array( 'mercy' ) );
 
 		// Prayer shares Mercy; Administration shares nothing with this profile.
 		foreach ( array( 'prayer', 'administration' ) as $slug ) {
@@ -609,9 +663,12 @@ test(
 	function ( Assert $a, Fixtures $f ) {
 		// One gift and nothing behind it. Strong needs two shared gifts and a
 		// second S.H.A.P.E. dimension, so this can only ever be possible.
-		$profile = array(
-			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
-			'abilities'      => array( 'Counting ability' ),
+		$profile = Fixtures::gift_profile(
+			array( 'mercy' ),
+			array(),
+			array(
+				'abilities' => array( 'Counting ability' ),
+			)
 		);
 
 		$ranked = Matching::rank_profile( $profile );
@@ -645,18 +702,21 @@ test(
 		 * which is what happened to a real profile in the pilot data before
 		 * this was written the other way round.
 		 */
-		$profile = array(
-			'spiritualGifts' => array( 'likely' => array( 'Faith', 'Leadership', 'Service' ) ),
-			'abilities'      => array(
-				'Interview ability', 'Researching ability', 'Graphics ability', 'Athletic ability',
-				'Teaching ability', 'Repairing ability', 'Promoting ability', 'Welcoming ability',
-				'Musical ability',
-			),
-			'heart'          => array(
-				'roles'  => array( 'DESIGN/DEVELOP', 'PIONEER', 'SERVE/HELP', 'INFLUENCE', 'REPAIR', 'LEAD/BE IN CHARGE', 'FOLLOW THE RULES' ),
-				'people' => array( 'Jr. High Students', 'Elementary Children', 'Men' ),
-				'causes' => array( 'Abuse/Violence', 'Financial Management', 'Blindness', 'Law and/or Justice System', 'Health and/or Fitness' ),
-			),
+		$profile = Fixtures::gift_profile(
+			array( 'faith', 'leadership', 'service' ),
+			array(),
+			array(
+				'abilities' => array(
+					'Interview ability', 'Researching ability', 'Graphics ability', 'Athletic ability',
+					'Teaching ability', 'Repairing ability', 'Promoting ability', 'Welcoming ability',
+					'Musical ability',
+				),
+				'heart' => array(
+					'roles'  => array( 'DESIGN/DEVELOP', 'PIONEER', 'SERVE/HELP', 'INFLUENCE', 'REPAIR', 'LEAD/BE IN CHARGE', 'FOLLOW THE RULES' ),
+					'people' => array( 'Jr. High Students', 'Elementary Children', 'Men' ),
+					'causes' => array( 'Abuse/Violence', 'Financial Management', 'Blindness', 'Law and/or Justice System', 'Health and/or Fitness' ),
+				),
+			)
 		);
 
 		$suggestions = Matching::suggestions_for_profile( $profile );
@@ -667,29 +727,44 @@ test(
 		 * suggested. A fixture pinned to one exact ordering would stop testing
 		 * anything the first time somebody edits a team's vocabulary.
 		 */
+		$recommendable = array( Matching_Contract::TIER_STRONG, Matching_Contract::TIER_SUGGESTED );
+
 		$complete = Matching::rank_profile( $profile, PHP_INT_MAX );
 		$expected = array_slice(
 			array_column(
-				array_values( array_filter( $complete, static fn( $m ) => 'strong' === $m['strength'] ) ),
+				array_values(
+					array_filter( $complete, static fn( $m ) => in_array( $m['tier'], $recommendable, true ) )
+				),
 				'team_slug'
 			),
 			0,
 			Matching::suggestion_limit()
 		);
 
-		$a->ok( count( $expected ) > 0, 'this profile does have strong matches somewhere in the ranking' );
-		$a->same( $expected, array_column( $suggestions, 'team_slug' ), 'and every one of them is suggested' );
+		$a->ok( count( $expected ) > 0, 'this profile does reach a recommendable tier somewhere in the ranking' );
+		$a->same( $expected, array_column( $suggestions, 'team_slug' ), 'and the best of them are what is recommended' );
 
 		// The cut happens after the filter, never before it.
-		$capped     = Matching::rank_profile( $profile );
-		$from_top   = array_filter( $capped, static fn( $m ) => 'strong' === $m['strength'] );
+		$capped   = Matching::rank_profile( $profile );
+		$from_top = array_filter( $capped, static fn( $m ) => in_array( $m['tier'], $recommendable, true ) );
 		$a->ok(
 			count( $suggestions ) >= count( $from_top ),
 			'filtering the capped ranking could only ever have found fewer'
 		);
 
+		/*
+		 * Strong before Suggested, always. The comparator sorts on tier first,
+		 * so a suggestion can never displace a strong gift match from the list.
+		 */
+		$seen_suggested = false;
 		foreach ( $suggestions as $suggestion ) {
-			$a->same( 'strong', $suggestion['strength'], 'each one strong' );
+			$a->ok( in_array( $suggestion['tier'], $recommendable, true ), 'each one clears the bar' );
+
+			if ( Matching_Contract::TIER_SUGGESTED === $suggestion['tier'] ) {
+				$seen_suggested = true;
+			} elseif ( $seen_suggested ) {
+				throw new Failure( 'a strong gift match was listed below a weaker suggestion' );
+			}
 		}
 
 		$a->ok(
@@ -708,24 +783,31 @@ test(
 		 * three, and `suggested_teams` is what decides who may open it -- so
 		 * the limit is an access-control bound, not a display preference.
 		 */
-		$profile = array(
-			'spiritualGifts' => array( 'likely' => array( 'Mercy', 'Hospitality', 'Service', 'Leadership' ) ),
-			'abilities'      => array( 'Feeding ability', 'Welcoming ability', 'Planning ability', 'Managing ability', 'Recall ability' ),
-			'heart'          => array(
-				'roles'  => array( 'SERVE/HELP', 'ORGANIZE', 'LEAD/BE IN CHARGE' ),
-				'people' => array( 'Older Adults 60+', 'Families', 'Men' ),
-				'causes' => array( 'Fellowship', 'Homelessness', 'Illness and/or Injury' ),
-			),
+		$profile = Fixtures::gift_profile(
+			array( 'mercy', 'hospitality', 'service', 'leadership' ),
+			array(),
+			array(
+				'abilities' => array( 'Feeding ability', 'Welcoming ability', 'Planning ability', 'Managing ability', 'Recall ability' ),
+				'heart' => array(
+					'roles'  => array( 'SERVE/HELP', 'ORGANIZE', 'LEAD/BE IN CHARGE' ),
+					'people' => array( 'Older Adults 60+', 'Families', 'Men' ),
+					'causes' => array( 'Fellowship', 'Homelessness', 'Illness and/or Injury' ),
+				),
+			)
 		);
 
-		$all_strong = array_filter(
+		$all_recommendable = array_filter(
 			Matching::rank_profile( $profile, PHP_INT_MAX ),
-			static fn( $m ) => 'strong' === $m['strength']
+			static fn( $m ) => in_array(
+				$m['tier'],
+				array( Matching_Contract::TIER_STRONG, Matching_Contract::TIER_SUGGESTED ),
+				true
+			)
 		);
 
 		$a->ok(
-			count( $all_strong ) > Matching::suggestion_limit(),
-			'this profile genuinely matches more teams than may be suggested'
+			count( $all_recommendable ) > Matching::suggestion_limit(),
+			'this profile genuinely reaches more teams than may be recommended'
 		);
 
 		$a->same(
@@ -737,8 +819,16 @@ test(
 		$a->same(
 			Matching::suggestion_limit(),
 			count( Matching::slugs_for_profile( $profile ) ),
-			'so no more than that many teams are given access'
+			'and the same cut applies to what is recorded as shown to them'
 		);
+
+		/*
+		 * The limit used to be an access-control bound, because these slugs
+		 * became placement rows. They do not any more — a recommendation grants
+		 * nothing — so this is now a display and honesty bound, and the access
+		 * guarantee is asserted directly in tests/test-routing.php instead of
+		 * being inferred from a count here.
+		 */
 	}
 );
 
@@ -746,16 +836,19 @@ test(
 	"the leader's panel is the same strong matches as everything else",
 	function ( Assert $a, Fixtures $f ) {
 		/*
-		 * The drawer heading says "Suggested teams", so it is a suggestion
-		 * surface and answers to the same rule. It used to call the full
-		 * ranking, which would have shown a leader possible matches the person
-		 * was never told about and no placement row exists for.
+		 * The drawer's current-analysis panel answers to the same rule as
+		 * everything else that recommends a team. It used to call the full
+		 * ranking, which would have shown a leader weak matches the person was
+		 * never told about.
 		 */
 		$id = $f->submission(
 			array(
-				'profile' => array(
-					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
-					'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				'profile' => Fixtures::gift_profile(
+					array( 'administration', 'leadership', 'wisdom' ),
+					array(),
+					array(
+						'abilities' => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+					)
 				),
 			)
 		);
@@ -776,7 +869,14 @@ test(
 		$a->ok( count( $panel ) > 0, 'the leader is shown something' );
 
 		foreach ( $panel as $match ) {
-			$a->same( 'strong', $match['strength'], 'and every row of it is a strong match' );
+			$a->ok(
+				in_array(
+					$match['tier'],
+					array( Matching_Contract::TIER_STRONG, Matching_Contract::TIER_SUGGESTED ),
+					true
+				),
+				'and every row of it cleared the bar to be recommended'
+			);
 		}
 
 		// The same teams the person was shown and the same ones placed.
@@ -789,30 +889,38 @@ test(
 );
 
 test(
-	'the list and the drawer never disagree about suggested teams',
+	'the list and the drawer read one record and cannot disagree',
 	function ( Assert $a, Fixtures $f ) {
 		/*
-		 * The list used to print the stored `suggested_teams` column while the
-		 * drawer ranked the profile live. Under the old rules those agreed. Once
-		 * suggestions became strong-only they stopped: every profile submitted
-		 * before that still listed the teams the old rules picked, so Imran
-		 * Sheikh read as Administration in the list and as nothing at all in the
-		 * panel underneath the same two words.
+		 * Three versions of this defect, in order.
 		 *
-		 * The column keeps recording what the person was shown -- that is what
-		 * lets the drawer flag a team as "not on their profile" -- and the list
-		 * no longer displays it.
+		 * First the list printed the stored `suggested_teams` column while the
+		 * drawer ranked the profile live; those agreed until suggestions became
+		 * strong-only, at which point every older profile listed teams the
+		 * drawer would not show. Then the list ranked live too — which fixed
+		 * the disagreement and introduced a worse problem, because ranking in
+		 * a list serializer meant decoding profile_json raw, so a team name in
+		 * a column an ordinary leader may read could be derived from a painful
+		 * Experience they may not.
+		 *
+		 * Now both read the stored snapshot: what this person was actually
+		 * shown, holding team names, tiers and gift labels and nothing
+		 * sensitive. One record, no ranking in the list at all, and nothing
+		 * that could differ by who is looking.
 		 */
 		global $wpdb;
 
-		// Stored teams that the current rules would not produce, exactly like a
+		// Stored teams the current rules would not produce, exactly like a
 		// profile submitted before the change.
 		$id = $f->submission(
 			array(
 				'suggested_teams' => array( 'production', 'livestream-team' ),
-				'profile'         => array(
-					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
-					'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				'profile'         => Fixtures::gift_profile(
+					array( 'administration', 'leadership', 'wisdom' ),
+					array(),
+					array(
+						'abilities' => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+					)
 				),
 			)
 		);
@@ -824,55 +932,84 @@ test(
 			array( '%d' )
 		);
 
-		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
 
-		$submission = \Serve_Dashboard\Submissions::get( $id );
-		$profile    = json_decode( (string) $submission->profile_json, true ) ?: array();
+		$submission = Submissions::get( $id );
+		$snapshot   = json_decode( (string) $submission->match_snapshot, true ) ?: array();
+		$shown      = array_column( (array) ( $snapshot['teams'] ?? array() ), 'team_name' );
 
-		// What the drawer shows.
-		$drawer = array_column( \Serve_Dashboard\Matching::for_submission( $submission, $profile ), 'team_name' );
-
-		// What the list shows.
 		$rows = new \ReflectionMethod( \Serve_Dashboard\Rest_Dashboard::class, 'rows' );
 		$rows->setAccessible( true );
 		$listed = $rows->invoke( null, array( $submission ) );
 
 		$a->same( 1, count( $listed ), 'the row is built' );
-		$a->same( $drawer, $listed[0]['suggestedTeams'], 'the list prints exactly what the drawer does' );
+		$a->same( $shown, $listed[0]['suggestedTeams'], 'the list prints exactly the stored snapshot' );
+		$a->ok( $listed[0]['hasSnapshot'], 'and knows it has one' );
 
-		// And specifically not the stored column, which still says otherwise.
+		// Not the legacy column, which still says otherwise and must survive.
 		$a->not(
 			in_array( 'Production', $listed[0]['suggestedTeams'], true ),
 			'not the team the old rules stored'
 		);
-
-		// The stored record is untouched, because the drawer needs it.
 		$a->same(
 			array( 'production', 'livestream-team' ),
-			\Serve_Dashboard\Submissions::decode_list( $submission->suggested_teams ),
-			'what the person was shown is still on record'
+			Submissions::decode_list( $submission->suggested_teams ),
+			'and the legacy record is left intact'
 		);
 	}
 );
 
 test(
-	'a person the ranking no longer supports reads as unmatched in the list',
+	'a row with no snapshot reads as unrecorded, not as unmatched',
 	function ( Assert $a, Fixtures $f ) {
 		/*
-		 * The flag came off the stored column too, so somebody whose stored
-		 * teams were picked by the old rules showed those teams and no flag,
-		 * while the drawer showed nothing at all.
+		 * "Nothing matched" and "this predates the record" are different facts
+		 * and used to render identically. A profile from before the snapshot
+		 * column existed was produced by a matcher that compared display
+		 * strings and could not see ten of the ministry table's terms, so
+		 * calling it unmatched would assert something nobody ever decided.
 		 */
 		global $wpdb;
 
+		$id = $f->submission();
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array(
+				'verified_at'    => current_time( 'mysql', true ),
+				'verify_token'   => null,
+				// Exactly what an upgraded row looks like: the column exists
+				// and is empty, because the migration deliberately does not
+				// backfill it.
+				'match_snapshot' => null,
+				'match_version'  => null,
+			),
+			array( 'id' => $id ),
+			array( '%s', '%s', '%s', '%s' ),
+			array( '%d' )
+		);
+
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		$rows = new \ReflectionMethod( \Serve_Dashboard\Rest_Dashboard::class, 'rows' );
+		$rows->setAccessible( true );
+		$listed = $rows->invoke( null, array( Submissions::get( $id ) ) );
+
+		$a->same( array(), $listed[0]['suggestedTeams'], 'no teams are printed' );
+		$a->not( $listed[0]['hasSnapshot'], 'the row knows it has no snapshot' );
+		$a->not( $listed[0]['unmatched'], 'and does not claim nothing matched' );
+	}
+);
+
+test(
+	'a person nothing matched reads as unmatched in the list',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		// One gift and nothing behind it: explorable at best, never recommended.
 		$id = $f->submission(
 			array(
-				'suggested_teams' => array( 'administration' ),
-				// One gift and nothing behind it: possible at best, never strong.
-				'profile'         => array(
-					'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
-					'abilities'      => array( 'Counting ability' ),
-				),
+				'suggested_teams' => array(),
+				'profile'         => Fixtures::gift_profile( array( 'mercy' ) ),
 			)
 		);
 		$wpdb->update(
@@ -883,14 +1020,15 @@ test(
 			array( '%d' )
 		);
 
-		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
 
 		$rows = new \ReflectionMethod( \Serve_Dashboard\Rest_Dashboard::class, 'rows' );
 		$rows->setAccessible( true );
-		$listed = $rows->invoke( null, array( \Serve_Dashboard\Submissions::get( $id ) ) );
+		$listed = $rows->invoke( null, array( Submissions::get( $id ) ) );
 
 		$a->same( array(), $listed[0]['suggestedTeams'], 'no teams are printed' );
-		$a->ok( $listed[0]['unmatched'], 'and the row says so' );
+		$a->ok( $listed[0]['hasSnapshot'], 'the snapshot exists' );
+		$a->ok( $listed[0]['unmatched'], 'and the row says nothing matched' );
 	}
 );
 
@@ -905,9 +1043,12 @@ test(
 
 		$id = $f->submission(
 			array(
-				'profile' => array(
-					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
-					'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				'profile' => Fixtures::gift_profile(
+					array( 'administration', 'leadership', 'wisdom' ),
+					array(),
+					array(
+						'abilities' => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+					)
 				),
 			)
 		);

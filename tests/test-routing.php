@@ -377,7 +377,7 @@ test(
 		wp_set_current_user( $leader );
 
 		$request  = new \WP_REST_Request( 'GET', '/serve/v1/people' );
-		$response = \Serve_Dashboard\REST_Dashboard::people( $request );
+		$response = \Serve_Dashboard\Rest_Dashboard::people( $request );
 		$rows     = $response->get_data()['people'];
 
 		$row = null;
