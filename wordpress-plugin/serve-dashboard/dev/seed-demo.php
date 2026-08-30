@@ -177,7 +177,98 @@ $people = array(
 		'timing'      => array( 'Weekday daytime' ),
 		'next_step'   => 'Ask whether she would rather pray with people or for them.',
 	),
+	/*
+	 * The end of the pipeline, which nobody demonstrated.
+	 *
+	 * Somebody actually serving. Without a placed person the dashboard can show
+	 * every stage except the one the whole thing is for, and "Serving now" reads
+	 * as zero on every screenshot taken of it.
+	 */
+	array(
+		'name'        => 'Ruth Adeyemi',
+		'email'       => 'ruth.demo@example.com',
+		'tenure'      => 84,
+		'likely'      => array( 'Administration', 'Service', 'Giving' ),
+		'teams'       => array( 'administration' ),
+		'langs'       => array( 'English' ),
+		'due'         => '+26 days',
+		'status'      => Schema::STATUS_PLACED,
+		'roles'       => array( 'ORGANIZE', 'OPERATE/MAINTAIN' ),
+		'group'       => array( 'Older Adults 60+' ),
+		'causes'      => array( 'Financial Management' ),
+		'abilities'   => array( 'Counting ability', 'Classifying ability', 'Planning ability' ),
+		'personality' => array( 'Be Introverted', 'Be Self-controlled', 'Prefer Routine', 'Be Cooperative' ),
+		'spiritual'   => array( 'Serving in a Ministry', 'Regularly Give Back to God' ),
+		'work'        => array( 'Business: Accounting' ),
+		'priority'    => 'I have done the books for two other churches and would rather keep doing that.',
+		'hours'       => '3-5 hours',
+		'timing'      => array( 'Weekday daytime' ),
+		'next_step'   => 'Settling-in check comes round in a few weeks.',
+	),
+
+	/*
+	 * A pause with a return date.
+	 *
+	 * The one stage that quietly rots a queue if it is handled badly, so it is
+	 * worth being able to see what a well-handled one looks like: a date, and a
+	 * reason somebody wrote down.
+	 */
+	array(
+		'name'        => 'Tomás Ferreira',
+		'email'       => 'tomas.demo@example.com',
+		'tenure'      => 8,
+		'likely'      => array( 'Teaching', 'Encouragement', 'Leadership' ),
+		'teams'       => array( 'grow-compass' ),
+		'langs'       => array( 'Portuguese', 'English' ),
+		'due'         => '+45 days',
+		'status'      => Schema::STATUS_PAUSED,
+		'roles'       => array( 'IMPROVE', 'INFLUENCE' ),
+		'group'       => array( 'Young Marrieds', 'Men' ),
+		'causes'      => array( 'Education', 'Families/Marriage' ),
+		'abilities'   => array( 'Teaching ability', 'Writing ability', 'Researching ability' ),
+		'personality' => array( 'Be Extroverted', 'Be Self-expressive', 'Prefer Variety', 'Be Cooperative' ),
+		'spiritual'   => array( 'Member of a Small Group', 'Regularly Read the Bible' ),
+		'work'        => array( 'Education: Teacher' ),
+		'priority'    => 'Yes, but our second child is due in March.',
+		'hours'       => '1-2 hours',
+		'timing'      => array( 'Weeknight' ),
+		'next_step'   => 'Paused until after the baby. Ask again in the spring.',
+	),
+
+	/*
+	 * Nothing reached a strong or suggested match.
+	 *
+	 * The state the software is most easily accused of getting wrong, and the
+	 * one no demo person showed: real, complete answers that simply do not
+	 * concentrate on any one team. Her row carries the "no team matched" flag,
+	 * her Teams column is empty on purpose, and the catch-all team owns the
+	 * first conversation instead of a pastor carrying her alone.
+	 *
+	 * Worth keeping exactly as it is. A demo where everybody matches something
+	 * is a demo of a matcher that always says yes.
+	 */
+	array(
+		'name'        => 'Hannah Whitfield',
+		'email'       => 'hannah.demo@example.com',
+		'tenure'      => 3,
+		'likely'      => array( 'Giving', 'Miracles' ),
+		'teams'       => array(),
+		'langs'       => array( 'English' ),
+		'due'         => '-1 days',
+		'status'      => Schema::STATUS_SUBMITTED,
+		'roles'       => array( 'PERSEVERE' ),
+		'group'       => array( 'Singles' ),
+		'causes'      => array( 'Sanctity of Life' ),
+		'abilities'   => array( 'Athletic ability' ),
+		'personality' => array( 'Be Introverted', 'Be Self-controlled', 'Prefer Variety', 'Be Competitive' ),
+		'spiritual'   => array( 'Baptized' ),
+		'priority'    => 'I am not sure where I would fit, which is why I filled this in.',
+		'hours'       => '1-2 hours',
+		'timing'      => array( 'Weekend' ),
+		'next_step'   => 'No team matched. Worth a conversation before suggesting anything.',
+	),
 );
+
 
 /*
  * Keys as the assessment writes them, so the profile a leader opens has the
@@ -407,6 +498,18 @@ foreach ( $people as $person ) {
 			)
 		);
 	}
+
+	/*
+	 * The owner a real unmatched submission gets.
+	 *
+	 * This seeder inserts its rows directly rather than going through
+	 * Submissions::create(), so it skipped the one thing create() does for
+	 * somebody nothing matched: hand them to the catch-all team. A demo person
+	 * with no teams was therefore visible to pastors and nobody else, which is
+	 * the behaviour from before the catch-all existed, and the screen showed the
+	 * old answer while the code did something else.
+	 */
+	Placements::assign_catchall( $submission_id, $person['teams'] );
 
 	++$created;
 }
