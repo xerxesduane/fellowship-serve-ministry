@@ -19,6 +19,7 @@ Built for a dedicated WordPress install at `serve.fellowshipdubai.com`.
 wordpress-plugin/serve-dashboard/   the entire product, one deployable plugin
 tools/build-release.sh              produces the installable zip
 tools/run-tests.php                 the plugin test runner
+tools/run-unit-tests.php            the matching arithmetic, without WordPress
 tools/run-js-tests.mjs              the assessment test runner
 tests/                              what must never quietly regress
 tests/js/                           the same, for the assessment JavaScript
@@ -27,6 +28,7 @@ docs/deployment-runbook.md          taking it live, in order
 docs/planning-center-prepare.md     field ownership, before any integration
 docs/privacy-notice.md              what the software actually does with people's data
 docs/content-audit.md               page-by-page workbook fidelity audit
+docs/ministry-gift-crosswalk.md     which ministry words mean which assessed gift, and which do not
 ```
 
 Everything ships as one plugin: PHP, vanilla JavaScript, and CSS. No build step,
@@ -58,12 +60,42 @@ before deleting anything: both implementations carried the same 73 option ids,
 SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
 ```
 
-One hundred and eight tests covering the guarantees whose failure would be silent: the
-safeguarding gate, unverified profiles staying invisible, Experiences redaction,
-what a CSV may contain, the confirmation-email path in both directions, what the
-public intake endpoint accepts, who may move somebody along the pipeline or
-erase them, what activation is supposed to have left behind, and whether the
-pilot report counts the same population in both halves of a proportion.
+One hundred and forty-three tests covering the guarantees whose failure would be
+silent: the safeguarding gate, unverified profiles staying invisible, Experiences
+redaction, what a CSV may contain, the confirmation-email path in both
+directions, what the public intake endpoint accepts, who may move somebody along
+the pipeline or erase them, what activation is supposed to have left behind, and
+whether the pilot report counts the same population in both halves of a
+proportion.
+
+`tests/test-routing.php` is the group that matters most and reads least like
+matching: that a recommendation creates no placement row and grants no ministry
+leader access, that all four result tiers reach central intake, that a leader
+cannot move somebody onto a team they do not lead, that a fabricated or
+deactivated team id fails before anything changes, that a failed placement write
+rolls the submission status back rather than leaving it claiming success, and
+that routing somebody by hand to a safeguarded team raises the requirement
+instead of meeting a record that says none is needed.
+
+### The matching arithmetic
+
+```bash
+php tools/run-unit-tests.php
+```
+
+Thirty-seven tests over the canonical taxonomy, the approved ministry-gift
+crosswalk and the tier contract. No WordPress, no database, no confirmation
+flag — these are pure functions over arrays, and the team rows come from the
+plugin's own seed, parsed out of `Teams::seed()` so the fixture cannot drift
+into agreeing with itself.
+
+They have their own runner because they are the part most likely to be wrong in
+a way nobody notices, and they were previously reachable only through a runner
+that needs MySQL stood up first. The regression that prompted them was a string
+comparison silently matching twelve of the ministry table's twenty-two terms —
+which no test caught, because the fixtures used a gift name the assessment
+cannot emit. `Fixtures::gift_profile()` builds profiles through the real
+taxonomy so that particular blindness cannot recur.
 
 That last group exists because activation runs once, on a database nobody has
 looked at yet, and then never again — so it is the least-exercised code here and
@@ -75,10 +107,11 @@ the only defect this suite has found in anger was hiding in it.
 node tools/run-js-tests.mjs
 ```
 
-Thirty-four tests over the journey's pure modules — `profile.js`, which builds
+Forty-five tests over the journey's pure modules — `profile.js`, which builds
 the object that becomes somebody's stored profile and the text they download;
 `handoff.js`, which decides what the results page offers once they have
-finished; and `render.js`. No WordPress, no database and no network, so the
+finished; `suggestions.js`, which holds the results page's request state; and
+`render.js`. No WordPress, no database and no network, so the
 runner touches nothing and needs no confirmation flag.
 
 It exists because the PHP suite stops at the REST endpoint. Everything on the
@@ -91,6 +124,15 @@ Both are now covered, and both were confirmed by breaking them on purpose.
 load, so importing it outside a browser needs a DOM shim larger than the tests it
 would enable. CI parses it, which catches the mistake that actually happens; the
 rest is checked by eye.
+
+`suggestions.js` was extracted for the same reason `handoff.js` was. Three
+defects lived in two module-level variables in `app.js` and all looked identical
+from outside — a page stuck on "Working these out…" forever. A valid empty
+response was discarded by a truthiness check, a failed request was swallowed by
+a silent catch, and restart cleared everything except those two variables, so
+the next person on a shared device inherited the previous person's teams and no
+new request was ever made. None of it was reachable by a test until the state
+became a value in its own module.
 
 The useful move has been taking things *out* of it. `handoff.js` was extracted
 precisely because the code deciding whether a person becomes visible to the SERVE

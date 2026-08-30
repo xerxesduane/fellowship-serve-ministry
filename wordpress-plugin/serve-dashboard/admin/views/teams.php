@@ -42,8 +42,58 @@ $leaders = get_users(
 	</p>
 
 	<p class="serve-lede" id="serve-kw-help">
-		<?php esc_html_e( '“What it is about” is the everyday words a team’s work involves — the people it serves, the tasks it does — separated by commas. Matching reads a person’s passions, abilities and past experience against these, so a heart for Elementary Children can point to Fellowship Kids even when no spiritual gift lines up. Every team starts with a sensible list; edit it when a suggestion looks wrong.', 'serve-dashboard' ); ?>
+		<?php esc_html_e( '“What it is about” is the everyday words a team’s work involves — the people it serves, the tasks it does — separated by commas. These are display words: they help a coordinator recognise who might suit a team when reading a profile, and they are shown as context beside a person’s passions, abilities and past experience.', 'serve-dashboard' ); ?>
 	</p>
+
+	<p class="serve-lede">
+		<strong><?php esc_html_e( 'They do not affect matching.', 'serve-dashboard' ); ?></strong>
+		<?php esc_html_e( 'They used to. Free text typed here could carry a profile to a strong match, and a strong match created the placement row that let a team’s leader open it — so editing this box was quietly an access-control decision. Recommendations now come from spiritual gifts alone, through the approved ministry-gift crosswalk, and nobody sees a profile until a coordinator assigns them.', 'serve-dashboard' ); ?>
+	</p>
+
+	<?php
+	/*
+	 * The crosswalk diagnostic.
+	 *
+	 * Rule 4 of the mapping: never silently discard an unknown term. A ministry
+	 * word with no assessed gift behind it is unknown coverage, not evidence
+	 * against anybody, and the people who own these rows have to be able to see
+	 * which of their words the software can actually read.
+	 */
+	$serve_config_problems = \Serve_Dashboard\Gift_Crosswalk::validate();
+	?>
+
+	<?php if ( $serve_config_problems ) : ?>
+		<details class="serve-config-audit">
+			<summary>
+				<?php
+				printf(
+					/* translators: %d: number of notes. */
+					esc_html( _n( '%d note about how these teams map to the 18 assessed gifts', '%d notes about how these teams map to the 18 assessed gifts', count( $serve_config_problems ), 'serve-dashboard' ) ),
+					count( $serve_config_problems )
+				);
+				?>
+			</summary>
+			<p class="serve-lede">
+				<?php
+				printf(
+					/* translators: %s: link to the crosswalk document. */
+					esc_html__( 'A term with no assessed gift behind it is shown to people but never scored — unknown coverage, not a mark against anyone. The approved mapping is documented in %s.', 'serve-dashboard' ),
+					'<code>docs/ministry-gift-crosswalk.md</code>'
+				);
+				?>
+			</p>
+			<ul class="serve-config-audit__list">
+				<?php foreach ( $serve_config_problems as $serve_problem ) : ?>
+					<li class="serve-config-audit__<?php echo esc_attr( $serve_problem['level'] ); ?>">
+						<?php if ( '' !== $serve_problem['team'] ) : ?>
+							<strong><?php echo esc_html( $serve_problem['team'] ); ?>:</strong>
+						<?php endif; ?>
+						<?php echo esc_html( $serve_problem['message'] ); ?>
+					</li>
+				<?php endforeach; ?>
+			</ul>
+		</details>
+	<?php endif; ?>
 
 	<?php
 	/*
