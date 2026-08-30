@@ -51,21 +51,47 @@ test(
 );
 
 test(
-	'a ministry leader sees only submissions suggested to their own team',
+	'a ministry leader sees only submissions assigned to their own team',
 	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * "Suggested to" became "assigned to", and the change is the point.
+		 *
+		 * This used to pass on submissions whose only connection to a team was
+		 * the ranking: intake wrote one placement row per suggested team, and
+		 * those rows are what can_view_submission() reads. So being ranked
+		 * against Worship was the same event as the Worship leader gaining the
+		 * profile. A recommendation creates no rows now, and the same person is
+		 * invisible until a coordinator assigns them.
+		 */
 		$mine     = $f->verified_submission( array( 'suggested_teams' => array( 'worship' ) ) );
 		$not_mine = $f->verified_submission( array( 'suggested_teams' => array( 'production' ) ) );
 
 		$leader = $f->user( Roles::ROLE_LEADER );
-		$f->lead_team( $leader, 'worship' );
+		$worship = $f->lead_team( $leader, 'worship' );
 
 		wp_set_current_user( $leader );
 
-		$a->ok( Roles::can_view_submission( $mine ), 'their own team' );
-		$a->not( Roles::can_view_submission( $not_mine ), 'somebody else\'s team' );
+		// Suggested to their team, and still not theirs to read.
+		$a->not(
+			Roles::can_view_submission( $mine ),
+			'a suggestion alone does not open the profile'
+		);
+
+		// The audited human decision is what does.
+		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+		\Serve_Dashboard\Placements::ensure(
+			$mine,
+			$worship,
+			\Serve_Dashboard\Placements::SOURCE_INTAKE_TRIAGE
+		);
+
+		wp_set_current_user( $leader );
+
+		$a->ok( Roles::can_view_submission( $mine ), 'an explicit assignment does' );
+		$a->not( Roles::can_view_submission( $not_mine ), 'somebody else\'s team stays closed' );
 
 		$ids = wp_list_pluck( Submissions::query(), 'id' );
-		$a->ok( in_array( $mine, $ids, false ), 'their own team is listed' );
+		$a->ok( in_array( $mine, $ids, false ), 'the assigned person is listed' );
 		$a->not( in_array( $not_mine, $ids, false ), 'the other team is not' );
 	}
 );

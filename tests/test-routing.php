@@ -400,12 +400,33 @@ test(
 			$a->lacks( $secret, (string) $encoded, "the list row carries no trace of \"$secret\"" );
 		}
 
-		// And what the list shows is what the drawer's snapshot section shows.
-		$snapshot = json_decode( (string) Submissions::get( $id )->match_snapshot, true );
+		/*
+		 * And what the list shows is what the snapshot recommends — the
+		 * Strong and Suggested teams, not everything in it.
+		 *
+		 * A snapshot for somebody with no clear match still records the teams
+		 * they were offered to explore with an advisor. Printing those in the
+		 * same column as everyone else's strong matches would put the weakest
+		 * results under the strongest heading, and would make `unmatched` false
+		 * for exactly the people that flag exists to surface. Caught by this
+		 * test: this profile has one likely gift, and the list was listing its
+		 * two explore options as though they were recommendations.
+		 */
+		$snapshot    = json_decode( (string) Submissions::get( $id )->match_snapshot, true );
+		$recommended = array_filter(
+			(array) ( $snapshot['teams'] ?? array() ),
+			static fn( $team ) => in_array( $team['tier'] ?? '', array( 'strong', 'suggested' ), true )
+		);
+
 		$a->same(
-			array_column( (array) ( $snapshot['teams'] ?? array() ), 'team_name' ),
+			array_values( array_column( $recommended, 'team_name' ) ),
 			$row['suggestedTeams'],
-			'the list and the stored snapshot name the same teams'
+			'the list names exactly the snapshot\'s recommended teams'
+		);
+		$a->ok( $row['unmatched'], 'and a profile with only explore options reads as unmatched' );
+		$a->ok(
+			count( (array) ( $snapshot['teams'] ?? array() ) ) > 0,
+			'while the explore options themselves survive in the snapshot for the drawer'
 		);
 	}
 );

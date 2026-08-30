@@ -41,7 +41,36 @@ function call_route( string $method, string $route, array $body = array() ): arr
 
 /** A verified person suggested to one team, ready to be moved along. */
 function candidate( Fixtures $f, string $slug = 'welcome' ): int {
-	return $f->verified_submission( array( 'suggested_teams' => array( $slug ) ) );
+	/*
+	 * Somebody a team is actually working with, which now takes two steps.
+	 *
+	 * Being suggested to a team used to be enough: intake wrote a placement row
+	 * per suggested team, and those rows are what make a person visible and
+	 * assignable. A recommendation creates no rows any more, so a pipeline test
+	 * that only suggests a team is testing an empty scope — which is what these
+	 * started doing, correctly and unhelpfully, the first time they were run
+	 * against the new code.
+	 *
+	 * The explicit assignment is the audited decision a coordinator takes after
+	 * reading the profile, and it is what these tests mean by "a candidate".
+	 */
+	$id = $f->verified_submission( array( 'suggested_teams' => array( $slug ) ) );
+
+	$was = get_current_user_id();
+	wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+	$team = \Serve_Dashboard\Teams::get_by_slug( $slug );
+	if ( $team ) {
+		\Serve_Dashboard\Placements::ensure(
+			$id,
+			(int) $team->id,
+			\Serve_Dashboard\Placements::SOURCE_INTAKE_TRIAGE
+		);
+	}
+
+	wp_set_current_user( $was );
+
+	return $id;
 }
 
 /*
@@ -652,9 +681,10 @@ test(
 			array(
 				// Matches Administration strongly, so Prayer is drift.
 				'suggested_teams' => array( 'administration' ),
-				'profile'         => array(
-					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
-					'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				'profile'         => Fixtures::gift_profile(
+					array( 'administration', 'leadership', 'wisdom' ),
+					array(),
+					array( 'abilities' => array( 'Counting ability', 'Classifying ability', 'Editing ability' ) )
 				),
 			)
 		);
@@ -666,8 +696,10 @@ test(
 			array( '%d' )
 		);
 
+		// A legacy row, as an upgraded site holds. ensure() cannot create one:
+		// `match` is not an accepted source any more.
 		$prayer = \Serve_Dashboard\Teams::get_by_slug( 'prayer' );
-		\Serve_Dashboard\Placements::ensure( $id, (int) $prayer->id );
+		$f->legacy_match_placement( $id, 'prayer' );
 
 		$stale_here = static function () use ( $id, $prayer ) {
 			return array_filter(
@@ -722,9 +754,10 @@ test(
 		$id = $f->submission(
 			array(
 				'suggested_teams' => array( 'administration' ),
-				'profile'         => array(
-					'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
-					'abilities'      => array( 'Counting ability', 'Classifying ability', 'Editing ability' ),
+				'profile'         => Fixtures::gift_profile(
+					array( 'administration', 'leadership', 'wisdom' ),
+					array(),
+					array( 'abilities' => array( 'Counting ability', 'Classifying ability', 'Editing ability' ) )
 				),
 			)
 		);
@@ -736,8 +769,7 @@ test(
 			array( '%d' )
 		);
 
-		$production = \Serve_Dashboard\Teams::get_by_slug( 'production' );
-		\Serve_Dashboard\Placements::ensure( $id, (int) $production->id );
+		$f->legacy_match_placement( $id, 'production' );
 
 		$mine = static fn() => array_values(
 			array_filter(
@@ -804,7 +836,7 @@ test(
 				array( '%d' )
 			);
 
-			\Serve_Dashboard\Placements::ensure( $id, (int) $production->id );
+			$f->legacy_match_placement( $id, 'production' );
 
 			$listed = static fn() => array_values(
 				array_filter(

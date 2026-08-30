@@ -878,9 +878,34 @@ final class Rest_Dashboard {
 				 * reading the same record, and a list request no longer decodes
 				 * sixteen profiles to render a column.
 				 */
-				$snapshot  = json_decode( (string) ( $row->match_snapshot ?? '' ), true );
-				$snapshot  = is_array( $snapshot ) ? $snapshot : array();
-				$suggested = array_column( (array) ( $snapshot['teams'] ?? array() ), 'team_name' );
+				$snapshot = json_decode( (string) ( $row->match_snapshot ?? '' ), true );
+				$snapshot = is_array( $snapshot ) ? $snapshot : array();
+
+				/*
+				 * Recommendations only, not everything the snapshot holds.
+				 *
+				 * A snapshot for somebody with no clear match still lists the
+				 * teams they were offered to explore with an advisor — real
+				 * evidence, honestly shown to them, and emphatically not the
+				 * same claim as "these teams suit you". Printing those in a
+				 * column beside everyone else's strong matches would put the
+				 * weakest results and the strongest under one heading, and
+				 * would make `unmatched` false for exactly the people the flag
+				 * exists to surface.
+				 *
+				 * The explore options are kept in the snapshot and shown in the
+				 * drawer, where there is room to say what tier they are.
+				 */
+				$recommended = array_filter(
+					(array) ( $snapshot['teams'] ?? array() ),
+					static fn( $team ) => in_array(
+						$team['tier'] ?? '',
+						array( Matching_Contract::TIER_STRONG, Matching_Contract::TIER_SUGGESTED ),
+						true
+					)
+				);
+
+				$suggested = array_column( $recommended, 'team_name' );
 
 				// Null snapshot means the row predates the record being kept,
 				// which is not the same as "nothing matched" and must not be

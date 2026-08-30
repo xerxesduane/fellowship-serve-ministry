@@ -504,7 +504,7 @@ test(
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-				'SELECT id, suggested_teams, profile_json FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
+				'SELECT id, suggested_teams, profile_json, match_snapshot FROM ' . Schema::table( 'submissions' ) . ' WHERE email = %s',
 				$email
 			)
 		);

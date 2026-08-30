@@ -120,6 +120,47 @@ final class Fixtures {
 	}
 
 	/**
+	 * A placement row as an upgraded site actually holds one.
+	 *
+	 * `match` is no longer an accepted source — Placements::ensure() normalises
+	 * anything it does not recognise to a human decision, and intake creates no
+	 * match rows at all. But churches upgrading from an earlier release have
+	 * years of them, created back when a ranking was allowed to grant a
+	 * ministry leader access, and the report-only reconciliation path exists
+	 * entirely for those.
+	 *
+	 * So it is inserted directly. Going through ensure() would produce a row
+	 * with a different source and quietly test nothing, which is what happened
+	 * when these tests were first run against the new code.
+	 */
+	public function legacy_match_placement( int $submission_id, string $slug ): int {
+		global $wpdb;
+
+		$team = \Serve_Dashboard\Teams::get_by_slug( $slug );
+		if ( ! $team ) {
+			throw new Failure( "no such team: $slug" );
+		}
+
+		$now = current_time( 'mysql', true );
+
+		$wpdb->insert(
+			Schema::table( 'placements' ),
+			array(
+				'submission_id' => $submission_id,
+				'team_id'       => (int) $team->id,
+				'status'        => Schema::STATUS_SUBMITTED,
+				'source'        => \Serve_Dashboard\Placements::SOURCE_MATCH,
+				'notes'         => '',
+				'created_at'    => $now,
+				'updated_at'    => $now,
+			),
+			array( '%d', '%d', '%s', '%s', '%s', '%s', '%s' )
+		);
+
+		return (int) $wpdb->insert_id;
+	}
+
+	/**
 	 * A production-shaped profile, built through the real taxonomy.
 	 *
 	 * Every one of the eighteen gifts is placed in exactly one bucket, which is

@@ -189,14 +189,18 @@ test(
 			)
 		);
 
-		$admin = null;
-		foreach ( Matching::rank_profile( $profile, PHP_INT_MAX ) as $match ) {
-			if ( 'Administration' === $match['team_name'] ) {
-				$admin = $match;
-			}
-		}
+		$admin = Matching::explain( Teams::get_by_slug( 'administration' ), $profile );
 
-		$a->ok( null !== $admin, 'the team is still considered' );
+		/*
+		 * Absent from rank_profile() entirely, which is the stronger statement.
+		 * A team with no gift evidence is not a weak match to be listed low, it
+		 * is a team this person's answers say nothing about — and five ability
+		 * keywords do not change that.
+		 */
+		$a->not(
+			in_array( 'Administration', array_column( Matching::rank_profile( $profile, PHP_INT_MAX ), 'team_name' ), true ),
+			'the team is not ranked at all on vocabulary alone'
+		);
 		$a->same( 0, (int) $admin['evidence']['likely_hit_count'], 'not one spiritual gift overlaps it' );
 		$a->same( 0, count( $admin['reasons'] ), 'and the abilities produce no scored reason' );
 		$a->same( 5, count( $admin['context'] ), 'they are kept as context for the conversation' );
@@ -284,8 +288,18 @@ test(
 		$mens   = Teams::get_by_slug( 'grow-men-connect' );
 		$womens = Teams::get_by_slug( 'grow-women-connect' );
 
-		$a->same( 0, count( Matching::explain( $mens, $profile )['reasons'] ), 'no reason for the men' );
-		$a->same( 1, count( Matching::explain( $womens, $profile )['reasons'] ), 'and one for the women' );
+		/*
+		 * Under `context` now rather than `reasons`: this is unscored
+		 * supporting detail, so what is being checked is that the word
+		 * boundary still holds. Substring matching made "Women" a match for
+		 * the Men Connect vocabulary, which is both wrong and the kind of wrong
+		 * a leader would notice before the software did.
+		 */
+		$a->same( 0, count( Matching::explain( $mens, $profile )['context'] ), 'no context line for the men' );
+		$a->same( 1, count( Matching::explain( $womens, $profile )['context'] ), 'and one for the women' );
+
+		// And neither is scored, whichever way the word matched.
+		$a->same( 0, count( Matching::explain( $womens, $profile )['reasons'] ), 'a passion is never gift evidence' );
 	}
 );
 
