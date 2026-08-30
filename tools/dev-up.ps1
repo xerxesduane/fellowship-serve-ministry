@@ -36,6 +36,28 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+<#
+	Every docker call below is judged by its exit code, never by what it
+	printed — and getting that right differs between the two PowerShells.
+
+	Windows PowerShell 5.1 turns anything a native command writes to stderr
+	into an error record, which $ErrorActionPreference = 'Stop' then makes
+	terminating. Docker writes ordinary progress to stderr — "Container
+	serve-local-db-1 Created", every line of an image pull — so on 5.1 this
+	script reached `docker info`, saw the message saying Docker Desktop was not
+	running, and died on a NativeCommandError instead of printing the sentence
+	written for exactly that case. Every later step would have gone the same
+	way.
+
+	PowerShell 7 does not do this, which is why it took a Windows machine to
+	find. The fix has to hold in both: Invoke-Docker merges stderr into the
+	output stream before PowerShell can make an error of it, and 7.3+ is told
+	not to throw on a non-zero exit either.
+#>
+if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
+	$PSNativeCommandUseErrorActionPreference = $false
+}
+
 # Compose resolves its relative paths against the file's own directory, so this
 # works whichever folder it is invoked from.
 Set-Location (Resolve-Path (Join-Path $PSScriptRoot '..'))
@@ -46,21 +68,56 @@ function Fail($message) {
 	exit 1
 }
 
+<#
+	Run docker and hand back its exit code, saying nothing.
+
+	The output is kept in $script:DockerOutput for the one caller that needs to
+	read a value back out of it.
+#>
+function Invoke-DockerQuiet {
+	$script:DockerOutput = & docker @args 2>&1
+	return $LASTEXITCODE
+}
+
+# The same, but showing the output. Piped rather than captured so that a long
+# step — an image pull, most of the first run — reports as it goes.
+function Invoke-Docker {
+	& docker @args 2>&1 | ForEach-Object { Write-Host $_ }
+	return $LASTEXITCODE
+}
+
 function Invoke-Wp {
 	# --rm so a run does not leave a stopped container behind; -T because
 	# there is no terminal to attach when this is called from a script.
-	& docker compose run --rm -T cli wp @args
+	return (Invoke-DockerQuiet compose run --rm -T cli wp @args)
+}
+
+# What WP-CLI itself said, without the container progress compose writes into
+# the same stream.
+function Show-WpOutput($indent = '   ') {
+	$script:DockerOutput |
+		ForEach-Object { "$_".TrimEnd() } |
+		Where-Object { $_ -and $_ -notmatch '^\s*(Container|Network|Volume)\s' } |
+		ForEach-Object { Write-Host ($indent + $_.Trim()) }
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 	Fail 'Docker is not installed, or not on PATH. Install Docker Desktop: https://www.docker.com/products/docker-desktop/'
 }
 
-& docker compose version *> $null
-if ($LASTEXITCODE -ne 0) { Fail 'This needs Docker Compose v2, which ships with Docker Desktop.' }
+if ((Invoke-DockerQuiet compose version) -ne 0) {
+	Fail 'This needs Docker Compose v2, which ships with Docker Desktop.'
+}
 
-& docker info *> $null
-if ($LASTEXITCODE -ne 0) { Fail 'Docker is installed but not running. Start Docker Desktop, wait for the whale to settle, and try again.' }
+if ((Invoke-DockerQuiet info) -ne 0) {
+	Fail @'
+Docker is installed but not running.
+
+   Start Docker Desktop from the Start menu, wait for the whale in the system
+   tray to stop animating and the dashboard to say "Engine running", then run
+   this again. It takes a minute or two on a cold start.
+'@
+}
 
 <#
 	Read the two settings that move the stack off a busy port 80.
@@ -85,44 +142,48 @@ $mailPort = Get-DotEnv 'SERVE_MAIL_PORT' '8025'
 if ($Reset) {
 	Write-Host '== Removing the containers and their data ==' -ForegroundColor Cyan
 	# Scoped to this compose project, so it cannot reach another stack's volumes.
-	& docker compose down -v
+	$null = Invoke-Docker compose down -v
 }
 
 Write-Host '== Starting MariaDB, WordPress and Mailpit ==' -ForegroundColor Cyan
-& docker compose up -d db wordpress mail
-if ($LASTEXITCODE -ne 0) {
+Write-Host '   The first run pulls about a gigabyte of images. Later ones are seconds.'
+if ((Invoke-Docker compose up -d db wordpress mail) -ne 0) {
 	Fail @'
 Compose could not start.
 
    If the error above mentions a port already in use, something else on this
    machine is on port 80 — often IIS, or Skype. docs/local-docker.md has the
-   two-line .env file that moves this stack out of its way.
+   three-line .env file that moves this stack out of its way.
 '@
 }
 
 Write-Host '   waiting for WordPress to unpack' -NoNewline
 $ready = $false
 foreach ($_ in 1..60) {
-	& docker compose exec -T wordpress test -f /var/www/html/serve/wp-config.php *> $null
-	if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+	if ((Invoke-DockerQuiet compose exec -T wordpress test -f /var/www/html/serve/wp-config.php) -eq 0) {
+		$ready = $true
+		break
+	}
 	Write-Host '.' -NoNewline
 	Start-Sleep -Seconds 2
 }
 Write-Host ''
 if (-not $ready) { Fail 'WordPress never finished unpacking. `docker compose logs wordpress` says why.' }
 
-Invoke-Wp core is-installed *> $null
-if ($LASTEXITCODE -eq 0) {
+if ((Invoke-Wp core is-installed) -eq 0) {
 	Write-Host '== WordPress is already installed - leaving it alone ==' -ForegroundColor Cyan
 }
 else {
 	Write-Host '== Installing WordPress ==' -ForegroundColor Cyan
-	Invoke-Wp core install --url=$siteUrl --title='SERVE (local)' `
+	$code = Invoke-Wp core install --url=$siteUrl --title='SERVE (local)' `
 		--admin_user=admin --admin_password=admin `
-		--admin_email=serve-local@example.com --skip-email *> $null
-	if ($LASTEXITCODE -ne 0) { Fail 'WordPress would not install. `docker compose logs db` is the usual answer.' }
+		--admin_email=serve-local@example.com --skip-email
+	if ($code -ne 0) {
+		Show-WpOutput
+		Fail 'WordPress would not install. `docker compose logs db` is the usual answer.'
+	}
 	# Pretty permalinks, so the URLs here look like the ones on the real site.
-	Invoke-Wp rewrite structure '/%postname%/' --hard *> $null
+	$null = Invoke-Wp rewrite structure '/%postname%/' --hard
 	Write-Host '   admin / admin' -ForegroundColor Green
 }
 
@@ -132,32 +193,47 @@ else {
 	loads and every other page 404s. WP-CLI cannot fix it — writing .htaccess
 	needs an Apache it can detect, and the CLI container is not one.
 #>
-& docker compose exec -T wordpress grep -q 'RewriteBase /serve/' /var/www/html/serve/.htaccess *> $null
-if ($LASTEXITCODE -ne 0) {
+if ((Invoke-DockerQuiet compose exec -T wordpress grep -q 'RewriteBase /serve/' /var/www/html/serve/.htaccess) -ne 0) {
 	Write-Host '== Correcting the rewrite base for the subdirectory install ==' -ForegroundColor Cyan
-	& docker compose cp docker/htaccess wordpress:/var/www/html/serve/.htaccess
-	& docker compose exec -T -u root wordpress chown www-data:www-data /var/www/html/serve/.htaccess
+	if ((Invoke-DockerQuiet compose cp docker/htaccess wordpress:/var/www/html/serve/.htaccess) -ne 0) {
+		Show-WpOutput
+		Fail 'Could not write .htaccess. Without it every page but the front page 404s.'
+	}
+	$null = Invoke-DockerQuiet compose exec -T -u root wordpress chown www-data:www-data /var/www/html/serve/.htaccess
 }
 
 Write-Host '== Activating the plugin ==' -ForegroundColor Cyan
-Invoke-Wp plugin is-active serve-dashboard *> $null
-if ($LASTEXITCODE -ne 0) {
-	Invoke-Wp plugin activate serve-dashboard *> $null
-	if ($LASTEXITCODE -ne 0) { Fail 'The plugin would not activate. `docker compose logs wordpress` has the PHP error.' }
+if ((Invoke-Wp plugin is-active serve-dashboard) -ne 0) {
+	if ((Invoke-Wp plugin activate serve-dashboard) -ne 0) {
+		Show-WpOutput
+		Fail 'The plugin would not activate. `docker compose logs wordpress` has the PHP error.'
+	}
 }
 
-# Activation creates the two public pages but deliberately leaves the front
-# page alone, which is right for a real site and wrong for one brought up to be
-# looked at.
-$assessmentPage = (Invoke-Wp option get serve_dashboard_assessment_page 2>$null | Out-String).Trim()
-if ($assessmentPage -match '^\d+$' -and [int] $assessmentPage -gt 0) {
-	Invoke-Wp option update show_on_front page *> $null
-	Invoke-Wp option update page_on_front $assessmentPage *> $null
+<#
+	Activation creates the two public pages but deliberately leaves the front
+	page alone, which is right for a real site and wrong for one brought up to
+	be looked at.
+
+	The page id is read out of the merged output, so it is picked by shape
+	rather than by position: compose writes container progress into the same
+	stream, and none of those lines is a bare number.
+#>
+$null = Invoke-Wp option get serve_dashboard_assessment_page
+$assessmentPage = $script:DockerOutput |
+	ForEach-Object { "$_".Trim() } |
+	Where-Object { $_ -match '^\d+$' } |
+	Select-Object -Last 1
+
+if ($assessmentPage -and [int] $assessmentPage -gt 0) {
+	$null = Invoke-Wp option update show_on_front page
+	$null = Invoke-Wp option update page_on_front $assessmentPage
 }
 
 if ($Seed) {
 	Write-Host '== Seeding demo profiles (every name in it is invented) ==' -ForegroundColor Cyan
-	Invoke-Wp eval-file wp-content/plugins/serve-dashboard/dev/seed-demo.php
+	$null = Invoke-Wp eval-file wp-content/plugins/serve-dashboard/dev/seed-demo.php
+	Show-WpOutput
 }
 
 Write-Host ''
