@@ -54,6 +54,17 @@ foreach (
 		'class-hardening.php',
 		'class-security-status.php',
 		'class-submissions.php',
+		/*
+		 * The matching stack, innermost first. Nothing here touches the
+		 * database or WordPress state at load time, which is what lets the
+		 * taxonomy and contract be exercised by a runner with no WordPress at
+		 * all — see tools/run-unit-tests.php.
+		 */
+		'class-gift-taxonomy.php',
+		'class-gift-crosswalk.php',
+		'class-matching-contract.php',
+		'class-corroboration.php',
+		'class-gift-ratings.php',
 		'class-matching.php',
 		'class-planning-center.php',
 		'class-metrics.php',
