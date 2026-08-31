@@ -35,8 +35,20 @@ final class Rest {
 	 */
 	private const PREVIEW_LIMIT = 60;
 
-	/** Largest profile a preview will consider, in bytes of JSON. */
-	private const PREVIEW_MAX_BYTES = 64 * 1024;
+	/**
+	 * Largest profile either public route will accept, in bytes of JSON.
+	 *
+	 * The preview endpoint has had this ceiling since it was written. The submit
+	 * endpoint next to it had none, which was the wrong way round: a preview is
+	 * computed and thrown away, while a submission is written to the database
+	 * and read back on every dashboard load thereafter. A completed nineteen-step
+	 * profile is a few kilobytes, so this is generous by a wide margin and only
+	 * ever refuses something that was not filled in by a person.
+	 */
+	private const PROFILE_MAX_BYTES = 64 * 1024;
+
+	/** Kept as the preview's own name for the same ceiling. */
+	private const PREVIEW_MAX_BYTES = self::PROFILE_MAX_BYTES;
 
 	public static function register(): void {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
@@ -293,6 +305,23 @@ final class Rest {
 
 		$profile = self::sanitize_profile( (array) $request->get_param( 'profile' ) );
 
+		/*
+		 * Measured after sanitising, because that is what gets stored.
+		 *
+		 * sanitize_profile() whitelists the sections and caps the lists inside
+		 * them, so it already refuses most shapes. What it does not bound is the
+		 * total: enough long strings inside enough allowed keys still adds up,
+		 * and this route wrote the result straight into profile_json with no
+		 * ceiling at all while the preview beside it refused anything over 64KB.
+		 */
+		if ( strlen( (string) wp_json_encode( $profile ) ) > self::PROFILE_MAX_BYTES ) {
+			return new \WP_Error(
+				'serve_profile_too_large',
+				__( 'That profile is larger than this form can accept. Please contact the SERVE team so somebody can help.', 'serve-dashboard' ),
+				array( 'status' => 413 )
+			);
+		}
+
 		$tenure = $request->get_param( 'tenure_months' );
 		$tenure = null === $tenure ? null : max( 0, min( 600, (int) $tenure ) );
 
@@ -434,7 +463,19 @@ final class Rest {
 		}
 
 		$clean['availability'] = array(
-			'priority' => sanitize_text_field( (string) ( $raw['availability']['priority'] ?? '' ) ),
+			/*
+			 * Capped, like every other field here.
+			 *
+			 * This was the one string in the whitelist with no length bound:
+			 * sanitize_text_field strips tags and control characters and returns
+			 * whatever length it was given, so 200KB in was 200KB out and
+			 * straight into profile_json. Everything else in this method is
+			 * bounded by a list cap; this was bounded by nothing.
+			 *
+			 * The question it answers is "are you making service a priority",
+			 * which nobody needs two thousand characters for.
+			 */
+			'priority' => mb_substr( sanitize_text_field( (string) ( $raw['availability']['priority'] ?? '' ) ), 0, 2000 ),
 			'hours'    => sanitize_text_field( (string) ( $raw['availability']['hours'] ?? '' ) ),
 			'timing'   => self::string_list( $raw['availability']['timing'] ?? array() ),
 		);

@@ -445,10 +445,29 @@ final class Schema {
 		) {$charset};";
 		dbDelta( $sql );
 
-		update_option( self::OPTION_DB_VERSION, self::DB_VERSION );
+		/*
+		 * Deliberately does NOT stamp the version. See maybe_upgrade(), which
+		 * stamps only once the data migrations have also finished.
+		 */
 	}
 
-	/** Re-run install() when the stored schema version has fallen behind. */
+	/**
+	 * Bring the schema and the data up to this version, in that order.
+	 *
+	 * The version used to be stamped at the end of install(), which runs before
+	 * migrate(). So a data migration that died partway -- a query killed by a
+	 * lock timeout, a fatal on a row nobody anticipated, the request simply
+	 * being cut off -- left the stored version already claiming to be current,
+	 * and the branch that had not finished was never entered again. The tables
+	 * would be right and the data half-converted, permanently, with nothing
+	 * reporting it.
+	 *
+	 * Stamping last means a failed upgrade is retried on the next page load.
+	 * That requires every migrate() branch to be safe to run twice, which is
+	 * the property they were written with anyway: each is gated on the version
+	 * it upgrades from, and each either backfills a column that is still empty
+	 * or sets an option that is still absent.
+	 */
 	public static function maybe_upgrade(): void {
 		$from = (string) get_option( self::OPTION_DB_VERSION, '' );
 
@@ -458,6 +477,8 @@ final class Schema {
 
 		self::install();
 		self::migrate( $from );
+
+		update_option( self::OPTION_DB_VERSION, self::DB_VERSION );
 	}
 
 	/**

@@ -28,6 +28,17 @@ final class Digest {
 
 	public const OPTION_ENABLED = 'serve_dashboard_digest_enabled';
 
+	/**
+	 * What the last run managed, so a mailer failing is visible.
+	 *
+	 * wp_mail()'s return value was counted and then discarded. A digest that
+	 * reached nobody looked exactly like a quiet week, and the only symptom was
+	 * leaders not mentioning an email they had never been promised loudly enough
+	 * to miss. The unsent-confirmations check exists for precisely this failure
+	 * on the other mail path; this is its counterpart.
+	 */
+	public const OPTION_LAST_RUN = 'serve_dashboard_digest_last_run';
+
 	/** Nobody wants a wall of names; the dashboard is one click away. */
 	private const MAX_NAMES = 8;
 
@@ -86,6 +97,8 @@ final class Digest {
 
 		$original = get_current_user_id();
 		$sent     = 0;
+		$failed   = 0;
+		$due      = 0;
 
 		foreach ( $leaders as $leader ) {
 			// Become the leader so every query is scoped exactly as it would be
@@ -98,16 +111,49 @@ final class Digest {
 				continue;
 			}
 
+			// Counted before the attempt, so "nobody had anything this week" and
+			// "the mailer refused everybody" are distinguishable afterwards.
+			++$due;
+
 			if ( wp_mail( $leader->user_email, $digest['subject'], $digest['body'] ) ) {
 				++$sent;
+				continue;
 			}
+
+			/*
+			 * The address is not recorded. Which leader the mailer refused is a
+			 * question for the mail log, and this option is readable by anyone
+			 * who can see Settings.
+			 */
+			++$failed;
 		}
 
 		wp_set_current_user( $original );
 
-		Audit::log( 'digest.sent', 'digest', null, array( 'emails' => $sent ) );
+		update_option(
+			self::OPTION_LAST_RUN,
+			array(
+				'at'     => current_time( 'mysql', true ),
+				'due'    => $due,
+				'sent'   => $sent,
+				'failed' => $failed,
+			)
+		);
+
+		Audit::log( 'digest.sent', 'digest', null, array( 'emails' => $sent, 'failed' => $failed ) );
 
 		return $sent;
+	}
+
+	/**
+	 * What the last run managed, or null if it has never run.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	public static function last_run(): ?array {
+		$run = get_option( self::OPTION_LAST_RUN, null );
+
+		return is_array( $run ) ? $run : null;
 	}
 
 	/**

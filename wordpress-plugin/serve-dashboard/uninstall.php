@@ -50,6 +50,7 @@ foreach (
 		'serve_dashboard_serving_form_url',
 		'serve_dashboard_catchall_team',
 		'serve_dashboard_last_retention_sweep',
+		'serve_dashboard_digest_last_run',
 		'serve_dashboard_funnel',
 	) as $option
 ) {

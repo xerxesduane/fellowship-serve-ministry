@@ -39,6 +39,7 @@ final class Security_Status {
 			self::check_mail(),
 			self::check_cron(),
 			self::check_unsent_confirmations(),
+			self::check_digest(),
 			self::check_demo_data(),
 			self::check_unverified_backlog(),
 			self::check_debug_display(),
@@ -47,6 +48,79 @@ final class Security_Status {
 
 	private static function row( string $label, string $status, string $detail, string $action = '' ): array {
 		return compact( 'label', 'status', 'detail', 'action' );
+	}
+
+	/**
+	 * Whether last week's digest actually reached anybody.
+	 *
+	 * wp_mail()'s result was counted and thrown away, so a mailer refusing every
+	 * message looked identical to a quiet week with nothing to report. The only
+	 * symptom was leaders not mentioning an email they had never been promised
+	 * loudly enough to miss, and the checklist stayed green throughout.
+	 */
+	private static function check_digest(): array {
+		$label = __( 'Weekly leader digest', 'serve-dashboard' );
+
+		if ( ! Digest::is_enabled() ) {
+			return self::row( $label, self::PASS, __( 'Turned off, so nothing is expected to be sent.', 'serve-dashboard' ) );
+		}
+
+		$run = Digest::last_run();
+
+		if ( null === $run ) {
+			return self::row(
+				$label,
+				self::WARN,
+				__( 'It has not run yet. The first one goes out on Monday morning; if a Monday has passed and this still says the same thing, nothing is triggering WordPress cron.', 'serve-dashboard' )
+			);
+		}
+
+		$failed = (int) ( $run['failed'] ?? 0 );
+		$sent   = (int) ( $run['sent'] ?? 0 );
+		$due    = (int) ( $run['due'] ?? 0 );
+
+		if ( $failed > 0 && 0 === $sent ) {
+			return self::row(
+				$label,
+				self::FAIL,
+				sprintf(
+					/* translators: %d: number of leaders the mailer refused. */
+					__( 'The last run reached nobody: the mailer refused all %d messages. Leaders are getting no digest at all, which looks from their side exactly like a week with nothing to do.', 'serve-dashboard' ),
+					$failed
+				)
+			);
+		}
+
+		if ( $failed > 0 ) {
+			return self::row(
+				$label,
+				self::WARN,
+				sprintf(
+					/* translators: 1: messages sent, 2: messages refused. */
+					__( 'The last run sent %1$d and the mailer refused %2$d. Check the mail log for the addresses that failed.', 'serve-dashboard' ),
+					$sent,
+					$failed
+				)
+			);
+		}
+
+		if ( 0 === $due ) {
+			return self::row(
+				$label,
+				self::PASS,
+				__( 'Ran, and nobody had anything waiting, so nothing was sent. That is a quiet week rather than a fault.', 'serve-dashboard' )
+			);
+		}
+
+		return self::row(
+			$label,
+			self::PASS,
+			sprintf(
+				/* translators: %d: number of leaders emailed. */
+				__( 'The last run reached all %d leaders who had something waiting.', 'serve-dashboard' ),
+				$sent
+			)
+		);
 	}
 
 	/**
