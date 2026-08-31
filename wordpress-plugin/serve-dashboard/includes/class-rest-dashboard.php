@@ -415,6 +415,15 @@ final class Rest_Dashboard {
 				'target'        => (int) $team->target_headcount,
 				'current'       => (int) $team->current_headcount,
 				'below_minimum' => (bool) $team->below_minimum,
+				/*
+				 * The number "below minimum" is measured against.
+				 *
+				 * The row said "below minimum" without ever saying what the
+				 * minimum was, so a leader could see the warning and had no way
+				 * to judge how far below they were, or whether the figure was
+				 * one somebody had actually thought about.
+				 */
+				'minimum'       => (int) $team->min_headcount,
 				// Placements the typed-in headcount cannot yet know about.
 				'placedSince'   => (int) $team->placed_since,
 			);
