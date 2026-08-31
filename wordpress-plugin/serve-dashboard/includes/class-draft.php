@@ -32,9 +32,34 @@ final class Draft {
 
 	private const TTL_DAYS = 30;
 
-	/** One saved draft per address at a time, and a cap on abuse. */
-	private const RATE_LIMIT  = 10;
-	private const RATE_WINDOW = HOUR_IN_SECONDS;
+	/*
+	 * Two separate ceilings, because they stop two different things.
+	 *
+	 * The per-IP one caps how much work one caller can make the mailer do. It
+	 * is deliberately generous: a whole congregation on the church wifi shares
+	 * one address, and locking them out of resuming their own journeys is a
+	 * worse failure than the abuse it prevents.
+	 *
+	 * The per-address one is the one that matters. This endpoint is public and
+	 * has no way to prove the caller owns the address they typed, so without a
+	 * cap keyed on the address itself, anyone could point the church's mailer at
+	 * one inbox and keep it there.
+	 */
+	private const RATE_LIMIT        = 30;
+	private const RATE_WINDOW       = HOUR_IN_SECONDS;
+	private const EMAIL_RATE_LIMIT  = 3;
+	private const EMAIL_RATE_WINDOW = HOUR_IN_SECONDS;
+
+	/*
+	 * How many live drafts one address may hold.
+	 *
+	 * Saves no longer delete each other, so something has to stop a table
+	 * growing without limit. The oldest is dropped rather than the newest
+	 * refused: whoever just pressed the button is the person waiting for an
+	 * email, and an older link they have already stopped using is the cheapest
+	 * thing to lose.
+	 */
+	private const MAX_PER_EMAIL = 5;
 
 	/**
 	 * The wording shown beside the "email me a link" control. Stored nowhere,
@@ -72,12 +97,45 @@ final class Draft {
 			);
 		}
 
+		/*
+		 * And a ceiling on the address itself.
+		 *
+		 * Nothing here can prove the caller owns the address they typed, so the
+		 * per-IP limit above does not protect the person at the other end: an
+		 * attacker moving between addresses stays under it while pointing the
+		 * church's mailer at one inbox. Hashed, so a queue of email addresses
+		 * does not accumulate in the options table.
+		 */
+		$email_key   = 'serve_draft_rl_to_' . hash( 'sha256', strtolower( $email ) );
+		$email_count = (int) get_transient( $email_key );
+
+		if ( $email_count >= self::EMAIL_RATE_LIMIT ) {
+			return new \WP_Error(
+				'serve_rate_limited',
+				__( 'Several links have already been sent to that address. Please check your inbox, including spam, and try again later.', 'serve-dashboard' ),
+				array( 'status' => 429 )
+			);
+		}
+
 		global $wpdb;
 		$table = Schema::table( 'drafts' );
 
-		// Replace any previous draft for this address rather than accumulating
-		// them: the most recent progress is the only one anyone wants.
-		$wpdb->delete( $table, array( 'email' => $email ), array( '%s' ) );
+		/*
+		 * Deliberately does NOT delete the address's existing drafts.
+		 *
+		 * It used to, on the reasoning that the newest progress is the only one
+		 * anybody wants. That is true of the person's own second save and false
+		 * of everything else: the route is public and unauthenticated, so a
+		 * single POST naming somebody else's address destroyed their saved
+		 * journey. Their emailed link then hashed to no row and they were told
+		 * it had "already been used, or has expired" -- nineteen steps gone,
+		 * with a message blaming them for it.
+		 *
+		 * Each save now gets its own row and its own token, so an older link
+		 * keeps working until it is used or expires, and a stranger's POST can
+		 * only ever add a row nobody holds the token for.
+		 */
+		self::trim_for_email( $email );
 
 		$raw = bin2hex( random_bytes( 32 ) );
 
@@ -99,6 +157,7 @@ final class Draft {
 		}
 
 		set_transient( $key, $count + 1, self::RATE_WINDOW );
+		set_transient( $email_key, $email_count + 1, self::EMAIL_RATE_WINDOW );
 
 		if ( ! self::send_mail( $email, $raw, $step ) ) {
 			return new \WP_Error(
@@ -195,6 +254,46 @@ Fellowship Dubai SERVE team",
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- no user input.
 		return (int) $wpdb->query( "DELETE FROM {$table} WHERE expires_at < UTC_TIMESTAMP()" );
+	}
+
+	/**
+	 * Keep one address's drafts under the cap, oldest first.
+	 *
+	 * Saves no longer replace each other, so this is what stops the table
+	 * growing without limit. It only ever touches rows for the address being
+	 * saved, and only the oldest of them, so it cannot be used to destroy a
+	 * link somebody is about to click.
+	 */
+	private static function trim_for_email( string $email ): void {
+		global $wpdb;
+		$table = Schema::table( 'drafts' );
+
+		$surplus = $wpdb->get_col(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				"SELECT id FROM {$table} WHERE email = %s ORDER BY created_at ASC, id ASC LIMIT %d",
+				$email,
+				max( 0, self::count_for_email( $email ) - ( self::MAX_PER_EMAIL - 1 ) )
+			)
+		);
+
+		foreach ( $surplus as $id ) {
+			$wpdb->delete( $table, array( 'id' => (int) $id ), array( '%d' ) );
+		}
+	}
+
+	/** How many live drafts one address holds. */
+	public static function count_for_email( string $email ): int {
+		global $wpdb;
+		$table = Schema::table( 'drafts' );
+
+		return (int) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				"SELECT COUNT(*) FROM {$table} WHERE email = %s",
+				$email
+			)
+		);
 	}
 
 	/** Submitting the finished profile makes any draft redundant. */

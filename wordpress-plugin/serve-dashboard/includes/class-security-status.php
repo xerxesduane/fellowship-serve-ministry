@@ -37,6 +37,7 @@ final class Security_Status {
 			self::check_file_editing(),
 			self::check_two_factor(),
 			self::check_mail(),
+			self::check_cron(),
 			self::check_unsent_confirmations(),
 			self::check_demo_data(),
 			self::check_unverified_backlog(),
@@ -46,6 +47,85 @@ final class Security_Status {
 
 	private static function row( string $label, string $status, string $detail, string $action = '' ): array {
 		return compact( 'label', 'status', 'detail', 'action' );
+	}
+
+	/**
+	 * Whether the scheduled jobs exist, and whether anything is running them.
+	 *
+	 * Two different questions, and the second is the one that bites. The
+	 * runbook has the operator set DISABLE_WP_CRON and add a system crontab
+	 * entry, which means WordPress will happily report a job as scheduled
+	 * forever while nothing ever fires it. Everything on this checklist stayed
+	 * green in that state, and the privacy notice's promise that profiles are
+	 * "deleted automatically by a daily job" would have been false from day one
+	 * with nothing anywhere saying so.
+	 *
+	 * Reported as one row because it is one operational fact: are the promises
+	 * that depend on cron actually being kept.
+	 */
+	private static function check_cron(): array {
+		$label = __( 'Scheduled jobs', 'serve-dashboard' );
+
+		$missing = array();
+
+		if ( ! wp_next_scheduled( 'serve_dashboard_retention_sweep' ) ) {
+			$missing[] = __( 'the daily retention sweep', 'serve-dashboard' );
+		}
+
+		if ( Digest::is_enabled() && ! wp_next_scheduled( Digest::CRON_HOOK ) ) {
+			$missing[] = __( 'the weekly leader digest', 'serve-dashboard' );
+		}
+
+		if ( $missing ) {
+			return self::row(
+				$label,
+				self::FAIL,
+				sprintf(
+					/* translators: %s: list of missing scheduled jobs. */
+					__( 'Not scheduled: %s. Retention deletion, the unverified purge and the digest all run from these, so anything they promise is not happening. Deactivating and reactivating the plugin re-registers them.', 'serve-dashboard' ),
+					implode( __( ', and ', 'serve-dashboard' ), $missing )
+				)
+			);
+		}
+
+		$last = Privacy::last_sweep();
+
+		if ( '' === $last ) {
+			return self::row(
+				$label,
+				self::WARN,
+				__( 'Scheduled, but the retention sweep has not run yet. On a new install that is expected within a day. If it is still saying this tomorrow, nothing is triggering WordPress cron -- check the system crontab from step 9 of the runbook.', 'serve-dashboard' )
+			);
+		}
+
+		$age_hours = ( time() - (int) strtotime( $last . ' UTC' ) ) / HOUR_IN_SECONDS;
+
+		/*
+		 * 26 rather than 24. A daily job whose trigger runs every fifteen
+		 * minutes drifts by design, and a checklist that cries wolf every
+		 * afternoon gets ignored on the day it is right.
+		 */
+		if ( $age_hours > 26 ) {
+			return self::row(
+				$label,
+				self::FAIL,
+				sprintf(
+					/* translators: %s: how long ago the sweep last ran, e.g. "3 days". */
+					__( 'The daily retention sweep last ran %s ago. Something has stopped triggering WordPress cron, so profiles past their retention window are not being deleted and nobody is being told. Check the system crontab from step 9 of the runbook.', 'serve-dashboard' ),
+					human_time_diff( (int) strtotime( $last . ' UTC' ) )
+				)
+			);
+		}
+
+		return self::row(
+			$label,
+			self::PASS,
+			sprintf(
+				/* translators: %s: how long ago the sweep last ran. */
+				__( 'Scheduled and running. The retention sweep last ran %s ago.', 'serve-dashboard' ),
+				human_time_diff( (int) strtotime( $last . ' UTC' ) )
+			)
+		);
 	}
 
 	/**

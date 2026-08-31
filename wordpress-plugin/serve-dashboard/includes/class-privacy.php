@@ -35,6 +35,16 @@ final class Privacy {
 	public const OPTION_CONTACT_EMAIL = 'serve_dashboard_contact_email';
 
 	/**
+	 * When the retention sweep last actually ran.
+	 *
+	 * The presence of a scheduled job proves only that WordPress intends to run
+	 * it. With DISABLE_WP_CRON set, as the runbook instructs, whether it runs at
+	 * all depends on a system crontab nothing in here can see. This is the only
+	 * evidence that the deletion the privacy notice promises is happening.
+	 */
+	public const OPTION_LAST_SWEEP = 'serve_dashboard_last_retention_sweep';
+
+	/**
 	 * The SERVE team's own address.
 	 *
 	 * A default rather than a setting nobody remembers to fill in. This plugin
@@ -176,14 +186,36 @@ final class Privacy {
 	public static function expired_submission_ids(): array {
 		global $wpdb;
 
-		$table  = Schema::table( 'submissions' );
-		$months = self::retention_months();
+		$submissions = Schema::table( 'submissions' );
+		$consents    = Schema::table( 'consents' );
 
+		/*
+		 * Each person's own promise, not whatever the setting says today.
+		 *
+		 * `consents.retention_months` is frozen when they agree, the consent
+		 * text quotes that number back to them, and the drawer shows it to their
+		 * leader. Deletion read the live option instead, so the three could
+		 * disagree the moment a pastor adjusted Settings: drop it from 24 to 6
+		 * and the next sweep deleted people who had been promised 24, with the
+		 * drawer still showing 24 until the row vanished. Raise it and the
+		 * church kept religious-belief data years past what anyone agreed to.
+		 *
+		 * COALESCE for rows with no consent row at all -- there should be none,
+		 * since create() refuses a submission whose consent could not be
+		 * recorded, but a sweep is the wrong place to discover otherwise, and
+		 * the global setting is the safe reading for a row we know nothing about.
+		 */
 		$ids = $wpdb->get_col(
 			$wpdb->prepare(
-				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
-				"SELECT id FROM {$table} WHERE submitted_at < DATE_SUB( UTC_TIMESTAMP(), INTERVAL %d MONTH )",
-				$months
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names are not user input.
+				"SELECT s.id
+				 FROM {$submissions} s
+				 LEFT JOIN {$consents} c ON c.submission_id = s.id
+				 WHERE s.submitted_at < DATE_SUB(
+					UTC_TIMESTAMP(),
+					INTERVAL COALESCE( NULLIF( c.retention_months, 0 ), %d ) MONTH
+				 )",
+				self::retention_months()
 			)
 		);
 
@@ -195,5 +227,14 @@ final class Privacy {
 		foreach ( self::expired_submission_ids() as $id ) {
 			self::erase_submission( $id );
 		}
+
+		// Written whether or not anything was due. "Nothing expired today" and
+		// "the job has not run in three weeks" look identical without it.
+		update_option( self::OPTION_LAST_SWEEP, current_time( 'mysql', true ) );
+	}
+
+	/** When the sweep last ran, or an empty string if it never has. */
+	public static function last_sweep(): string {
+		return (string) get_option( self::OPTION_LAST_SWEEP, '' );
 	}
 }

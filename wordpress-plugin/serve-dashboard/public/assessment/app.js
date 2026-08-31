@@ -21,6 +21,7 @@ import {
 import { buildProfile, emptyAnswers, profileToText } from "./profile.js";
 import { escapeHtml, icon } from "./render.js";
 import { resultsHandoff } from "./handoff.js";
+import { keysClearedOnRestart, restartControl } from "./restart.js";
 import {
   EMPTY,
   ERROR,
@@ -87,6 +88,24 @@ let answers = emptyAnswers();
 let copied = false;
 
 /*
+ * Starting over asks first, and can be taken back.
+ *
+ * "Start over" sat one thumb-width below Continue, inside a line of reassuring
+ * copy about progress being saved, and discarded all nineteen steps on a single
+ * tap with no confirmation and nothing to undo. A mis-tap at step 17 threw away
+ * every gift rating, every passion and ability, and the Experiences section --
+ * the part the app itself warns is painful to fill in. The likeliest outcome
+ * was that the person did not start again.
+ *
+ * Two flags rather than window.confirm: a native dialog is unstyled, reads
+ * badly on a phone, and announces the hostname in a journey that has spent
+ * nineteen steps earning trust. `discarded` keeps the cleared state in memory
+ * for the rest of the session, so the undo is real rather than an apology.
+ */
+let confirmingRestart = false;
+let discarded = null;
+
+/*
  * Carry on elsewhere.
  *
  * The journey autosaves to this device, which is no help to someone who starts
@@ -94,6 +113,7 @@ let copied = false;
  * the answers must leave the device, so it is opt-in, separately worded from
  * the sharing consent, and never shown to a leader.
  */
+
 function resumePanel() {
   if (!SERVE_CONFIG.draftUrl) {
     return "";
@@ -609,7 +629,7 @@ function profilePage() {
     ${profileSection("P", "Personality", profileList("My personality pattern", profile.personality))}
     ${profileSection("E", "Experiences", `<div class="profile-experience-grid">${Object.entries(profile.experiences).map(([label, values]) => profileList(label, values)).join("")}</div>`)}
     ${profileSection("+", "Availability", `<dl class="availability-summary"><div><dt>Are you making service a priority?</dt><dd>${escapeHtml(profile.availability.priority)}</dd></div><div><dt>Time per week</dt><dd>${escapeHtml(profile.availability.hours)}</dd></div><div><dt>Best times</dt><dd>${escapeHtml(profile.availability.timing.join(", ") || "Not specified")}</dd></div></dl>`)}
-    ${ministryRecommendations(profile)}${ministryTable()}${resultsHandoff({ shareUrl: SERVE_CONFIG.shareUrl, servingFormUrl: SERVING_FORM, servingFormOpen, mailto })}<div class="profile-footer no-print"><button class="back-button" type="button" data-action="restart">${icon("refresh", 17)}Start a new profile</button></div></section>`;
+    ${ministryRecommendations(profile)}${ministryTable()}${resultsHandoff({ shareUrl: SERVE_CONFIG.shareUrl, servingFormUrl: SERVING_FORM, servingFormOpen, mailto })}<div class="profile-footer no-print">${restartControl({ confirming: confirmingRestart, hasUndo: Boolean(discarded), steps: journeySteps.length, label: "Start a new profile", buttonClass: "back-button", iconSize: 17 })}</div></section>`;
 }
 
 function stage() {
@@ -695,7 +715,7 @@ function render({ focusSearch = "", animate = true } = {}) {
   root.innerHTML = `<main class="app-shell"><div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
     ${isProfile ? "" : `<header class="progress-header no-print"><div class="journey-progress"><button class="fd-mark" type="button" data-action="home" aria-label="Return to welcome"><img src="${escapeHtml(SERVE_CONFIG.logoUrl || "assets/fellowship-logo.jpeg")}" alt="" width="284" height="221"></button><div class="progress-copy"><div class="progress-label"><span>${escapeHtml(current.title)}</span><span>${progress}%</span></div><div class="progress-track"><div class="progress-fill" style="--progress:${progress / 100}"></div></div><small>Step ${step + 1} of ${journeySteps.length}</small></div><span class="purpose-mini">KNOW · GROW · GO</span></div></header>`}
     <div class="journey-wrap ${isProfile ? "profile-wrap" : ""}"><section class="journey-stage${animate ? " animate-in" : ""}">${stage()}</section>
-      ${isProfile ? "" : `<footer class="journey-actions no-print"><button class="back-button" type="button" data-action="back" ${step === 0 ? "disabled" : ""}>${icon("arrowLeft")}Back</button><div>${validation ? `<p class="validation-message">${validation}</p>` : ""}<button class="primary-button" type="button" data-action="next" ${validation ? "disabled" : ""}>${step === journeySteps.length - 2 ? "Build My Profile" : "Continue"}${icon("arrowRight")}</button></div></footer><p class="autosave-note no-print">${icon("check", 14)} Progress is saved in this browser. <button type="button" data-action="restart" class="restart-inline">${icon("refresh", 14)}Start over</button></p>`}
+      ${isProfile ? "" : `<footer class="journey-actions no-print"><button class="back-button" type="button" data-action="back" ${step === 0 ? "disabled" : ""}>${icon("arrowLeft")}Back</button><div>${validation ? `<p class="validation-message">${validation}</p>` : ""}<button class="primary-button" type="button" data-action="next" ${validation ? "disabled" : ""}>${step === journeySteps.length - 2 ? "Build My Profile" : "Continue"}${icon("arrowRight")}</button></div></footer><p class="autosave-note no-print">${icon("check", 14)} Progress is saved in this browser. ${restartControl({ confirming: confirmingRestart, hasUndo: Boolean(discarded), steps: journeySteps.length })}</p>`}
     </div></main>`;
   if (focusSearch) {
     const input = root.querySelector(`[data-search="${CSS.escape(focusSearch)}"]`);
@@ -733,7 +753,24 @@ root.addEventListener("click", (event) => {
   if (action === "home") step = 0;
   if (action === "back") step = Math.max(0, step - 1);
   if (action === "next" && !validationMessage()) step = Math.min(journeySteps.length - 1, step + 1);
-  if (action === "restart") {
+  // Asking is not doing. One tap arms the question, a second answers it.
+  if (action === "restart") confirmingRestart = true;
+  if (action === "restart-cancel") confirmingRestart = false;
+
+  if (action === "undo-restart" && discarded) {
+    answers = discarded.answers;
+    step = discarded.step;
+    discarded = null;
+    confirmingRestart = false;
+  }
+
+  if (action === "restart-confirm") {
+    // Kept in memory, not in storage: an undo has to survive clearing the
+    // saved copy, and must not survive the tab being closed by the next person
+    // to pick up a shared device.
+    discarded = { answers, step };
+    confirmingRestart = false;
+
     answers = emptyAnswers();
     step = 0;
     servingFormOpen = false;
@@ -753,7 +790,11 @@ root.addEventListener("click", (event) => {
      */
     suggestionState = cleared();
 
-    try { localStorage.removeItem(STORAGE_KEY); } catch { /* no-op */ }
+    // Both keys, from one list, so the finished profile can never again be
+    // left behind for the next person on a shared device to submit as theirs.
+    try {
+      keysClearedOnRestart(STORAGE_KEY).forEach((key) => localStorage.removeItem(key));
+    } catch { /* no-op */ }
   }
   if (action === "gift") answers.gifts[button.dataset.gift] = button.dataset.value;
   if (action === "personality") answers.personality[button.dataset.pair] = button.dataset.value;
@@ -777,7 +818,7 @@ root.addEventListener("click", (event) => {
    * of the document — which is not merely jarring, it makes the journey very
    * hard to complete without a mouse.
    */
-  const navigating = ["home", "back", "next", "restart"].includes(action);
+  const navigating = ["home", "back", "next", "restart-confirm", "undo-restart"].includes(action);
   const anchor = navigating ? "" : selectorFor(button);
   const offset = window.scrollY;
 

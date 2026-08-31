@@ -23,6 +23,18 @@ final class Audit {
 	public const ACTION_VIEWED           = 'submission.viewed';
 	public const ACTION_STATUS_CHANGED   = 'submission.status_changed';
 	public const ACTION_SENSITIVE_VIEWED = 'submission.sensitive_viewed';
+
+	/*
+	 * A whole intake pool read at once, rather than one profile.
+	 *
+	 * Candidate discovery decodes every verified profile in the church to answer
+	 * one question about one team, and the per-profile action above would write
+	 * two thousand rows for a single click -- which is not a trail anybody could
+	 * read. One row per search, naming the team and how many profiles it
+	 * touched, answers "was pastoral history read, by whom, when" without
+	 * burying the individual reads it sits beside.
+	 */
+	public const ACTION_POOL_SEARCHED = 'submissions.pool_searched';
 	public const ACTION_EXPORTED         = 'submission.exported';
 	public const ACTION_DELETED          = 'submission.deleted';
 	public const ACTION_SAFEGUARD_SET    = 'safeguarding.updated';

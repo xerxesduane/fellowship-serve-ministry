@@ -3,7 +3,7 @@
  * Plugin Name:       SERVE Dashboard
  * Plugin URI:        https://serve.fellowshipdubai.com/
  * Description:       Stores completed S.H.A.P.E. profiles and gives ministry leaders a scoped, auditable view of who is ready to serve, what follow-up is due, and where teams are short of people.
- * Version:           1.28.0
+ * Version:           1.29.0
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            Fellowship Dubai
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SERVE_DASHBOARD_VERSION', '1.28.0' );
+define( 'SERVE_DASHBOARD_VERSION', '1.29.0' );
 define( 'SERVE_DASHBOARD_FILE', __FILE__ );
 define( 'SERVE_DASHBOARD_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SERVE_DASHBOARD_URL', plugin_dir_url( __FILE__ ) );
@@ -92,11 +92,26 @@ function activate(): void {
 	// decides it should, not when a plugin is switched on.
 	Privacy_Page::install();
 
-	Digest::schedule();
+	ensure_cron_scheduled();
+}
 
+/**
+ * Make sure every job this version needs is on the schedule.
+ *
+ * Called on activation and on every boot, because activation runs once and the
+ * set of jobs has grown since. The weekly digest arrived after this plugin was
+ * first activated anywhere, so an install that upgraded in place never
+ * scheduled it and its leaders simply never received the Monday email they were
+ * told to expect. Nothing said so: the job was absent rather than failing.
+ *
+ * Each guard is a no-op once the job exists, so booting costs two cheap reads.
+ */
+function ensure_cron_scheduled(): void {
 	if ( ! wp_next_scheduled( CRON_RETENTION ) ) {
 		wp_schedule_event( time() + DAY_IN_SECONDS, 'daily', CRON_RETENTION );
 	}
+
+	Digest::schedule();
 }
 register_activation_hook( __FILE__, __NAMESPACE__ . '\\activate' );
 
@@ -122,6 +137,7 @@ function bootstrap(): void {
 	load_plugin_textdomain( 'serve-dashboard', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
 
 	Schema::maybe_upgrade();
+	ensure_cron_scheduled();
 	Rest::register();
 	Rest_Dashboard::register();
 	Admin::register();
