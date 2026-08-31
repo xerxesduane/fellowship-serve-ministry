@@ -337,10 +337,22 @@ function renderGaps(gaps) {
 			? `<span class="serve-bar__note">${since} placed here since this was last checked — the real shortfall may be smaller</span>`
 			: '';
 
-		return `<div class="serve-bar ${gap.below_minimum ? 'serve-bar--critical' : ''}">
+		/*
+		 * The numbers the bar is drawn from, on hover.
+		 *
+		 * The row says "11 needed" and the bar sits at 45%, and working back to
+		 * "9 of 20" is arithmetic a leader should not have to do to check the
+		 * figure they are being asked to act on. The screen-reader line below
+		 * has said this all along; this is the same sentence for everybody else.
+		 */
+		const detail = `${gap.name}: ${gap.current} of ${gap.target} places filled`
+			+ (gap.minimum ? `, minimum ${gap.minimum}` : '')
+			+ (since > 0 ? `. ${since} placed since this was last checked.` : '');
+
+		return `<div class="serve-bar ${gap.below_minimum ? 'serve-bar--critical' : ''}" title="${esc(detail)}">
 			<span class="serve-bar__label">${esc(gap.name)}</span>
 			<span class="serve-bar__value">${esc(gap.gap)} needed${gap.below_minimum ? ' · below minimum' : ''}</span>
-			<span class="serve-bar__track">
+			<span class="serve-bar__track" aria-hidden="true">
 				<span class="serve-bar__fill" style="width:${filled}%"></span>
 			</span>
 			${stale}
@@ -450,11 +462,19 @@ function renderGifts(gifts) {
 
 	const max = Math.max(...gifts.map((gift) => gift.count));
 
+	/*
+	 * These bars are relative to the commonest gift, not to a total, so a full
+	 * bar means "most of any gift here" rather than "everybody". Saying so on
+	 * hover stops the longest bar reading as a majority.
+	 *
+	 * The track is hidden from screen readers: the count beside it is the same
+	 * information, and an empty span announced as a graphic is noise.
+	 */
 	$('gifts').innerHTML = gifts.map((gift) => `
-		<div class="serve-bar">
+		<div class="serve-bar" title="${esc(`${gift.label}: ${gift.count} ${Number(gift.count) === 1 ? 'person' : 'people'}, against ${max} for the commonest gift`)}">
 			<span class="serve-bar__label">${esc(gift.label)}</span>
 			<span class="serve-bar__value">${esc(gift.count)}</span>
-			<span class="serve-bar__track">
+			<span class="serve-bar__track" aria-hidden="true">
 				<span class="serve-bar__fill" style="width:${Math.round((gift.count / max) * 100)}%"></span>
 			</span>
 		</div>`).join('');

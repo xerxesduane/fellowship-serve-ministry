@@ -964,7 +964,20 @@ button.serve-metric:hover {
 .serve-fu__name {
 	font-size: .875rem;
 	font-weight: 600;
-	overflow-wrap: anywhere;
+	/*
+	 * break-word, not anywhere.
+	 *
+	 * `anywhere` lets a soft-wrap opportunity count towards the element's
+	 * min-content width, so a flex sibling with `white-space: nowrap` could
+	 * squeeze this to a single character wide -- and it did: in the narrow
+	 * headcount card, beside a status line that refused to wrap, "Administration"
+	 * rendered one letter per line down the card. `break-word` breaks a word
+	 * only when it genuinely cannot fit on a line of its own, and leaves
+	 * min-content at the longest word, so the flex algorithm has something to
+	 * respect.
+	 */
+	overflow-wrap: break-word;
+	min-width: 0;
 }
 
 .serve-fu__when {
@@ -1621,15 +1634,34 @@ button.serve-metric:hover {
 	justify-content: space-between;
 }
 
+/*
+ * Stacked, because this card lives in the narrow right-hand column.
+ *
+ * Side by side, the team name and a status line reading "1 placed since ·
+ * confirmed 3 days ago" were competing for about 180px, and the status line had
+ * `white-space: nowrap` so the name lost every time. Stacking gives each its own
+ * line and removes the competition rather than tuning it.
+ */
 .serve-fu__open {
 	display: flex;
 	flex: 1;
 	min-width: 0;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--serve-space-2);
+	flex-direction: column;
+	align-items: flex-start;
+	justify-content: center;
+	gap: 2px;
 	min-height: 44px;
 	text-align: left;
+}
+
+/*
+ * And the status may wrap here. `nowrap` is right in the follow-up list, where
+ * it is one short word in a wide row, and wrong in a narrow card where it is a
+ * sentence.
+ */
+.serve-fu--settling .serve-fu__when {
+	white-space: normal;
+	line-height: 1.4;
 }
 
 .serve-btn--sm {
