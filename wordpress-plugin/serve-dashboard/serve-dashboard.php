@@ -3,7 +3,7 @@
  * Plugin Name:       SERVE Dashboard
  * Plugin URI:        https://serve.fellowshipdubai.com/
  * Description:       Stores completed S.H.A.P.E. profiles and gives ministry leaders a scoped, auditable view of who is ready to serve, what follow-up is due, and where teams are short of people.
- * Version:           1.29.0
+ * Version:           1.30.0
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            Fellowship Dubai
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SERVE_DASHBOARD_VERSION', '1.29.0' );
+define( 'SERVE_DASHBOARD_VERSION', '1.30.0' );
 define( 'SERVE_DASHBOARD_FILE', __FILE__ );
 define( 'SERVE_DASHBOARD_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SERVE_DASHBOARD_URL', plugin_dir_url( __FILE__ ) );
@@ -83,7 +83,13 @@ foreach (
  * Activation: tables, roles, seed teams, retention cron.
  */
 function activate(): void {
-	Schema::install();
+	/*
+	 * maybe_upgrade() rather than install(), so activation and an in-place
+	 * upgrade take the same path and the version is stamped in exactly one
+	 * place. Every migrate() branch is gated on a non-empty previous version,
+	 * so a fresh activation runs none of them.
+	 */
+	Schema::maybe_upgrade();
 	Roles::install();
 	Teams::seed_defaults();
 	Assessment::install_pages();

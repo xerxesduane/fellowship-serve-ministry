@@ -199,10 +199,62 @@ test(
 		$a->same( 403, $status, 'a leader cannot delete somebody' );
 		$a->ok( null !== Submissions::get( $id ), 'the profile survives' );
 
+		/*
+		 * Everything that belongs to this person, before the row goes, so the
+		 * assertions afterwards are about something that was genuinely there.
+		 *
+		 * This test used to end at "the parent row is gone", which is a proxy:
+		 * it would have passed just as happily with the pastoral notes, the
+		 * consent record, the placements and a saved draft all left behind.
+		 * Those are the parts that actually matter -- a note about somebody's
+		 * bereavement outliving the profile it describes is the failure an
+		 * erasure exists to prevent, and it is invisible from the parent row.
+		 */
+		$email = (string) Submissions::get( $id )->email;
+
+		add_filter( 'pre_wp_mail', '__return_true' );
+		\Serve_Dashboard\Draft::save( $email, array( 'gifts' => array( 'mercy' => 'likely' ) ), 9 );
+		remove_filter( 'pre_wp_mail', '__return_true' );
+
 		wp_set_current_user( $f->user( Roles::ROLE_PASTOR ) );
+
+		\Serve_Dashboard\Followup::add_note( $id, 'Spoke after the service. Bereaved last year.' );
+
+		global $wpdb;
+		$counts = static function () use ( $wpdb, $id, $email ) {
+			$one = static function ( string $table, string $column ) use ( $wpdb, $id ) {
+				return (int) $wpdb->get_var(
+					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table and column are not user input.
+						"SELECT COUNT(*) FROM " . Schema::table( $table ) . " WHERE {$column} = %d",
+						$id
+					)
+				);
+			};
+
+			return array(
+				'consents'   => $one( 'consents', 'submission_id' ),
+				'placements' => $one( 'placements', 'submission_id' ),
+				'notes'      => $one( 'notes', 'submission_id' ),
+				'drafts'     => \Serve_Dashboard\Draft::count_for_email( $email ),
+			);
+		};
+
+		$before = $counts();
+
+		// A test that asserted "0 afterwards" while the row count was already 0
+		// would prove nothing at all.
+		foreach ( $before as $what => $n ) {
+			$a->ok( $n > 0, "there is a {$what} row to lose" );
+		}
+
 		list( $status ) = call_route( 'DELETE', "/serve/v1/people/$id" );
 		$a->same( 200, $status, 'a pastor can' );
 		$a->same( null, Submissions::get( $id ), 'and the profile is gone' );
+
+		foreach ( $counts() as $what => $n ) {
+			$a->same( 0, $n, "and so is the {$what}" );
+		}
 	}
 );
 

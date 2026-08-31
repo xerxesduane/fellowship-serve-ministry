@@ -1041,3 +1041,405 @@ test(
 		);
 	}
 );
+
+/*
+ * The second round of audit fixes: an upgrade that can be retried, an erasure
+ * that reaches every table, a digest whose silence is visible, and two public
+ * routes with the same ceiling.
+ */
+
+test(
+	'a failed data migration is retried rather than declared done',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The version was stamped at the end of install(), which runs before
+		 * migrate(). A data migration that died partway -- a lock timeout, a
+		 * fatal on an unexpected row, the request simply being cut off -- left
+		 * the stored version already claiming to be current, so the branch that
+		 * had not finished was never entered again. Tables right, data half
+		 * converted, permanently, and nothing reporting it.
+		 *
+		 * Asserted by putting the install back a version and checking that the
+		 * stamp only lands once migrate() has been through.
+		 */
+		$stored = get_option( Schema::OPTION_DB_VERSION, '' );
+
+		try {
+			update_option( Schema::OPTION_DB_VERSION, '1.9.0' );
+
+			$a->same( '1.9.0', get_option( Schema::OPTION_DB_VERSION ), 'the install claims to be behind' );
+
+			// install() alone must not move the version on: it does the schema,
+			// not the data.
+			Schema::install();
+
+			$a->same(
+				'1.9.0',
+				get_option( Schema::OPTION_DB_VERSION ),
+				'creating the tables does not claim the upgrade is finished'
+			);
+
+			/*
+			 * And the order, observed rather than inferred.
+			 *
+			 * Asserting only that the version ends up current cannot tell the
+			 * two orderings apart -- both finish with it current, and a mutation
+			 * that moved the stamp back before migrate() passed that assertion
+			 * untouched. So watch the moment the stamp is written and ask whether
+			 * the migration's own work had happened yet.
+			 *
+			 * The 1.9.0 branch seeds the catch-all option. Cleared first, so its
+			 * presence at the moment of stamping is proof the branch ran before
+			 * the stamp rather than after it.
+			 */
+			$catchall = \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM;
+			$had_seed = null;
+
+			delete_option( $catchall );
+			update_option( Schema::OPTION_DB_VERSION, '1.8.0' );
+
+			$watch = static function () use ( &$had_seed, $catchall ) {
+				$had_seed = false !== get_option( $catchall, false );
+			};
+
+			add_action( 'update_option_' . Schema::OPTION_DB_VERSION, $watch );
+			add_action( 'add_option_' . Schema::OPTION_DB_VERSION, $watch );
+
+			try {
+				Schema::maybe_upgrade();
+			} finally {
+				remove_action( 'update_option_' . Schema::OPTION_DB_VERSION, $watch );
+				remove_action( 'add_option_' . Schema::OPTION_DB_VERSION, $watch );
+			}
+
+			$a->same( true, $had_seed, 'the data migration had run before the version was stamped' );
+
+			$a->same(
+				Schema::DB_VERSION,
+				get_option( Schema::OPTION_DB_VERSION ),
+				'and the version is stamped once the migrations have run'
+			);
+		} finally {
+			update_option( Schema::OPTION_DB_VERSION, $stored ?: Schema::DB_VERSION );
+		}
+	}
+);
+
+test(
+	'running the upgrade twice is safe',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * Stamping last means a failed upgrade is retried on the next page load,
+		 * which is only an improvement if every branch tolerates a second run.
+		 */
+		$stored = get_option( Schema::OPTION_DB_VERSION, '' );
+
+		try {
+			$teams  = count( Teams::all() );
+			$people = Submissions::status_counts();
+
+			update_option( Schema::OPTION_DB_VERSION, '1.7.0' );
+			Schema::maybe_upgrade();
+
+			update_option( Schema::OPTION_DB_VERSION, '1.7.0' );
+			Schema::maybe_upgrade();
+
+			$a->same( $teams, count( Teams::all() ), 'the teams are not duplicated' );
+			$a->same( $people, Submissions::status_counts(), 'and nobody is lost or doubled' );
+			$a->same( Schema::DB_VERSION, get_option( Schema::OPTION_DB_VERSION ), 'and it ends up current' );
+		} finally {
+			update_option( Schema::OPTION_DB_VERSION, $stored ?: Schema::DB_VERSION );
+		}
+	}
+);
+
+test(
+	'erasing somebody removes the draft copy of their answers as well',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * A draft holds a full copy of the raw answers, including Experiences,
+		 * in its own table for up to thirty days. Erasure cleaned four tables
+		 * and not that one, so "erased" left the most sensitive copy sitting
+		 * there -- reachable by anyone holding the resume link -- for weeks
+		 * after the church had said it was gone.
+		 *
+		 * Submitting already clears the draft behind it, so this bites on the
+		 * paths that matter most: an erasure request, and the retention sweep on
+		 * somebody who saved a draft again after submitting.
+		 */
+		$id    = $f->submission();
+		$email = (string) Submissions::get( $id )->email;
+
+		add_filter( 'pre_wp_mail', '__return_true' );
+		\Serve_Dashboard\Draft::save( $email, array( 'gifts' => array( 'mercy' => 'likely' ) ), 9 );
+		remove_filter( 'pre_wp_mail', '__return_true' );
+
+		$a->ok( \Serve_Dashboard\Draft::count_for_email( $email ) > 0, 'a draft exists to lose' );
+
+		\Serve_Dashboard\Privacy::erase_submission( $id );
+
+		$a->same( 0, \Serve_Dashboard\Draft::count_for_email( $email ), 'and it goes with the profile' );
+		$a->same( null, Submissions::get( $id ), 'which is gone too' );
+	}
+);
+
+test(
+	'a digest that reached nobody is reported rather than looking like a quiet week',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * wp_mail()'s result was counted and discarded, so a mailer refusing
+		 * every message looked identical to a week with nothing to report. The
+		 * only symptom was leaders not mentioning an email they had never been
+		 * promised loudly enough to miss.
+		 */
+		$row = static function () {
+			foreach ( \Serve_Dashboard\Security_Status::checks() as $check ) {
+				if ( false !== strpos( $check['label'], 'digest' ) ) {
+					return $check;
+				}
+			}
+
+			return null;
+		};
+
+		$a->ok( null !== $row(), 'the checklist has a row for the digest' );
+
+		$before = get_option( \Serve_Dashboard\Digest::OPTION_LAST_RUN, false );
+
+		try {
+			delete_option( \Serve_Dashboard\Digest::OPTION_LAST_RUN );
+			$a->same( \Serve_Dashboard\Security_Status::WARN, $row()['status'], 'never having run is a warning' );
+
+			// Somebody with something waiting, so the run has work to do.
+			$id = $f->submission();
+			$f->lead_team( $f->user( \Serve_Dashboard\Roles::ROLE_LEADER ), 'welcome' );
+
+			global $wpdb;
+			$wpdb->update(
+				Schema::table( 'submissions' ),
+				array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+				array( 'id' => $id ),
+				array( '%s', '%s' ),
+				array( '%d' )
+			);
+
+			// A mailer that refuses everything returns false from wp_mail().
+			$refuse = static fn() => false;
+			add_filter( 'pre_wp_mail', $refuse );
+			\Serve_Dashboard\Digest::send_all();
+			remove_filter( 'pre_wp_mail', $refuse );
+
+			$run = \Serve_Dashboard\Digest::last_run();
+			$a->ok( is_array( $run ), 'the run records what it managed' );
+
+			if ( (int) ( $run['due'] ?? 0 ) > 0 ) {
+				$a->same( 0, (int) $run['sent'], 'nothing was sent' );
+				$a->ok( (int) $run['failed'] > 0, 'and the failures are counted rather than discarded' );
+				$a->same( \Serve_Dashboard\Security_Status::FAIL, $row()['status'], 'and the checklist says so' );
+			}
+
+			// A mailer that works.
+			$accept = static fn() => true;
+			add_filter( 'pre_wp_mail', $accept );
+			\Serve_Dashboard\Digest::send_all();
+			remove_filter( 'pre_wp_mail', $accept );
+
+			$a->same( \Serve_Dashboard\Security_Status::PASS, $row()['status'], 'a working mailer passes' );
+			$a->same( 0, (int) ( \Serve_Dashboard\Digest::last_run()['failed'] ?? -1 ), 'with nothing refused' );
+		} finally {
+			if ( false === $before ) {
+				delete_option( \Serve_Dashboard\Digest::OPTION_LAST_RUN );
+			} else {
+				update_option( \Serve_Dashboard\Digest::OPTION_LAST_RUN, $before );
+			}
+		}
+	}
+);
+
+test(
+	'an export records which profiles left, not just how many',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * A CSV of contact details and gift profiles is the easiest way for this
+		 * data to end up somewhere nobody intended, and "23 rows were exported
+		 * on the 4th" cannot answer the only question that matters afterwards:
+		 * was this person's information in it.
+		 */
+		global $wpdb;
+
+		$id = $f->submission();
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		$rows = Submissions::query( array( 'include_snoozed' => true, 'limit' => 200 ) );
+
+		$a->ok(
+			in_array( $id, array_map( static fn( $row ) => (int) $row->id, $rows ), true ),
+			'the person is in what would be exported'
+		);
+
+		/*
+		 * The export's own method, not a copy of it written here.
+		 *
+		 * The first version of this test hand-wrote the same Audit::log call and
+		 * then asserted on it, so a mutation stripping the ids out of the real
+		 * export passed untouched: it was testing that a test can build an
+		 * array. send() cannot be called here -- it writes headers and streams
+		 * to php://output -- so the part worth asserting is its own method.
+		 */
+		/*
+		 * gather() rather than audit_meta(), because the wiring is the part that
+		 * broke. Testing audit_meta() alone left a mutation that stopped
+		 * logging altogether passing clean: the seam was covered and the call to
+		 * it was not.
+		 */
+		$audit  = Schema::table( 'audit' );
+		$before = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				"SELECT COUNT(*) FROM {$audit} WHERE action = %s",
+				\Serve_Dashboard\Audit::ACTION_EXPORTED
+			)
+		);
+
+		\Serve_Dashboard\Export::gather();
+
+		$a->same(
+			$before + 1,
+			(int) $wpdb->get_var(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					"SELECT COUNT(*) FROM {$audit} WHERE action = %s",
+					\Serve_Dashboard\Audit::ACTION_EXPORTED
+				)
+			),
+			'gathering the rows writes exactly one audit row'
+		);
+
+		$logged = (string) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				"SELECT meta_json FROM {$audit} WHERE action = %s ORDER BY id DESC LIMIT 1",
+				\Serve_Dashboard\Audit::ACTION_EXPORTED
+			)
+		);
+
+		$meta = json_decode( $logged, true );
+
+		$a->ok( isset( $meta['ids'] ) && is_array( $meta['ids'] ), 'the trail names the profiles' );
+		$a->ok( in_array( $id, array_map( 'intval', $meta['ids'] ), true ), 'including this one' );
+		$a->same( count( $rows ), (int) $meta['rows'], 'and still says how many' );
+		$a->same( count( $rows ), count( $meta['ids'] ), 'one id per exported row' );
+
+		/*
+		 * And whether the list was cut short, which is the difference between
+		 * "these are the people who left" and "these are the first two hundred
+		 * of them". audit_meta() is pure, so the capped case needs no fixtures.
+		 */
+		$a->same( false, $meta['truncated'], 'a short export is not marked truncated' );
+		$a->same(
+			true,
+			\Serve_Dashboard\Export::audit_meta( array_fill( 0, 200, (object) array( 'id' => 1 ) ) )['truncated'],
+			'and a full one is'
+		);
+
+		/*
+		 * Ids, not names or addresses. The audit table is readable by anyone who
+		 * can see the audit screen, and a log reproducing the contents of an
+		 * export is a second copy of the thing being logged.
+		 */
+		$a->lacks( '@', $logged, 'and carries no email address' );
+		$a->lacks( (string) Submissions::get( $id )->display_name, $logged, 'nor a name' );
+	}
+);
+
+test(
+	'both public routes refuse an oversized profile, not just the preview',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The preview endpoint has had a 64KB ceiling since it was written. The
+		 * submit endpoint beside it had none, which is the wrong way round: a
+		 * preview is computed and thrown away, a submission is written to the
+		 * database and read back on every dashboard load thereafter.
+		 */
+		/*
+		 * Two separate guarantees, and the first version of this test conflated
+		 * them: it accepted either "refused" or "stored small", so removing
+		 * either protection still passed. They are asserted apart now.
+		 *
+		 * First: the one string in the whitelist that had no length bound at
+		 * all. sanitize_text_field strips tags and returns whatever length it
+		 * was handed, so 200KB in was 200KB out and straight into profile_json,
+		 * while every list beside it was capped.
+		 */
+		$sanitize = new \ReflectionMethod( \Serve_Dashboard\Rest::class, 'sanitize_profile' );
+		$sanitize->setAccessible( true );
+
+		$capped = $sanitize->invoke(
+			null,
+			array( 'availability' => array( 'priority' => str_repeat( 'c', 200000 ) ) )
+		);
+
+		$a->ok(
+			mb_strlen( (string) $capped['availability']['priority'] ) <= 2000,
+			'the free-text availability answer is capped'
+		);
+
+		/*
+		 * Second: the total. The number of experience groups is not bounded, so
+		 * five hundred of them still sanitises to about 157KB — which is what
+		 * makes the ceiling on the whole profile load-bearing rather than
+		 * decorative.
+		 */
+		$huge = array(
+			'spiritualGifts' => array( 'likely' => array( 'Mercy' ) ),
+			'experiences'    => array_fill_keys(
+				array_map( static fn( $i ) => "group {$i}", range( 1, 500 ) ),
+				array_fill( 0, 200, str_repeat( 'b', 300 ) )
+			),
+		);
+
+		$a->ok(
+			strlen( (string) wp_json_encode( $sanitize->invoke( null, $huge ) ) ) > 64 * 1024,
+			'and this payload really is over the limit after sanitising'
+		);
+
+		$preview = serve_preview( $huge );
+		$a->ok( in_array( $preview->get_status(), array( 413, 422 ), true ), 'the preview refuses it' );
+
+		$response = post_submission(
+			intake_payload(
+				array(
+					'email'   => 'huge-' . wp_generate_password( 8, false ) . '@serve.test',
+					'profile' => $huge,
+				)
+			),
+			$f
+		);
+
+		$a->same( 413, $response->get_status(), 'and so does the submit route' );
+
+		// And an ordinary completed profile still goes through.
+		$ordinary = post_submission(
+			intake_payload(
+				array(
+					'email'   => 'normal-' . wp_generate_password( 8, false ) . '@serve.test',
+					'profile' => array(
+						'spiritualGifts' => array( 'likely' => array( 'Administration', 'Leadership', 'Wisdom' ) ),
+						'abilities'      => array( 'Counting ability', 'Classifying ability' ),
+					),
+				)
+			),
+			$f
+		);
+
+		$a->same( 201, $ordinary->get_status(), 'while a real profile is unaffected' );
+	}
+);

@@ -164,12 +164,44 @@ final class Privacy {
 	public static function erase_submission( int $submission_id ): bool {
 		global $wpdb;
 
+		/*
+		 * Read before the row goes, because the draft is keyed on the address
+		 * rather than on the submission id, and once the submission is deleted
+		 * there is nothing left to look it up from.
+		 */
+		$email = (string) $wpdb->get_var(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT email FROM ' . Schema::table( 'submissions' ) . ' WHERE id = %d',
+				$submission_id
+			)
+		);
+
 		$deleted = $wpdb->delete( Schema::table( 'submissions' ), array( 'id' => $submission_id ), array( '%d' ) );
 
 		$wpdb->delete( Schema::table( 'consents' ), array( 'submission_id' => $submission_id ), array( '%d' ) );
 		$wpdb->delete( Schema::table( 'placements' ), array( 'submission_id' => $submission_id ), array( '%d' ) );
 		// Pastoral notes must not outlive the profile they describe.
 		Followup::delete_for_submission( $submission_id );
+
+		/*
+		 * And any saved draft under the same address.
+		 *
+		 * A draft holds a full copy of the person's raw answers, including the
+		 * Experiences section, in its own table for up to thirty days. Erasure
+		 * cleaned four tables and not that one, so "erased" left the most
+		 * sensitive copy of somebody's answers sitting there -- reachable by
+		 * anyone holding the resume link -- for weeks after the church had told
+		 * them, or a regulator, that it was gone.
+		 *
+		 * Submitting a profile already clears the draft behind it, so in the
+		 * ordinary case there is nothing here to find. It bites on the paths
+		 * that matter most: an erasure request, and the retention sweep on
+		 * somebody who saved a draft again after submitting.
+		 */
+		if ( '' !== $email ) {
+			Draft::clear_for_email( $email );
+		}
 
 		if ( $deleted ) {
 			Audit::log( Audit::ACTION_DELETED, 'submission', $submission_id );
