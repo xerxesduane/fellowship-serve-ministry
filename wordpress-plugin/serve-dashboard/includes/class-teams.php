@@ -480,7 +480,8 @@ final class Teams {
 			)
 		);
 
-		$out = array();
+		$out            = array();
+		$sensitive_read = 0;
 
 		foreach ( $rows as $row ) {
 			// Already placed or declined elsewhere: not a candidate.
@@ -492,7 +493,15 @@ final class Teams {
 			$already   = in_array( $team->slug, $suggested, true );
 
 			$profile = Submissions::profile( $row, false );
-			$match   = Matching::explain( $team, $profile );
+
+			// Counted for the audit row below. profile() strips experiences for
+			// anyone without CAP_VIEW_SENSITIVE, so this is what was genuinely
+			// readable rather than what was stored.
+			if ( ! empty( $profile['experiences'] ) ) {
+				++$sensitive_read;
+			}
+
+			$match = Matching::explain( $team, $profile );
 
 			/*
 			 * Nothing to say about them and nobody suggested them: not a
@@ -552,6 +561,36 @@ final class Teams {
 				return strcmp( (string) $a['name'], (string) $b['name'] );
 			}
 		);
+
+		/*
+		 * One row recording that this happened.
+		 *
+		 * Submissions::profile() is called with $log_view = false here, because
+		 * its per-profile ACTION_SENSITIVE_VIEWED would write a row for every
+		 * person in the pool. That was the right call and it left this screen
+		 * logging nothing at all: the drawer recorded every single read of
+		 * somebody's Experiences, while the view that reads the whole
+		 * congregation's at once recorded none. If an account with this
+		 * capability were ever misused, the church had no way to answer whether
+		 * anyone's painful history had been looked at.
+		 *
+		 * Logged after the work, so a search that died partway does not claim
+		 * to have read profiles it never reached, and only when the pool
+		 * actually contained sensitive sections to read.
+		 */
+		if ( $sensitive_read > 0 ) {
+			Audit::log(
+				Audit::ACTION_POOL_SEARCHED,
+				'team',
+				(int) $team->id,
+				array(
+					'team'              => $team->slug,
+					'profiles_read'     => count( $rows ),
+					'experiences_read'  => $sensitive_read,
+					'pool_truncated'    => count( $rows ) >= self::CANDIDATE_POOL,
+				)
+			);
+		}
 
 		return array_slice( $out, 0, $limit );
 	}

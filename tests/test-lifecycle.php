@@ -756,3 +756,288 @@ test(
 		$a->same( '', Schema::phase_of( 'not-a-status' ), 'and an unknown status claims no phase' );
 	}
 );
+
+/*
+ * The three promises that depend on something outside WordPress actually
+ * running, and the one that depends on reading the right number.
+ */
+
+test(
+	'the checklist says so when nothing is running the scheduled jobs',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The runbook has the operator set DISABLE_WP_CRON and add a system
+		 * crontab entry. WordPress will then report a job as scheduled for ever
+		 * while nothing fires it, and every row on this checklist stayed green
+		 * in that state — including on an install whose privacy notice promises
+		 * profiles are "deleted automatically by a daily job".
+		 */
+		$row = static function () {
+			foreach ( \Serve_Dashboard\Security_Status::checks() as $check ) {
+				if ( __( 'Scheduled jobs', 'serve-dashboard' ) === $check['label'] ) {
+					return $check;
+				}
+			}
+
+			return null;
+		};
+
+		$a->ok( null !== $row(), 'the checklist has a row for the scheduled jobs at all' );
+
+		$before = get_option( \Serve_Dashboard\Privacy::OPTION_LAST_SWEEP, false );
+
+		try {
+			// Ran a moment ago: healthy.
+			update_option( \Serve_Dashboard\Privacy::OPTION_LAST_SWEEP, current_time( 'mysql', true ) );
+			$a->same( \Serve_Dashboard\Security_Status::PASS, $row()['status'], 'a sweep that just ran passes' );
+
+			// Scheduled, but nothing has fired it for days.
+			update_option(
+				\Serve_Dashboard\Privacy::OPTION_LAST_SWEEP,
+				gmdate( 'Y-m-d H:i:s', time() - 4 * DAY_IN_SECONDS )
+			);
+			$stale = $row();
+			$a->same( \Serve_Dashboard\Security_Status::FAIL, $stale['status'], 'a dead trigger fails' );
+			$a->contains( 'crontab', $stale['detail'], 'and names where to look' );
+
+			// Never run at all.
+			delete_option( \Serve_Dashboard\Privacy::OPTION_LAST_SWEEP );
+			$a->same( \Serve_Dashboard\Security_Status::WARN, $row()['status'], 'never having run is a warning, not a failure' );
+
+			/*
+			 * And the job itself gone, which is a different fault with a
+			 * different remedy: nothing is scheduled to run rather than
+			 * something failing to trigger what is. A mutation proved this
+			 * branch was never reached, because every case above controls the
+			 * timestamp and leaves the schedule alone.
+			 */
+			$hook = 'serve_dashboard_retention_sweep';
+			$when = wp_next_scheduled( $hook );
+
+			try {
+				if ( $when ) {
+					wp_unschedule_event( $when, $hook );
+				}
+
+				$unscheduled = $row();
+
+				$a->same( \Serve_Dashboard\Security_Status::FAIL, $unscheduled['status'], 'an unscheduled job fails' );
+				$a->contains( 'Not scheduled', $unscheduled['detail'], 'and says that is what is wrong' );
+				$a->contains( 'retention sweep', $unscheduled['detail'], 'naming which job is missing' );
+			} finally {
+				if ( ! wp_next_scheduled( $hook ) ) {
+					wp_schedule_event( $when ?: ( time() + DAY_IN_SECONDS ), 'daily', $hook );
+				}
+			}
+
+			$a->ok( false !== wp_next_scheduled( $hook ), 'and the schedule is put back afterwards' );
+
+			/*
+			 * The digest is the other half, and it is the one that actually went
+			 * missing in the field: it was added after this plugin had already
+			 * been activated, and scheduling only ever happened on activation,
+			 * so an install that upgraded in place never registered it. Its
+			 * leaders simply never received the Monday email they were told to
+			 * expect, and nothing anywhere said so.
+			 */
+			$digest_hook = \Serve_Dashboard\Digest::CRON_HOOK;
+			$digest_when = wp_next_scheduled( $digest_hook );
+
+			try {
+				if ( $digest_when ) {
+					wp_unschedule_event( $digest_when, $digest_hook );
+				}
+
+				$no_digest = $row();
+
+				$a->same( \Serve_Dashboard\Security_Status::FAIL, $no_digest['status'], 'a missing digest job fails too' );
+				$a->contains( 'digest', $no_digest['detail'], 'and is named, so the remedy is obvious' );
+			} finally {
+				if ( ! wp_next_scheduled( $digest_hook ) ) {
+					\Serve_Dashboard\Digest::schedule();
+				}
+			}
+
+			$a->ok( false !== wp_next_scheduled( $digest_hook ), 'and the digest is rescheduled afterwards' );
+		} finally {
+			if ( false === $before ) {
+				delete_option( \Serve_Dashboard\Privacy::OPTION_LAST_SWEEP );
+			} else {
+				update_option( \Serve_Dashboard\Privacy::OPTION_LAST_SWEEP, $before );
+			}
+		}
+	}
+);
+
+test(
+	'the sweep records that it ran even when nothing was due',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * Without this, "nothing expired today" and "the job has not run in
+		 * three weeks" are the same observation, and the check above has
+		 * nothing to read.
+		 */
+		$before = get_option( \Serve_Dashboard\Privacy::OPTION_LAST_SWEEP, false );
+
+		try {
+			delete_option( \Serve_Dashboard\Privacy::OPTION_LAST_SWEEP );
+			$a->same( '', \Serve_Dashboard\Privacy::last_sweep(), 'nothing recorded to begin with' );
+
+			\Serve_Dashboard\Privacy::run_retention_sweep();
+
+			$a->not( '' === \Serve_Dashboard\Privacy::last_sweep(), 'the sweep leaves a timestamp behind' );
+		} finally {
+			if ( false === $before ) {
+				delete_option( \Serve_Dashboard\Privacy::OPTION_LAST_SWEEP );
+			} else {
+				update_option( \Serve_Dashboard\Privacy::OPTION_LAST_SWEEP, $before );
+			}
+		}
+	}
+);
+
+test(
+	'deletion honours what each person was promised, not the current setting',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * consents.retention_months is frozen when somebody agrees, the consent
+		 * text quotes that number back to them, and the drawer shows it to their
+		 * leader. Deletion read the live option instead, so lowering the setting
+		 * from 24 months to 6 made the next sweep delete people who had been
+		 * promised 24 — with the drawer still saying 24 until the row vanished.
+		 */
+		global $wpdb;
+
+		$make = static function ( int $promised, int $age_months ) use ( $f, $wpdb ) {
+			$id = $f->submission();
+
+			$wpdb->query(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					'UPDATE ' . Schema::table( 'submissions' )
+					. ' SET submitted_at = DATE_SUB( UTC_TIMESTAMP(), INTERVAL %d MONTH ) WHERE id = %d',
+					$age_months,
+					$id
+				)
+			);
+			$wpdb->query(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					'UPDATE ' . Schema::table( 'consents' )
+					. ' SET retention_months = %d WHERE submission_id = %d',
+					$promised,
+					$id
+				)
+			);
+
+			return $id;
+		};
+
+		$before = get_option( \Serve_Dashboard\Privacy::OPTION_RETENTION_MONTHS, false );
+
+		try {
+			// A pastor lowers the setting to six months.
+			update_option( \Serve_Dashboard\Privacy::OPTION_RETENTION_MONTHS, 6 );
+
+			$promised_24 = $make( 24, 12 );
+			$promised_6  = $make( 6, 12 );
+
+			$expired = \Serve_Dashboard\Privacy::expired_submission_ids();
+
+			$a->not(
+				in_array( $promised_24, $expired, true ),
+				'somebody promised 24 months is not deleted at 12'
+			);
+			$a->ok(
+				in_array( $promised_6, $expired, true ),
+				'and somebody promised 6 months is'
+			);
+
+			// Raising it must not extend a promise either.
+			update_option( \Serve_Dashboard\Privacy::OPTION_RETENTION_MONTHS, 60 );
+			$a->ok(
+				in_array( $promised_6, \Serve_Dashboard\Privacy::expired_submission_ids(), true ),
+				'raising the setting does not keep somebody past what they agreed to'
+			);
+		} finally {
+			if ( false === $before ) {
+				delete_option( \Serve_Dashboard\Privacy::OPTION_RETENTION_MONTHS );
+			} else {
+				update_option( \Serve_Dashboard\Privacy::OPTION_RETENTION_MONTHS, $before );
+			}
+		}
+	}
+);
+
+test(
+	'searching the whole intake pool for candidates is written to the audit trail',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * Candidate discovery decodes every verified profile in the church to
+		 * answer one question about one team, and passes $log_view = false so
+		 * the per-profile sensitive-read row does not fire two thousand times.
+		 * That was right, and it left this screen logging nothing at all: the
+		 * drawer recorded every single read of somebody's Experiences while the
+		 * view that reads the whole congregation's at once recorded none.
+		 */
+		global $wpdb;
+
+		$id = $f->submission(
+			array(
+				'suggested_teams' => array( 'fellowship-kids' ),
+				'profile'         => array(
+					'spiritualGifts' => array( 'likely' => array( 'Mercy', 'Teaching', 'Hospitality' ) ),
+					'experiences'    => array( 'Painful experiences' => array( 'Death/Grief' ) ),
+				),
+			)
+		);
+
+		$wpdb->update(
+			Schema::table( 'submissions' ),
+			array( 'verified_at' => current_time( 'mysql', true ), 'verify_token' => null ),
+			array( 'id' => $id ),
+			array( '%s', '%s' ),
+			array( '%d' )
+		);
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		$audit = Schema::table( 'audit' );
+		$count = static function () use ( $wpdb, $audit ) {
+			return (int) $wpdb->get_var(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					"SELECT COUNT(*) FROM {$audit} WHERE action = %s",
+					\Serve_Dashboard\Audit::ACTION_POOL_SEARCHED
+				)
+			);
+		};
+
+		$before = $count();
+
+		$team = \Serve_Dashboard\Teams::get_by_slug( 'fellowship-kids' );
+		$a->ok( null !== $team, 'the team exists to search' );
+
+		\Serve_Dashboard\Teams::candidates( (int) $team->id );
+
+		$a->same( $before + 1, $count(), 'one row per search, not one per profile' );
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				"SELECT object_id, meta_json FROM {$audit} WHERE action = %s ORDER BY id DESC LIMIT 1",
+				\Serve_Dashboard\Audit::ACTION_POOL_SEARCHED
+			)
+		);
+
+		$a->same( (int) $team->id, (int) $row->object_id, 'naming which team was being searched for' );
+
+		$meta = json_decode( (string) $row->meta_json, true );
+
+		$a->ok( ( $meta['profiles_read'] ?? 0 ) > 0, 'and how many profiles were read' );
+		$a->ok(
+			( $meta['experiences_read'] ?? 0 ) > 0,
+			'and how many of them had a readable Experiences section, which is the part worth being able to ask about later'
+		);
+	}
+);
