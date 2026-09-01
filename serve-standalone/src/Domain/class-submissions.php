@@ -60,6 +60,15 @@ final class Submissions {
 				'profile_json'        => wp_json_encode( $profile ) ?: '{}',
 				'match_snapshot'      => wp_json_encode( $snapshot ) ?: '{}',
 				'match_version'       => Matching_Contract::VERSION . '/' . Gift_Crosswalk::VERSION,
+				/*
+				 * Stated rather than left to the column.
+				 *
+				 * invite_note is `text NOT NULL` with no default, and omitting it
+				 * only worked because WordPress removes STRICT_TRANS_TABLES on
+				 * connect and the server substituted an empty string. This build
+				 * keeps strict mode, so the row says what it holds: no note yet.
+				 */
+				'invite_note'         => '',
 				'safeguarding_status' => Safeguarding::initial_status( $suggested ),
 				'next_action_at'      => gmdate( 'Y-m-d', strtotime( '+3 days' ) ),
 				'submitted_at'        => $now,

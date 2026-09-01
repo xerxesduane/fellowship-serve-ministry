@@ -50,6 +50,34 @@ final class Db {
 		$this->pdo->setAttribute( \PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION );
 		$this->pdo->setAttribute( \PDO::ATTR_DEFAULT_FETCH_MODE, \PDO::FETCH_OBJ );
 		$this->pdo->setAttribute( \PDO::ATTR_EMULATE_PREPARES, false );
+
+		/*
+		 * Strict mode, on purpose, and this is a deliberate divergence.
+		 *
+		 * WordPress lists STRICT_TRANS_TABLES in wpdb::$incompatible_modes and
+		 * removes it on every connect. That is why the plugin's inserts succeed
+		 * while omitting NOT NULL columns with no default: the server silently
+		 * substitutes an empty string instead of refusing.
+		 *
+		 * Inheriting that would mean inheriting the masking. With strict mode on,
+		 * a value too long for its column is an error rather than a silent
+		 * truncation -- and silent truncation of a profile, a note, or an audit
+		 * entry is the kind of data loss nobody discovers until they need the
+		 * data. Turning it on immediately exposed one real schema defect, which
+		 * migration 002 fixes.
+		 *
+		 * Set here rather than left to the server so both a developer machine and
+		 * a host behave the same way. Attempted quietly: a server that refuses
+		 * still works, it just offers weaker guarantees.
+		 */
+		try {
+			$this->pdo->exec(
+				"SET SESSION sql_mode = CONCAT( COALESCE( NULLIF( @@SESSION.sql_mode, '' ), 'NO_ENGINE_SUBSTITUTION' ), ',STRICT_TRANS_TABLES' )"
+			);
+		} catch ( \PDOException $e ) {
+			// Not fatal. The application is correct without it; it is a net.
+			unset( $e );
+		}
 	}
 
 	public function pdo(): \PDO {
