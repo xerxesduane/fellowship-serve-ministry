@@ -76,6 +76,15 @@ final class Shortcode {
 					'noProfile' => __( 'We could not find a completed profile in this browser. Please finish the S.H.A.P.E. journey first.', 'serve-dashboard' ),
 					'sending'   => __( 'Sending…', 'serve-dashboard' ),
 					'failed'    => __( 'That did not send. Please check your connection and try again.', 'serve-dashboard' ),
+					/*
+					 * A rejected field is not a failed connection.
+					 *
+					 * The summary reused 'failed' for both, so mistyping a phone number
+					 * was reported as "check your connection and try again" -- which sends
+					 * somebody to look at their wifi while the actual problem sits
+					 * highlighted on screen.
+					 */
+					'notSent'   => __( 'Nothing was sent. Please check the highlighted field.', 'serve-dashboard' ),
 					'consent'   => __( 'Please tick the box so we know you agree.', 'serve-dashboard' ),
 					// Labels for the "what you are about to share" summary.
 					'summaryGifts' => __( 'Your likely gifts', 'serve-dashboard' ),
@@ -174,26 +183,49 @@ final class Shortcode {
 					<?php esc_html_e( 'Filled in from your answers — please check they are right.', 'serve-dashboard' ); ?>
 				</p>
 
+				<?php
+				/*
+				 * Said once rather than marked three times.
+				 *
+				 * Three of the four fields here are required, so an asterisk on
+				 * each is mostly noise. What somebody needs to know is that the
+				 * contact details are all needed and the last question is not, so
+				 * that is what it says -- and the optional one is labelled.
+				 */
+				?>
+				<p class="serve-consent__required" id="serve-required-note">
+					<?php esc_html_e( 'All three contact details are needed, so a leader can actually reach you.', 'serve-dashboard' ); ?>
+				</p>
+
 				<div class="serve-consent__field">
 					<label for="serve-name"><?php esc_html_e( 'Your name', 'serve-dashboard' ); ?></label>
-					<input type="text" id="serve-name" name="display_name" required autocomplete="name">
+					<input type="text" id="serve-name" name="display_name" required autocomplete="name"
+						aria-describedby="serve-required-note" data-serve-field="display_name">
+					<p class="serve-consent__error" id="serve-error-display_name" hidden></p>
 				</div>
 
 				<div class="serve-consent__row">
 					<div class="serve-consent__field">
 						<label for="serve-email"><?php esc_html_e( 'Email', 'serve-dashboard' ); ?></label>
-						<input type="email" id="serve-email" name="email" required autocomplete="email">
+						<input type="email" id="serve-email" name="email" required autocomplete="email"
+							data-serve-field="email">
+						<p class="serve-consent__error" id="serve-error-email" hidden></p>
 					</div>
 
 					<div class="serve-consent__field">
 						<label for="serve-phone"><?php esc_html_e( 'Phone', 'serve-dashboard' ); ?></label>
-						<input type="tel" id="serve-phone" name="phone" required autocomplete="tel">
+						<input type="tel" id="serve-phone" name="phone" required autocomplete="tel"
+							inputmode="tel" data-serve-field="phone">
+						<p class="serve-consent__error" id="serve-error-phone" hidden></p>
 					</div>
 				</div>
 			</fieldset>
 
 			<div class="serve-consent__field">
-				<label for="serve-tenure"><?php esc_html_e( 'Roughly how long do you expect to be in the UAE?', 'serve-dashboard' ); ?></label>
+				<label for="serve-tenure">
+					<?php esc_html_e( 'Roughly how long do you expect to be in the UAE?', 'serve-dashboard' ); ?>
+					<span class="serve-consent__optional"><?php esc_html_e( '(optional)', 'serve-dashboard' ); ?></span>
+				</label>
 				<select id="serve-tenure" name="tenure_months">
 					<option value=""><?php esc_html_e( 'Prefer not to say', 'serve-dashboard' ); ?></option>
 					<option value="6"><?php esc_html_e( 'Less than 6 months', 'serve-dashboard' ); ?></option>
@@ -227,7 +259,7 @@ final class Shortcode {
 				<?php esc_html_e( 'Nothing is shared until you press this, and you can ask us to delete it at any time.', 'serve-dashboard' ); ?>
 			</p>
 
-			<p class="serve-consent__status" role="status" aria-live="polite"></p>
+			<p class="serve-consent__status" role="status" aria-live="polite" tabindex="-1"></p>
 		</form>
 
 		<?php
@@ -308,7 +340,7 @@ final class Shortcode {
 				</div>
 
 				<button type="submit" class="serve-consent__submit"><?php esc_html_e( 'Send my answer', 'serve-dashboard' ); ?></button>
-				<p class="serve-consent__status" role="status" aria-live="polite"></p>
+				<p class="serve-consent__status" role="status" aria-live="polite" tabindex="-1"></p>
 			</form>
 
 			<div class="serve-consent serve-consent--done" data-invite-done hidden>

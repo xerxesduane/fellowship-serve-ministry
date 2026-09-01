@@ -34,6 +34,77 @@ function serveShapeConfig() {
 	return window.serveShapeConfig;
 }
 
+/*
+ * Which field an intake error belongs to.
+ *
+ * The endpoint answers a rejected submission with one code, and the form showed
+ * it as a single line above the button. That leaves somebody reading "enter a
+ * phone number we can reach you on" and then hunting for which of four fields is
+ * meant -- which is the whole reason a message belongs beside its input rather
+ * than only at the top.
+ *
+ * Mapped by code rather than by parsing the message, so the wording can change
+ * in one language or twelve without breaking this.
+ */
+const SERVE_ERROR_FIELDS = {
+	serve_name_required: 'display_name',
+	serve_bad_name: 'display_name',
+	serve_email_required: 'email',
+	serve_bad_email: 'email',
+	serve_phone_required: 'phone',
+	serve_bad_phone: 'phone'
+};
+
+/** Clear any field-level error left from a previous attempt. */
+function serveClearFieldErrors(form) {
+	for (const input of form.querySelectorAll('[data-serve-field]')) {
+		input.removeAttribute('aria-invalid');
+
+		const slot = form.querySelector('#serve-error-' + input.dataset.serveField);
+
+		if (slot) {
+			slot.hidden = true;
+			slot.textContent = '';
+		}
+	}
+}
+
+/**
+ * Show an error against the field it belongs to.
+ *
+ * Returns true when it found a home for the message, so the caller knows
+ * whether the summary line still has to carry it.
+ */
+function serveShowFieldError(form, code, message) {
+	const field = SERVE_ERROR_FIELDS[code];
+
+	if (!field) {
+		return false;
+	}
+
+	const input = form.querySelector('[data-serve-field="' + field + '"]');
+	const slot = form.querySelector('#serve-error-' + field);
+
+	if (!input || !slot) {
+		return false;
+	}
+
+	slot.textContent = message;
+	slot.hidden = false;
+
+	input.setAttribute('aria-invalid', 'true');
+	input.setAttribute('aria-describedby', slot.id);
+
+	/*
+	 * Focus moves to the input, not to the summary. There is exactly one thing
+	 * to fix and it is this; making somebody tab from a summary to find it would
+	 * be ceremony.
+	 */
+	input.focus();
+
+	return true;
+}
+
 (function () {
 	'use strict';
 
@@ -235,7 +306,24 @@ function serveShapeConfig() {
 			.then(function (result) {
 				if (!result.ok) {
 					submit.disabled = false;
-					say((result.body && result.body.message) || config.strings.failed, true);
+
+					const code = (result.body && result.body.code) || '';
+					const message = (result.body && result.body.message) || config.strings.failed;
+
+					serveClearFieldErrors(form);
+
+					if (serveShowFieldError(form, code, message)) {
+						/*
+						 * The field carries the detail, so the summary says only
+						 * that nothing was sent -- which is the part somebody is
+						 * anxious about on this page.
+						 */
+						say(config.strings.notSent || config.strings.failed, true);
+					} else {
+						say(message, true);
+						status.focus();
+					}
+
 					return;
 				}
 
@@ -293,6 +381,7 @@ function serveShapeConfig() {
 		}
 
 		submit.disabled = true;
+		serveClearFieldErrors(form);
 		status.textContent = config.strings.sending;
 		status.classList.remove('is-error');
 

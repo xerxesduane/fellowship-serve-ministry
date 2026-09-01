@@ -531,3 +531,114 @@ body.serve-canvas--consent .skip-to-content:focus {
 	height: 1.15rem;
 	accent-color: var(--serve-teal);
 }
+
+/* ── The share step, revisited ───────────────────────────────────────────── */
+
+/*
+ * What is required, said once.
+ *
+ * Three of the four fields are, so a marker on each is mostly noise. This sits
+ * above them and is referenced by aria-describedby from the first input.
+ */
+.serve-consent__required {
+	margin: 0 0 var(--serve-space-3, 12px);
+	font-size: .8125rem;
+	line-height: 1.5;
+	color: var(--serve-muted, #667786);
+}
+
+.serve-consent__optional {
+	font-weight: 400;
+	color: var(--serve-muted, #667786);
+}
+
+/*
+ * An error beside the field it belongs to.
+ *
+ * coral-dark rather than the brand coral: coral is 3.0:1 on white and fails as
+ * text, its dark step is 5.4:1. The leading marker means the message does not
+ * depend on colour alone.
+ */
+.serve-consent__error {
+	margin: 6px 0 0;
+	font-size: .8125rem;
+	line-height: 1.45;
+	color: var(--serve-coral, #b8401a);
+}
+
+.serve-consent__error::before {
+	content: "! ";
+	font-weight: 700;
+}
+
+.serve-consent__field input[aria-invalid="true"],
+.serve-consent__field select[aria-invalid="true"] {
+	border-color: var(--serve-coral, #b8401a);
+	border-width: 2px;
+}
+
+/*
+ * The consent control, given the weight it actually carries.
+ *
+ * It is the gate -- nothing is sent until it is ticked, and the tick is the
+ * record that somebody agreed. It was also the least prominent thing on the
+ * page: a 20px box with 3px of margin against nine lines of small print, so the
+ * single most consequential control had a 27x25 hit area. Measured, not guessed.
+ *
+ * Selectors written against the markup rather than against what the class names
+ * ought to be: a first pass targeted .serve-consent__consent, which does not
+ * exist, and changed nothing while appearing to.
+ */
+.serve-consent__box label {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: var(--serve-space-3, 12px);
+	align-items: start;
+}
+
+.serve-consent__box input[type="checkbox"] {
+	/* 22px drawn inside a 44px reachable square. */
+	width: 22px;
+	height: 22px;
+	margin: 11px;
+	accent-color: var(--serve-teal, #167d83);
+}
+
+.serve-consent__box label > span {
+	/* Optically aligned with the box rather than with its margin box. */
+	padding-top: 11px;
+	font-size: .875rem;
+	line-height: 1.6;
+	/* A measure, so nine lines of consent text stay readable. */
+	max-width: 62ch;
+}
+
+/*
+ * The reassurance is part of the action, not a footnote to it.
+ *
+ * "Nothing is shared until you press this" is the sentence that lets somebody
+ * press the button. Set in muted 12px underneath, it read as small print about
+ * the button rather than as the answer to what they were anxious about.
+ */
+.serve-consent__reassure {
+	margin-top: var(--serve-space-3, 12px);
+	font-size: .8125rem;
+	line-height: 1.55;
+	color: var(--serve-ink, #17314a);
+}
+
+/* A failure needs to look different from progress, not just read differently. */
+.serve-consent__status.is-error {
+	padding: var(--serve-space-3, 12px);
+	color: var(--serve-coral, #b8401a);
+	background: #fdeee8;
+	border-radius: 6px;
+}
+
+.serve-consent__field input:focus-visible,
+.serve-consent__field select:focus-visible,
+.serve-consent__consent input:focus-visible,
+.serve-consent__submit:focus-visible {
+	outline: 2px solid var(--serve-teal, #167d83);
+	outline-offset: 2px;
+}
