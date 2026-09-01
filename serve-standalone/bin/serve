@@ -199,6 +199,64 @@ switch ( $command ) {
 
 		exit( 0 );
 
+	case 'seed:demo':
+		serve_boot( $flag( 'config' ) );
+
+		/*
+		 * Runs the plugin's seeder, not a copy of it.
+		 *
+		 * dev/seed-demo.php is 546 lines of carefully chosen demo people -- gift
+		 * answers that genuinely point at the teams they are placed on, one
+		 * person deliberately unmatched, one paused mid-journey. Duplicating that
+		 * here would give two sets of demo data that drift apart, and the one
+		 * that drifts is the one nobody is looking at.
+		 *
+		 * Its only tie to WP-CLI is three logging calls and a guard, so those are
+		 * provided and the file is included as it stands.
+		 */
+		if ( ! class_exists( 'WP_CLI' ) ) {
+			// phpcs:disable
+			class WP_CLI {
+				public static function log( string $message ): void {
+					echo '  ', $message, "\n";
+				}
+
+				public static function warning( string $message ): void {
+					fwrite( STDERR, '  ! ' . $message . "\n" );
+				}
+
+				public static function success( string $message ): void {
+					echo "\n", $message, "\n";
+				}
+
+				public static function error( string $message ): void {
+					fwrite( STDERR, $message . "\n" );
+					exit( 1 );
+				}
+			}
+			// phpcs:enable
+		}
+
+		if ( ! defined( 'WP_CLI' ) ) {
+			define( 'WP_CLI', true );
+		}
+
+		$seeder = SERVE_ROOT . '/../wordpress-plugin/serve-dashboard/dev/seed-demo.php';
+
+		if ( ! is_file( $seeder ) ) {
+			fwrite( STDERR, "Cannot find the seeder at {$seeder}\n" );
+			exit( 1 );
+		}
+
+		/*
+		 * The demo people are placed on real teams, so the teams have to exist.
+		 * seed_defaults() is a no-op once they do.
+		 */
+		\Serve_Dashboard\Teams::seed_defaults();
+
+		require $seeder;
+		exit( 0 );
+
 	case 'cron':
 		serve_boot( $flag( 'config' ) );
 

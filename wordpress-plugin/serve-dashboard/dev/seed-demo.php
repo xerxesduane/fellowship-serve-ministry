@@ -456,6 +456,17 @@ foreach ( $people as $person ) {
 			'match_snapshot'      => wp_json_encode( Matching::participant_match_snapshot( $profile ) ),
 			'match_version'       => Matching_Contract::VERSION . '/' . Gift_Crosswalk::VERSION,
 			'safeguarding_status' => Safeguarding::initial_status( $person['teams'] ),
+			/*
+			 * Stated rather than left to the column.
+			 *
+			 * invite_note is `text NOT NULL` with no default. Omitting it works
+			 * under WordPress only because wpdb removes STRICT_TRANS_TABLES on
+			 * connect and the server substitutes an empty string; on a strict
+			 * server the whole insert is refused. Nobody serving a real church
+			 * runs this file, but the standalone build runs it through the same
+			 * domain code with strict mode on, and there it failed.
+			 */
+			'invite_note'         => '',
 			'next_action_at'      => gmdate( 'Y-m-d', strtotime( $person['due'] ) ),
 			'submitted_at'        => $now,
 			'updated_at'          => $now,
@@ -464,6 +475,23 @@ foreach ( $people as $person ) {
 	);
 
 	$submission_id = (int) $wpdb->insert_id;
+
+	/*
+	 * Stop rather than carry on with an id that is not there.
+	 *
+	 * This used to go straight on to Consent::record() and the placement rows.
+	 * When the insert failed, insert_id was whatever the previous statement left
+	 * -- or zero -- so the seeder wrote consents and placements pointing at a
+	 * submission that did not exist, and then reported success. That is how
+	 * eight demo people became twelve orphan placement rows and no submissions,
+	 * with a cheerful summary line at the end.
+	 */
+	if ( $submission_id <= 0 ) {
+		\WP_CLI::error(
+			"Could not insert {$person['name']}: " . ( $wpdb->last_error ?: 'no id returned' )
+		);
+	}
+
 	Consent::record( $submission_id );
 
 	/*
