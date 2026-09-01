@@ -175,10 +175,36 @@ serve_chrome_open(
 
 			$serve_field = static fn( string $name ): string => 'teams[' . $serve_id . '][' . $name . ']';
 			?>
-			<div class="serve-card serve-team <?php echo empty( $serve_team->is_active ) ? 'is-retired' : ''; ?>">
+			<?php
+			/*
+			 * A named group, and a real heading.
+			 *
+			 * Sixteen cards each hold fields labelled "Now", "Target" and
+			 * "Minimum" -- so the page has sixteen inputs called "Now" and, until
+			 * this, nothing tying any of them to a team except visual proximity.
+			 * Somebody tabbing through with a screen reader was told "Now, edit
+			 * text" sixteen times over.
+			 *
+			 * role="group" with aria-labelledby fixes that: the team's name is
+			 * announced on entering the card, so every field inside is heard in
+			 * context. A fieldset with a legend would do the same, but the legend
+			 * would have to be the fieldset's first child and the name sits two
+			 * levels down inside the header row -- restructuring the markup for
+			 * it would risk the layout for no additional benefit.
+			 *
+			 * The name is also an h2 now rather than a span, which costs nothing
+			 * visually (.serve-team__name sets its own size and weight, and the
+			 * .serve-app reset zeroes heading margins) and gives a keyboard or
+			 * screen-reader user sixteen landmarks to jump between instead of one
+			 * flat run of eighty-three form controls.
+			 */
+			$serve_name_id = 'serve-team-name-' . $serve_id;
+			?>
+			<div class="serve-card serve-team <?php echo empty( $serve_team->is_active ) ? 'is-retired' : ''; ?>"
+				role="group" aria-labelledby="<?php echo esc_attr( $serve_name_id ); ?>">
 				<div>
 					<div class="serve-team__head">
-						<span class="serve-team__name"><?php echo esc_html( (string) $serve_team->name ); ?></span>
+						<h2 class="serve-team__name" id="<?php echo esc_attr( $serve_name_id ); ?>"><?php echo esc_html( (string) $serve_team->name ); ?></h2>
 
 						<?php if ( null === $serve_gap ) : ?>
 							<span class="serve-team__state serve-team__state--unset"><?php esc_html_e( 'no target' ); ?></span>

@@ -192,6 +192,103 @@ function serve_denied(): void {
  * @param int[]                   $confirmed Team ids ticked as already correct.
  * @return bool Whether anything was written.
  */
+/**
+ * Write the settings, validating each one before it lands.
+ *
+ * Every value here is refused rather than coerced when it is wrong, because all
+ * four of them are load-bearing in a way a silently-corrected value would hide:
+ * the retention period is a promise published in the privacy notice, the contact
+ * address is where deletion requests go, the intake team decides who can read a
+ * new profile, and the form URL is a link put in front of volunteers.
+ *
+ * @param array<string,mixed> $posted
+ * @return array{saved:bool,errors:array<string,string>}
+ */
+function serve_save_settings( array $posted ): array {
+	$errors = array();
+	$wrote  = false;
+
+	/*
+	 * Retention, bounded at both ends.
+	 *
+	 * Zero would mean "delete immediately" and an unbounded figure would mean
+	 * "keep forever" -- and both are things somebody might type by accident into
+	 * a field whose consequence is deleting a congregation's answers.
+	 */
+	$months = (int) ( $posted['retention_months'] ?? 0 );
+
+	if ( $months < 1 || $months > 120 ) {
+		$errors['retention_months'] = __( 'Enter a number of months between 1 and 120.' );
+	} elseif ( update_option( \Serve_Dashboard\Privacy::OPTION_RETENTION_MONTHS, $months ) ) {
+		$wrote = true;
+	}
+
+	// The address people are told to write to has to be a real one.
+	$email = sanitize_email( (string) ( $posted['contact_email'] ?? '' ) );
+
+	if ( '' === $email ) {
+		$errors['contact_email'] = __( 'Enter an email address somebody actually reads.' );
+	} elseif ( update_option( \Serve_Dashboard\Privacy::OPTION_CONTACT_EMAIL, $email ) ) {
+		$wrote = true;
+	}
+
+	/*
+	 * The intake team, checked against the teams that exist.
+	 *
+	 * An unknown slug here is not cosmetic: Placements::catchall_team() would
+	 * find nothing, and every new profile would arrive with no owner at all --
+	 * the exact failure the catch-all exists to prevent. An empty value is a
+	 * legitimate choice and means pastors pick these up.
+	 */
+	$catchall = sanitize_key( (string) ( $posted['catchall_team'] ?? '' ) );
+
+	if ( '' !== $catchall && null === \Serve_Dashboard\Teams::get_by_slug( $catchall ) ) {
+		$errors['catchall_team'] = __( 'That team does not exist.' );
+	} elseif ( update_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, $catchall ) ) {
+		$wrote = true;
+	}
+
+	// https only, and empty means the step is not offered.
+	$form = trim( (string) ( $posted['serving_form_url'] ?? '' ) );
+
+	if ( '' !== $form && ! preg_match( '#^https://#i', $form ) ) {
+		$errors['serving_form_url'] = __( 'Use a full https:// address, or leave it empty.' );
+	} else {
+		$clean = '' === $form ? '' : esc_url_raw( $form );
+
+		if ( '' !== $form && '' === $clean ) {
+			$errors['serving_form_url'] = __( 'That does not look like a web address.' );
+		} elseif ( update_option( \Serve_Dashboard\Assessment::OPTION_SERVING_FORM, $clean ) ) {
+			$wrote = true;
+		}
+	}
+
+	/*
+	 * A subdomain, not a URL.
+	 *
+	 * The field asks for the part before .churchcenter.com, and people paste the
+	 * whole address anyway. Taking the host's first label is friendlier than
+	 * refusing, and produces the same link either way.
+	 */
+	$pco = strtolower( trim( (string) ( $posted['pco_subdomain'] ?? '' ) ) );
+
+	if ( str_contains( $pco, '.' ) || str_contains( $pco, '/' ) ) {
+		$host = (string) ( parse_url( str_contains( $pco, '//' ) ? $pco : 'https://' . $pco, PHP_URL_HOST ) ?? '' );
+		$pco  = '' === $host ? $pco : explode( '.', $host )[0];
+	}
+
+	$pco = (string) preg_replace( '/[^a-z0-9-]/', '', $pco );
+
+	if ( update_option( \Serve_Dashboard\Planning_Center::OPTION_SUBDOMAIN, $pco ) ) {
+		$wrote = true;
+	}
+
+	return array(
+		'saved'  => $wrote && array() === $errors,
+		'errors' => $errors,
+	);
+}
+
 function serve_save_teams( array $submitted, array $confirmed ): bool {
 	$wrote = false;
 
@@ -363,6 +460,57 @@ switch ( $serve_path ) {
 			: '';
 
 		require SERVE_ROOT . '/views/teams.php';
+		exit;
+
+	case 'settings':
+		serve_require_login( 'settings' );
+
+		/*
+		 * One capability, unlike Teams.
+		 *
+		 * There is no useful read-only version of this screen: it is four
+		 * settings, a checklist of how the installation is configured, and the
+		 * audit trail. Two of those describe the security posture and the third
+		 * records who read whose spiritual gifts, so a leader who cannot change
+		 * any of it has no reason to be shown all of it either.
+		 */
+		if ( ! current_user_can( Roles::CAP_MANAGE_SETTINGS ) ) {
+			serve_denied();
+		}
+
+		$serve_notice = '';
+		$serve_errors = array();
+
+		if ( 'POST' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+			check_admin_referer( 'serve_save_settings' );
+
+			$serve_result = serve_save_settings( $_POST );
+
+			if ( array() !== $serve_result['errors'] ) {
+				/*
+				 * Errors are rendered rather than redirected.
+				 *
+				 * Redirecting would drop what was typed and leave somebody
+				 * re-entering four fields to find out which one was wrong.
+				 */
+				$serve_errors = $serve_result['errors'];
+				$serve_notice = 'invalid';
+			} else {
+				// Redirect after a clean write, so a reload does not re-post.
+				wp_safe_redirect(
+					App::url( 'settings' ) . '?notice=' . ( $serve_result['saved'] ? 'saved' : 'unchanged' )
+				);
+				exit;
+			}
+		}
+
+		if ( '' === $serve_notice ) {
+			$serve_notice = in_array( (string) ( $_GET['notice'] ?? '' ), array( 'saved', 'unchanged' ), true )
+				? (string) $_GET['notice']
+				: '';
+		}
+
+		require SERVE_ROOT . '/views/settings.php';
 		exit;
 
 	case 'confirm':

@@ -323,3 +323,268 @@
 	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 }
+
+/* ── Settings and audit ──────────────────────────────────────────────────── */
+
+/*
+ * Bounded like the dashboard's own columns.
+ *
+ * A settings form stretched to a 2560px monitor gives a 40-character label a
+ * two-thousand-pixel input, which reads as a mistake rather than as generosity.
+ */
+.serve-settings,
+.serve-settings ~ .serve-setting {
+	max-width: 60rem;
+}
+
+.serve-setting {
+	margin-bottom: var(--serve-space-5);
+}
+
+.serve-setting__title {
+	margin: 0 0 var(--serve-space-1);
+	font-size: 1rem;
+	font-weight: 700;
+	color: var(--serve-navy);
+}
+
+/*
+ * Two fields side by side where there is room, stacked where there is not.
+ *
+ * auto-fit rather than a media query: the breakpoint is "does an 18rem field
+ * still fit", which is a property of the container and not of the viewport.
+ */
+.serve-setting__grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+	gap: var(--serve-space-4);
+	margin-top: var(--serve-space-4);
+}
+
+.serve-setting .serve-field {
+	margin-top: var(--serve-space-4);
+}
+
+.serve-setting__grid .serve-field {
+	margin-top: 0;
+}
+
+/* A field with a unit or prefix sitting against it. */
+.serve-setting__inline {
+	display: flex;
+	align-items: center;
+	gap: var(--serve-space-2);
+	min-width: 0;
+}
+
+.serve-setting__inline input {
+	min-width: 0;
+}
+
+/* The months / .churchcenter.com pieces: labels, not controls. */
+.serve-setting__unit {
+	flex: 0 0 auto;
+	font-size: .875rem;
+	color: var(--serve-text-muted);
+	white-space: nowrap;
+}
+
+/* A number field does not need to be as wide as an email one. */
+#serve-retention {
+	width: 7rem;
+	flex: 0 0 auto;
+}
+
+/*
+ * Help text under a field, not inside its label.
+ *
+ * Referenced by aria-describedby, so it is read after the label rather than
+ * competing with it.
+ */
+.serve-field__help {
+	margin: 0;
+	font-size: .75rem;
+	line-height: 1.5;
+	/* 5.4:1 on white. */
+	color: var(--serve-text-muted);
+}
+
+/*
+ * An error, in coral-dark rather than the brand coral.
+ *
+ * Brand coral is 3.0:1 on white and fails as text; its dark step is 5.4:1. The
+ * icon means the message does not depend on colour at all.
+ */
+.serve-field__error {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--serve-space-2);
+	margin: 0;
+	font-size: .8125rem;
+	line-height: 1.45;
+	color: var(--serve-coral-dark);
+}
+
+.serve-field__error svg {
+	flex: 0 0 auto;
+	width: 15px;
+	height: 15px;
+	margin-top: 2px;
+}
+
+.serve-field [aria-invalid="true"] {
+	border-color: var(--serve-coral-dark);
+	border-width: 2px;
+}
+
+.serve-setting__details {
+	margin-top: var(--serve-space-4);
+	font-size: .8125rem;
+}
+
+.serve-setting__details summary {
+	cursor: pointer;
+	color: var(--serve-teal-dark);
+}
+
+.serve-consent-text {
+	margin: var(--serve-space-3) 0 0;
+	padding: var(--serve-space-3);
+	font-size: .8125rem;
+	line-height: 1.6;
+	color: var(--serve-text);
+	background: var(--serve-sand);
+	border-radius: var(--serve-radius-sm);
+}
+
+/* A statement of fact under a section, not an action. */
+.serve-setting__fact {
+	margin: var(--serve-space-4) 0 0;
+	padding-top: var(--serve-space-3);
+	font-size: .75rem;
+	color: var(--serve-text-muted);
+	border-top: 1px solid var(--serve-border);
+}
+
+.serve-settings__actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-bottom: var(--serve-space-6);
+}
+
+.serve-settings__actions .serve-btn {
+	min-height: 44px;
+}
+
+/* ── Tables: the checklist and the trail ─────────────────────────────────── */
+
+/*
+ * The table scrolls, the page does not.
+ *
+ * Four columns of timestamps and action names do not fit a phone, and the
+ * choice is between a horizontally scrolling table and a page whose every
+ * other element is pushed off-screen by one wide row.
+ */
+.serve-table-scroll {
+	margin-top: var(--serve-space-4);
+	overflow-x: auto;
+	/* Keeps a focus ring on a cell from being clipped by the scroll container. */
+	padding: 2px;
+}
+
+.serve-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: .8125rem;
+}
+
+.serve-table th,
+.serve-table td {
+	padding: var(--serve-space-2) var(--serve-space-3);
+	text-align: left;
+	vertical-align: top;
+	border-bottom: 1px solid var(--serve-border);
+}
+
+.serve-table thead th {
+	font-size: .6875rem;
+	font-weight: 700;
+	letter-spacing: .04em;
+	text-transform: uppercase;
+	color: var(--serve-text-muted);
+	white-space: nowrap;
+	border-bottom-color: var(--serve-border-strong);
+}
+
+.serve-table tbody tr:last-child th,
+.serve-table tbody tr:last-child td {
+	border-bottom: 0;
+}
+
+/*
+ * A state as a word, with colour as reinforcement.
+ *
+ * Pass and Fail are legible in greyscale, to somebody colourblind, and in a
+ * forced-colours mode -- none of which is true of a green or red dot alone.
+ */
+.serve-state {
+	display: inline-block;
+	padding: 2px var(--serve-space-2);
+	font-size: .6875rem;
+	font-weight: 700;
+	letter-spacing: .03em;
+	text-transform: uppercase;
+	border-radius: var(--serve-radius-pill);
+	white-space: nowrap;
+}
+
+.serve-state--pass {
+	color: var(--serve-success);
+	background: var(--serve-success-soft);
+}
+
+.serve-state--fail {
+	color: var(--serve-coral-dark);
+	background: var(--serve-coral-soft);
+}
+
+.serve-state--warn {
+	color: var(--serve-navy);
+	background: var(--serve-sand);
+}
+
+/* Detail is prose and needs room to wrap rather than a clipped single line. */
+.serve-checks__detail {
+	min-width: 18rem;
+	color: var(--serve-text-muted);
+}
+
+.serve-audit__when {
+	white-space: nowrap;
+	color: var(--serve-text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.serve-audit__action code {
+	font-size: .75rem;
+	padding: 1px var(--serve-space-1);
+	background: var(--serve-sand);
+	border-radius: var(--serve-radius-sm);
+}
+
+.serve-audit__object {
+	white-space: nowrap;
+	color: var(--serve-text-muted);
+}
+
+/* Focus stays visible on everything on these screens. */
+.serve-setting :is(input, select, textarea, summary, button, a):focus-visible {
+	outline: 2px solid var(--serve-teal);
+	outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+	.serve-state {
+		border: 1px solid CanvasText;
+	}
+}
