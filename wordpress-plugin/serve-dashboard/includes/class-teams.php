@@ -403,6 +403,106 @@ final class Teams {
 	}
 
 	/**
+	 * Confirm one team's headcount, and optionally correct it on the way.
+	 *
+	 * Its own method rather than a call to save(). save() writes the whole team
+	 * -- target, minimum, safeguarding flag, leader -- so handing it just a
+	 * headcount would zero the rest as a side effect. That is the same defect
+	 * that once wiped two teams' vocabularies, and it is not a mistake worth
+	 * leaving a second opportunity for.
+	 *
+	 * Confirming is the point, and the correction is optional. Somebody who
+	 * looks at the number and finds it right has still done the thing being
+	 * asked for: the stale warning exists because nobody has looked, not because
+	 * the number is necessarily wrong.
+	 *
+	 * @param int      $team_id
+	 * @param int|null $current New headcount, or null to confirm what is there.
+	 * @return true|\WP_Error
+	 */
+	public static function confirm_headcount( int $team_id, ?int $current = null ) {
+		if ( ! current_user_can( Roles::CAP_MANAGE_TEAMS ) ) {
+			return new \WP_Error(
+				'serve_forbidden',
+				__( 'You cannot change team capacity.', 'serve-dashboard' ),
+				array( 'status' => 403 )
+			);
+		}
+
+		$team = self::get( $team_id );
+
+		if ( ! $team ) {
+			return new \WP_Error( 'serve_not_found', __( 'Team not found.', 'serve-dashboard' ), array( 'status' => 404 ) );
+		}
+
+		global $wpdb;
+
+		$fields  = array( 'headcount_checked_at' => current_time( 'mysql', true ) );
+		$formats = array( '%s' );
+
+		if ( null !== $current ) {
+			/*
+			 * Bounded to what the column can actually hold.
+			 *
+			 * current_headcount is `smallint(5) unsigned`, so 65535 is the real
+			 * ceiling and the first version of this capped at 100000 -- above
+			 * the column, and therefore never reached.
+			 *
+			 * Worth keeping even though MySQL clamps out-of-range values on its
+			 * own, because it only does that outside strict mode. On a host with
+			 * STRICT_TRANS_TABLES set -- which many are, and which WordPress
+			 * recommends -- an out-of-range write is an error rather than a
+			 * clamp, so the update fails and the leader is told their
+			 * confirmation could not be saved. Bounding here means a typo is
+			 * absorbed instead of refused.
+			 *
+			 * Note for anyone reading a test of this: on a non-strict server the
+			 * database enforces the same bound, so no test can tell the guard
+			 * from its absence. What is asserted is the guarantee -- nothing out
+			 * of range is stored -- not which layer provided it.
+			 */
+			$fields['current_headcount'] = max( 0, min( 65535, $current ) );
+			$formats[]                   = '%d';
+		}
+
+		$updated = $wpdb->update(
+			Schema::table( 'teams' ),
+			$fields,
+			array( 'id' => $team_id ),
+			$formats,
+			array( '%d' )
+		);
+
+		if ( false === $updated ) {
+			return new \WP_Error(
+				'serve_save_failed',
+				__( 'That could not be saved. Please try again.', 'serve-dashboard' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		/*
+		 * Logged as its own thing, with what the number was and what it became.
+		 * "Who last said this figure was right, and when" is the question the
+		 * whole stale-headcount mechanism exists to answer, and a bare
+		 * team.saved row cannot answer it.
+		 */
+		Audit::log(
+			Audit::ACTION_HEADCOUNT_CONFIRMED,
+			'team',
+			$team_id,
+			array(
+				'team'     => $team->slug,
+				'was'      => (int) $team->current_headcount,
+				'now'      => (int) ( $fields['current_headcount'] ?? $team->current_headcount ),
+				'adjusted' => null !== $current && (int) $current !== (int) $team->current_headcount,
+			)
+		);
+
+		return true;
+	}
+
+	/**
 	 * People who might fit one team, best-explained first.
 	 *
 	 * The inverse of the person-first view: a leader starts from the gap rather

@@ -96,6 +96,57 @@ final class Rest_Dashboard {
 			)
 		);
 
+		/*
+		 * Confirming a headcount without leaving the dashboard.
+		 *
+		 * The card that asks for this used to be a link to the Teams screen: a
+		 * whole-page navigation, away from the queue somebody was working, to
+		 * correct one number and then find their way back. The warning was
+		 * ignorable partly because acting on it cost more than ignoring it.
+		 */
+		register_rest_route(
+			$ns,
+			'/teams/(?P<id>\d+)/headcount',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => static function ( \WP_REST_Request $request ) {
+					$current = $request->get_param( 'current' );
+
+					$result = Teams::confirm_headcount(
+						(int) $request['id'],
+						null === $current ? null : (int) $current
+					);
+
+					if ( is_wp_error( $result ) ) {
+						return $result;
+					}
+
+					Metrics::flush();
+
+					/*
+					 * The gap panel and the stale list both move when a
+					 * headcount is confirmed, so the caller is handed the fresh
+					 * pair rather than being told to reload the page it was
+					 * trying not to leave.
+					 */
+					return new \WP_REST_Response(
+						array(
+							'ok'              => true,
+							'gaps'            => self::gap_rows(),
+							'headcountChecks' => self::headcount_rows(),
+						)
+					);
+				},
+				'permission_callback' => array( __CLASS__, 'can_manage_teams' ),
+				'args'                => array(
+					'current' => array(
+						'type'     => 'integer',
+						'required' => false,
+					),
+				),
+			)
+		);
+
 		register_rest_route(
 			$ns,
 			'/teams/(?P<id>\d+)/candidates',
@@ -399,14 +450,23 @@ final class Rest_Dashboard {
 		return current_user_can( Roles::CAP_MANAGE_PLACE );
 	}
 
+	/** Capacity is a different permission from moving people through stages. */
+	public static function can_manage_teams(): bool {
+		return current_user_can( Roles::CAP_MANAGE_TEAMS );
+	}
+
 	/**
-	 * Everything the dashboard home screen needs, in one request.
+	 * The gap panel's rows.
 	 *
-	 * One round trip rather than five, because these widgets are useless
-	 * individually and the payload is small.
+	 * Extracted so the dashboard payload and the confirm endpoint build them
+	 * from one place. A second copy is how the two views come to disagree about
+	 * the same five teams.
+	 *
+	 * @return array<int,array<string,mixed>>
 	 */
-	public static function dashboard(): \WP_REST_Response {
+	public static function gap_rows(): array {
 		$gaps = array();
+
 		foreach ( Teams::gaps() as $team ) {
 			$gaps[] = array(
 				'id'            => (int) $team->id,
@@ -429,28 +489,50 @@ final class Rest_Dashboard {
 			);
 		}
 
-		/*
-		 * Teams whose hand-typed headcount has been overtaken by placements.
-		 *
-		 * Only sent to somebody who can actually correct it. A ministry leader
-		 * can place people — and so cause the drift — but cannot edit team
-		 * capacity, so a card asking them to confirm a number they have no
-		 * permission to change would be an instruction to do nothing. They
-		 * still see the drift note on the gap bars themselves.
-		 */
-		$headcount_checks = array();
-		if ( current_user_can( Roles::CAP_MANAGE_TEAMS ) ) {
-			foreach ( Teams::needs_headcount_check( Roles::visible_team_ids() ) as $team ) {
-				$headcount_checks[] = array(
-					'id'          => (int) $team->id,
-					'name'        => $team->name,
-					'current'     => (int) $team->current_headcount,
-					'placedSince' => (int) $team->placed_since,
-					// Null means never confirmed, which is not "today".
-					'daysSince'   => $team->days_since_check,
-				);
-			}
+		return $gaps;
+	}
+
+	/**
+	 * Teams whose hand-typed headcount has been overtaken by placements.
+	 *
+	 * Only ever built for somebody who can correct it. A ministry leader can
+	 * place people -- and so cause the drift -- but cannot edit team capacity,
+	 * so a card asking them to confirm a number they have no permission to
+	 * change would be an instruction to do nothing. They still see the drift
+	 * note on the gap bars themselves.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function headcount_rows(): array {
+		if ( ! current_user_can( Roles::CAP_MANAGE_TEAMS ) ) {
+			return array();
 		}
+
+		$rows = array();
+
+		foreach ( Teams::needs_headcount_check( Roles::visible_team_ids() ) as $team ) {
+			$rows[] = array(
+				'id'          => (int) $team->id,
+				'name'        => $team->name,
+				'current'     => (int) $team->current_headcount,
+				'placedSince' => (int) $team->placed_since,
+				// Null means never confirmed, which is not "today".
+				'daysSince'   => $team->days_since_check,
+			);
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Everything the dashboard home screen needs, in one request.
+	 *
+	 * One round trip rather than five, because these widgets are useless
+	 * individually and the payload is small.
+	 */
+	public static function dashboard(): \WP_REST_Response {
+		$gaps             = self::gap_rows();
+		$headcount_checks = self::headcount_rows();
 
 		$teams = array();
 		foreach ( Teams::all() as $team ) {

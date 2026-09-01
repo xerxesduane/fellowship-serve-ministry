@@ -40,6 +40,15 @@ final class Audit {
 	public const ACTION_SAFEGUARD_SET    = 'safeguarding.updated';
 	public const ACTION_SAFEGUARD_BLOCK  = 'safeguarding.blocked';
 	public const ACTION_TEAM_SAVED       = 'team.saved';
+
+	/*
+	 * Somebody looked at a team's headcount and said it was right.
+	 *
+	 * Distinct from team.saved because it answers a different question. The
+	 * stale-headcount warning exists to get somebody to look; this is the record
+	 * that they did, who they were, and whether the number moved when they did.
+	 */
+	public const ACTION_HEADCOUNT_CONFIRMED = 'team.headcount_confirmed';
 	public const ACTION_CONSENT_RECORDED = 'consent.recorded';
 
 	/*

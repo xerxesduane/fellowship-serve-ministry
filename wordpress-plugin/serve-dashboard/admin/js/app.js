@@ -393,14 +393,115 @@ function renderHeadcountChecks(items) {
 			? 'never confirmed'
 			: `confirmed ${item.daysSince} day${item.daysSince === 1 ? '' : 's'} ago`;
 
-		return `<div class="serve-fu serve-fu--settling">
+		/*
+		 * Corrected here, rather than on the Teams screen.
+		 *
+		 * This was a link: a whole-page navigation, away from the queue somebody
+		 * was working, to change one number and then find their own way back.
+		 * The warning has been ignorable partly because acting on it cost more
+		 * than ignoring it.
+		 *
+		 * The field is pre-filled with the number that is already stored, not
+		 * with a guess at what it should be. Adding the placements on somebody's
+		 * behalf would put an inference in a field they are being asked to
+		 * vouch for -- and the count of those placements is on the line above,
+		 * which is the honest version of the same help.
+		 */
+		return `<form class="serve-fu serve-fu--settling" data-headcount-form="${esc(item.id)}">
 			<span class="serve-fu__open">
 				<span class="serve-fu__name">${esc(item.name)}</span>
 				<span class="serve-fu__when is-attention">${esc(item.placedSince)} placed since · ${esc(when)}</span>
 			</span>
-			<a class="serve-btn serve-btn--secondary serve-btn--sm" href="${esc(CONFIG.teamsUrl)}">Confirm</a>
-		</div>`;
+			<span class="serve-hc">
+				<label class="screen-reader-text" for="serve-hc-${esc(item.id)}">People serving on ${esc(item.name)}</label>
+				<input class="serve-hc__input" id="serve-hc-${esc(item.id)}" name="current" type="number"
+					min="0" max="65535" step="1" inputmode="numeric"
+					value="${esc(item.current)}" data-was="${esc(item.current)}">
+				<button type="submit" class="serve-btn serve-btn--secondary serve-btn--sm">Confirm</button>
+			</span>
+			<span class="serve-hc__error serve-note serve-note--warn" data-headcount-error hidden></span>
+		</form>`;
 	}).join('');
+}
+
+/**
+ * Confirm one team's headcount from the dashboard.
+ *
+ * Two outcomes worth telling apart, and the copy does: the number was corrected,
+ * or it was confirmed as already right. Both are the thing being asked for -- the
+ * warning exists because nobody has looked, not because the figure is
+ * necessarily wrong -- and a leader who checks and finds it correct should not be
+ * left wondering whether their click registered.
+ */
+function submitHeadcount(form) {
+	const input = form.querySelector('.serve-hc__input');
+	const button = form.querySelector('button[type="submit"]');
+	const error = form.querySelector('[data-headcount-error]');
+	const id = form.dataset.headcountForm;
+
+	error.hidden = true;
+
+	const value = Number(input.value);
+
+	if (!Number.isInteger(value) || value < 0) {
+		error.textContent = 'That needs to be a whole number of people, or zero.';
+		error.hidden = false;
+		input.focus();
+		return;
+	}
+
+	const was = Number(input.dataset.was);
+
+	button.disabled = true;
+	input.disabled = true;
+	button.textContent = 'Saving…';
+
+	api(`/teams/${encodeURIComponent(id)}/headcount`, {
+		method: 'POST',
+		body: JSON.stringify({ current: value })
+	})
+		.then((data) => {
+			/*
+			 * The gap bars move when a headcount is confirmed, so they are
+			 * repainted from what the server just sent rather than left showing
+			 * a shortfall the confirmation has already changed.
+			 */
+			if (data.gaps) {
+				renderGaps(data.gaps);
+			}
+
+			announce(value === was
+				? 'Headcount confirmed as correct'
+				: `Headcount updated to ${value}`);
+
+			/*
+			 * Replaced rather than removed. A row that vanishes on click looks
+			 * the same as one that failed and re-rendered, and the leader has no
+			 * way to tell whether the thing they were asked to do is done.
+			 */
+			form.outerHTML = `<p class="serve-note serve-note--ok">${
+				value === was
+					? 'Confirmed as correct. The gaps above are up to date.'
+					: `Updated to ${value}. The gaps above are up to date.`
+			}</p>`;
+
+			// Nothing left needing attention hides the whole card.
+			if (data.headcountChecks && !data.headcountChecks.length) {
+				const card = $('headcount-card');
+				const list = $('headcount-checks');
+
+				if (card && list && !list.querySelector('[data-headcount-form]')) {
+					card.hidden = true;
+				}
+			}
+		})
+		.catch((err) => {
+			button.disabled = false;
+			input.disabled = false;
+			button.textContent = 'Confirm';
+			error.textContent = err.message;
+			error.hidden = false;
+		});
 }
 
 function renderFollowups(items) {
@@ -1536,6 +1637,13 @@ function boot() {
 					error.textContent = err.message;
 					error.hidden = false;
 				});
+			return;
+		}
+
+		const headcount = event.target.closest('[data-headcount-form]');
+		if (headcount) {
+			event.preventDefault();
+			submitHeadcount(headcount);
 			return;
 		}
 
