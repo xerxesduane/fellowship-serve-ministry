@@ -32,11 +32,48 @@ final class Assets {
 	private static array $data = array();
 
 	public static function style( string $handle, string $url ): void {
-		self::$styles[ $handle ] = $url;
+		self::$styles[ $handle ] = self::versioned( $url );
 	}
 
 	public static function module( string $handle, string $url ): void {
-		self::$modules[ $handle ] = $url;
+		self::$modules[ $handle ] = self::versioned( $url );
+	}
+
+	/**
+	 * Attach a cache key to an enqueued URL.
+	 *
+	 * Enqueued assets were the one set of URLs going out unversioned. The views
+	 * build theirs through App::asset(), which appends the release and the
+	 * file's mtime; anything arriving here from wp_enqueue_script() kept the
+	 * bare path it was registered with.
+	 *
+	 * That is not a tidiness point. The asset route sends max-age=300, so an
+	 * edited file keeps being served from cache -- and the failure it produces
+	 * is genuinely misleading: serve-form.js was patched, curl returned the new
+	 * bytes, and the browser went on running the old copy, which threw on a
+	 * function that did not exist in it yet. The share form silently did not
+	 * prefill, and every visible cause pointed somewhere else.
+	 *
+	 * Same key as App::asset(), so the two agree.
+	 */
+	private static function versioned( string $url ): string {
+		if ( str_contains( $url, '?' ) ) {
+			return $url;
+		}
+
+		return App::asset( self::relative( $url ) );
+	}
+
+	/** The path App::asset() wants, recovered from an absolute URL. */
+	private static function relative( string $url ): string {
+		$base = rtrim( (string) parse_url( App::url(), PHP_URL_PATH ), '/' );
+		$path = (string) parse_url( $url, PHP_URL_PATH );
+
+		if ( '' !== $base && str_starts_with( $path, $base ) ) {
+			$path = substr( $path, strlen( $base ) );
+		}
+
+		return ltrim( $path, '/' );
 	}
 
 	/** @param array<string,mixed> $data */

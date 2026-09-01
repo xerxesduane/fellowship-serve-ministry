@@ -44,6 +44,11 @@ check "$plugin/admin/css/admin.css" "$standalone/public/admin/css/admin.css"
 check "$plugin/admin/js/app.js"     "$standalone/public/admin/js/app.js"
 check "$plugin/admin/js/admin.js"   "$standalone/public/admin/js/admin.js"
 
+# The share step's form and its stylesheet. Shared for the same reason as the
+# rest: both builds ask the same question of the same person, in the same words.
+check "$plugin/public/js/serve-form.js"   "$standalone/public/js/serve-form.js"
+check "$plugin/public/css/serve-form.css" "$standalone/public/css/serve-form.css"
+
 for f in "$plugin"/public/assessment/*; do
 	check "$f" "$standalone/public/assessment/$(basename "$f")"
 done

@@ -151,7 +151,11 @@ final class App {
 		 * Cost is one stat() per asset, four per page, against a local file the
 		 * OS has already cached.
 		 */
-		$file = SERVE_ROOT . '/public/' . ltrim( $path, '/' );
+		/*
+		 * A leading "public/" is accepted, because the ported code builds asset
+		 * URLs that way -- see the alias in the front controller's asset route.
+		 */
+		$file = SERVE_ROOT . '/public/' . preg_replace( '#^public/#', '', ltrim( $path, '/' ) );
 
 		if ( is_file( $file ) ) {
 			$version .= '-' . filemtime( $file );

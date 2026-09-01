@@ -114,16 +114,11 @@ if ( 'admin-post.php' === $serve_path ) {
 	$serve_action = sanitize_key( (string) ( $_REQUEST['action'] ?? '' ) );
 
 	if ( '' === $serve_action || ! \Serve\Platform\Hooks::has( 'admin_post_' . $serve_action ) ) {
-		http_response_code( 400 );
-		serve_view(
-			'message',
-			array(
-				'heading' => __( 'That action does not exist' ),
-				'detail'  => __( 'The link may be from an older version of this page. Reload and try again.' ),
-			),
-			__( 'Unknown action' )
+		serve_message(
+			__( 'That action does not exist' ),
+			__( 'The link may be from an older version of this page. Reload and try again.' ),
+			400
 		);
-		exit;
 	}
 
 	serve_require_login( '' );
@@ -160,7 +155,7 @@ if ( 'admin-post.php' === $serve_path ) {
  * untouched. Rewriting them instead would mean editing several files to change
  * a string that is correct in the build they came from.
  */
-if ( preg_match( '#^(?:public/)?(?:assessment|admin)/#', $serve_path ) ) {
+if ( preg_match( '#^(?:public/)?(?:assessment|admin|css|js)/#', $serve_path ) ) {
 	$serve_relative = preg_replace( '#^public/#', '', $serve_path );
 	$serve_file     = realpath( __DIR__ . '/' . $serve_relative );
 	$serve_ok   = false !== $serve_file && str_starts_with( $serve_file, realpath( __DIR__ ) . DIRECTORY_SEPARATOR );
@@ -193,30 +188,27 @@ if ( preg_match( '#^(?:public/)?(?:assessment|admin)/#', $serve_path ) ) {
 
 Hardening::send_headers( ! in_array( $serve_path, array( '', 'assessment', 'privacy' ), true ) );
 
-/** Render a view with the shared layout. */
-function serve_view( string $view, array $data = array(), string $title = 'SERVE' ): void {
-	$serve_title = $title;
-	$serve_body  = $view;
+/**
+ * Render the outcome page: not allowed, or not found.
+ *
+ * Replaces the old serve_view()/views/layout.php pair. The layout's top-bar
+ * classes were never styled, so every error page was served as browser default.
+ */
+function serve_message( string $heading, string $detail, int $status ): void {
+	http_response_code( $status );
 
-	extract( $data, EXTR_SKIP );
+	require SERVE_ROOT . '/views/message.php';
 
-	require SERVE_ROOT . '/views/layout.php';
+	exit;
 }
 
 /** Refuse a signed-in caller who may not use this screen. */
 function serve_denied(): void {
-	http_response_code( 403 );
-
-	serve_view(
-		'message',
-		array(
-			'heading' => __( 'You do not have access to this screen' ),
-			'detail'  => __( 'If you think you should, ask whoever set up your account to check your role.' ),
-		),
-		__( 'No access' )
+	serve_message(
+		__( 'You do not have access to this screen' ),
+		__( 'If you think you should, ask whoever set up your account to check your role.' ),
+		403
 	);
-
-	exit;
 }
 
 /**
@@ -421,6 +413,14 @@ switch ( $serve_path ) {
 		require SERVE_ROOT . '/views/canvas.php';
 		exit;
 
+	case 'share':
+		/*
+		 * The share step. Public: whoever finished the journey has no account,
+		 * and the form's own consent checkbox is the gate that matters.
+		 */
+		require SERVE_ROOT . '/views/share.php';
+		exit;
+
 	case 'privacy':
 		/*
 		 * Its own document, like the journey and the dashboard.
@@ -573,14 +573,5 @@ switch ( $serve_path ) {
 		exit;
 
 	default:
-		http_response_code( 404 );
-		serve_view(
-			'message',
-			array(
-				'heading' => __( 'That page does not exist' ),
-				'detail'  => '',
-			),
-			__( 'Not found' )
-		);
-		exit;
+		serve_message( __( 'That page does not exist' ), '', 404 );
 }

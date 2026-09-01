@@ -238,3 +238,36 @@ body.serve-document {
 		background: CanvasText;
 	}
 }
+
+/* ── Outcome pages: not allowed, not found ───────────────────────────────── */
+
+.serve-message {
+	max-width: 34rem;
+}
+
+.serve-message__title {
+	margin: 0;
+	font-size: 1.375rem;
+	font-weight: 700;
+	line-height: 1.3;
+	color: var(--serve-navy);
+}
+
+.serve-message__detail {
+	margin: var(--serve-space-3) 0 0;
+	line-height: 1.6;
+	color: var(--serve-text-muted);
+}
+
+.serve-message__links {
+	margin: var(--serve-space-5) 0 0;
+	padding-top: var(--serve-space-4);
+	font-size: .875rem;
+	border-top: 1px solid var(--serve-border);
+}
+
+.serve-message__links a {
+	color: var(--serve-teal-dark);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}

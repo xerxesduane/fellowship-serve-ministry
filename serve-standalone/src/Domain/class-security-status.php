@@ -31,7 +31,7 @@ final class Security_Status {
 		return array(
 			self::check_https(),
 			self::check_db_user(),
-			self::check_file_editing(),
+			self::check_config_permissions(),
 			self::check_two_factor(),
 			self::check_mail(),
 			self::check_cron(),
@@ -256,62 +256,142 @@ final class Security_Status {
 		);
 	}
 
-	private static function check_file_editing(): array {
-		$disabled = defined( 'DISALLOW_FILE_EDIT' ) && DISALLOW_FILE_EDIT;
+	/**
+	 * Who can read the config file.
+	 *
+	 * Replaces a check for DISALLOW_FILE_EDIT, which asked whether an
+	 * administrator could edit plugin code from the browser. There is no plugin
+	 * editor here and no administrator account that could reach one, so the
+	 * check had nothing to measure and reported a WARN about a risk that does
+	 * not exist -- which is worse than silence, because a checklist nobody
+	 * believes is a checklist nobody reads.
+	 *
+	 * What replaces it is the equivalent risk in this build. config/config.php
+	 * holds the database password and the secret that signs session cookies and
+	 * email confirmation tokens. On shared hosting, group- or world-readable is
+	 * enough for another account on the same machine to take both.
+	 */
+	private static function check_config_permissions(): array {
+		$path = SERVE_ROOT . '/config/config.php';
+
+		if ( ! is_file( $path ) ) {
+			return self::row(
+				__( 'Configuration file' ),
+				self::WARN,
+				__( 'No config file was found, which should not be possible while this page is rendering.' ),
+				__( 'Check that config/config.php exists and is readable by the web server.' )
+			);
+		}
+
+		/*
+		 * Windows does not report meaningful POSIX permissions, so saying
+		 * anything definite there would be inventing a result.
+		 */
+		if ( '/' !== DIRECTORY_SEPARATOR ) {
+			return self::row(
+				__( 'Configuration file' ),
+				self::WARN,
+				__( 'Permissions cannot be read reliably on Windows. This is a development machine concern only.' ),
+				__( 'On the server, make config/config.php readable by the web server user and nobody else (chmod 600).' )
+			);
+		}
+
+		$mode  = fileperms( $path ) & 0777;
+		$loose = (bool) ( $mode & 0077 );
 
 		return self::row(
-			__( 'Theme and plugin file editing', 'serve-dashboard' ),
-			$disabled ? self::PASS : self::WARN,
-			$disabled
-				? __( 'In-browser file editing is disabled.', 'serve-dashboard' )
-				: __( 'An administrator account could edit plugin code from the browser, which turns one stolen password into full server access.', 'serve-dashboard' ),
-			$disabled ? '' : __( "Add define( 'DISALLOW_FILE_EDIT', true ); to wp-config.php.", 'serve-dashboard' )
+			__( 'Configuration file' ),
+			$loose ? self::FAIL : self::PASS,
+			$loose
+				/* translators: %s: octal file permissions, for example 644. */
+				? sprintf( __( 'config/config.php is mode %s, so other accounts on this server can read the database password and the session secret.' ), decoct( $mode ) )
+				/* translators: %s: octal file permissions. */
+				: sprintf( __( 'config/config.php is mode %s: readable by its owner only.' ), decoct( $mode ) ),
+			$loose ? __( 'Run: chmod 600 config/config.php' ) : ''
 		);
 	}
 
+	/**
+	 * A second factor, which this build does not have.
+	 *
+	 * The old version searched the installed plugins for a two-factor plugin.
+	 * There are no plugins here, so it always reported "none detected" -- true
+	 * by accident and for the wrong reason.
+	 *
+	 * The risk it was pointing at is unchanged and worth reporting plainly: an
+	 * account reaching this dashboard reaches other people's spiritual gifts,
+	 * phone numbers and pastoral history with a password alone. So this states
+	 * that as a fact about the build rather than dressing it as a missing
+	 * plugin, and names the two ways to fix it that actually apply.
+	 */
 	private static function check_two_factor(): array {
-		$present = self::plugin_matching( '/two.?factor|2fa|authenticator|wordfence-login/i' );
-
-		$leaders = count(
-			get_users(
-				array(
-					'role__in' => array( Roles::ROLE_LEADER, Roles::ROLE_PASTOR ),
-					'fields'   => 'ids',
-				)
-			)
-		);
+		$leaders = count( get_users( array( 'capability' => Roles::CAP_VIEW_DASHBOARD ) ) );
+		$leaders = max( 1, $leaders );
 
 		return self::row(
-			__( 'Two-factor authentication', 'serve-dashboard' ),
-			$present ? self::PASS : self::WARN,
-			$present
-				? __( 'A two-factor plugin is active.', 'serve-dashboard' )
-				: sprintf(
-					/* translators: %d: number of leader accounts. */
-					_n(
-						'No two-factor plugin detected. %d leader account can reach personal profiles with a password alone.',
-						'No two-factor plugin detected. %d leader accounts can reach personal profiles with a password alone.',
-						max( 1, $leaders ),
-						'serve-dashboard'
-					),
-					max( 1, $leaders )
+			__( 'Two-factor authentication' ),
+			self::WARN,
+			sprintf(
+				/* translators: %d: number of accounts that can open the dashboard. */
+				_n(
+					'This application authenticates with a password only. %d account can reach personal profiles with one.',
+					'This application authenticates with a password only. %d accounts can reach personal profiles with one.',
+					$leaders,
+					'serve'
 				),
-			$present ? '' : __( 'Install a two-factor plugin and require it for every SERVE Pastor and Ministry Leader account.', 'serve-dashboard' )
+				$leaders
+			),
+			__( 'Put the dashboard behind single sign-on or a reverse proxy that enforces a second factor. Failing that, treat these passwords as you would the church bank account.' )
 		);
 	}
 
+	/**
+	 * Where outgoing email actually goes.
+	 *
+	 * The old version searched for an SMTP plugin, which in this build meant it
+	 * could only ever report "default PHP mailer" -- and that was not merely
+	 * imprecise, it was the wrong warning. The default here is a log transport
+	 * that writes messages to a file and sends nothing, so on a fresh install
+	 * the truth is stronger than the old text: no confirmation email is
+	 * reaching anybody at all, which means no profile can ever be confirmed and
+	 * nothing reaches a leader.
+	 *
+	 * A configuration this application can read is better than a plugin list it
+	 * has to guess from, so it reads the configuration.
+	 */
 	private static function check_mail(): array {
-		// Verification is useless if the email never arrives, and shared hosting
-		// mail is routinely filtered as spam.
-		$smtp = self::plugin_matching( '/smtp|postmark|sendgrid|mailgun|amazon-?ses|brevo|sparkpost|fluent-?smtp/i' );
+		$transport = (string) \Serve\Platform\App::config( 'mail.transport', 'log' );
+
+		if ( 'smtp' !== $transport ) {
+			return self::row(
+				__( 'Outgoing email' ),
+				self::FAIL,
+				__( 'Mail is written to var/mail.log and not sent. Nobody receives a confirmation link, so no profile can be confirmed and nothing reaches a leader.' ),
+				__( "Set mail.transport to 'smtp' in config/config.php with an authenticated account, and set SPF, DKIM and DMARC for the domain." )
+			);
+		}
+
+		$host = (string) \Serve\Platform\App::config( 'mail.host', '' );
+		$from = (string) \Serve\Platform\App::config( 'mail.from', '' );
+
+		if ( '' === $host || '' === $from ) {
+			return self::row(
+				__( 'Outgoing email' ),
+				self::FAIL,
+				__( 'SMTP is selected but the host or the from address is missing, so every send fails.' ),
+				__( 'Fill in mail.host and mail.from in config/config.php.' )
+			);
+		}
 
 		return self::row(
-			__( 'Outgoing email', 'serve-dashboard' ),
-			$smtp ? self::PASS : self::WARN,
-			$smtp
-				? __( 'A dedicated mail service is configured.', 'serve-dashboard' )
-				: __( 'Confirmation emails are going through the default PHP mailer, which is often silently filtered as spam. If they do not arrive, nobody can confirm a profile and no submission ever reaches a leader.', 'serve-dashboard' ),
-			$smtp ? '' : __( 'Send mail through an authenticated SMTP or transactional email service, and set SPF, DKIM and DMARC for the domain.', 'serve-dashboard' )
+			__( 'Outgoing email' ),
+			self::PASS,
+			sprintf(
+				/* translators: %s: SMTP host name. */
+				__( 'Sending through %s over an authenticated connection.' ),
+				$host
+			),
+			__( 'Check that SPF, DKIM and DMARC are set for the sending domain, which this cannot verify from here.' )
 		);
 	}
 

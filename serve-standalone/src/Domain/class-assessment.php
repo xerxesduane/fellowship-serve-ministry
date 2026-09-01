@@ -294,26 +294,18 @@ final class Assessment {
 		);
 	}
 
+	/**
+	 * Where the share step lives.
+	 *
+	 * In the plugin this hunted for a published page carrying the consent
+	 * shortcode, because that is where the form had to be. There are no pages
+	 * here, so it is a route -- and that is not a tidy-up: looking for a page it
+	 * could never find, this returned an empty string, the journey took the
+	 * "no share step configured" branch, and a participant finished nineteen
+	 * steps with no way to send anything. The final step was silently absent.
+	 */
 	public static function consent_url(): string {
-		$page_id = (int) get_option( self::OPTION_CONSENT_PAGE, 0 );
-
-		if ( $page_id > 0 && 'publish' === get_post_status( $page_id ) ) {
-			return (string) get_permalink( $page_id );
-		}
-
-		// Fall back to any published page carrying the consent shortcode, so a
-		// site that was set up by hand still links correctly.
-		$found = get_posts(
-			array(
-				'post_type'      => 'page',
-				'post_status'    => 'publish',
-				'posts_per_page' => 1,
-				's'              => 'serve_shape_consent',
-				'fields'         => 'ids',
-			)
-		);
-
-		return $found ? (string) get_permalink( (int) $found[0] ) : '';
+		return \Serve\Platform\App::url( 'share' );
 	}
 
 	/**
