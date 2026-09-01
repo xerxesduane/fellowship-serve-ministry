@@ -23,3 +23,6 @@ Thumbs.db
 wp-config.php
 debug.log
 mail.log
+
+# Local Claude Code permissions — machine-specific XAMPP paths.
+.claude/settings.local.json
