@@ -192,6 +192,27 @@ final class App {
 		echo '</details>';
 	}
 
+	/**
+	 * The way out of the dashboard.
+	 *
+	 * The plugin sends a leader back to the WordPress admin here. There is no
+	 * WordPress admin in this build, and the link that said so was pointing at
+	 * the participant assessment -- an exit that both lied about where it went
+	 * and left the session signed in.
+	 *
+	 * A form rather than a link, because logging out is a write: index.php only
+	 * accepts a POST for it, so that an <img src=".../logout"> on any page
+	 * cannot sign a leader out from under them.
+	 */
+	public static function exit_control(): void {
+		printf(
+			'<form class="serve-exitform" method="post" action="%s">%s<button type="submit" class="serve-exit">%s</button></form>',
+			esc_url( \Serve\Platform\App::url( 'logout' ) ),
+			wp_nonce_field( 'serve_logout', '_serve_nonce', true, false ),
+			esc_html__( 'Sign out', 'serve-dashboard' )
+		);
+	}
+
 	public static function render(): void {
 		if ( ! current_user_can( Roles::CAP_VIEW_DASHBOARD ) ) {
 			wp_die( esc_html__( 'You do not have access to the SERVE dashboard.', 'serve-dashboard' ) );

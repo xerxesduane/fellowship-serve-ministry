@@ -1,0 +1,325 @@
+/*
+ * What belongs to this build and not to the plugin.
+ *
+ * admin/css/app.css is shared with the WordPress plugin byte for byte and
+ * tools/check-shared-frontend.sh enforces that, so anything true only of the
+ * standalone application has to live somewhere else. This is that somewhere.
+ *
+ * Two kinds of thing are in here:
+ *
+ *   1. Corrections for assumptions app.css makes about running inside the
+ *      WordPress admin, which are wrong here.
+ *   2. The Teams and gaps screen, which exists only in this build. In the
+ *      plugin it is a WordPress list table wearing WordPress's own chrome.
+ */
+
+/* ── There is no admin bar ──────────────────────────────────────────────── */
+
+/*
+ * app.css offsets the sticky sidebar and the drawer by
+ * var(--wp-admin--admin-bar--height, 32px) -- WordPress's own variable, and a
+ * sensible fallback in a build that always has an admin bar above it.
+ *
+ * This build has nothing above it. The fallback pushed the sidebar 32px down
+ * the page and then asked it to be 32px taller than the space left, so a
+ * sidebar that fits exactly grew its own scrollbar and hid the sign-out control
+ * below the fold. Declaring the variable is enough; every rule already reads it.
+ */
+.serve-app {
+	--wp-admin--admin-bar--height: 0px;
+}
+
+/* ── The sign-out control ───────────────────────────────────────────────── */
+
+/*
+ * Logging out is a POST (see App::exit_control), so the control is a button in
+ * a form where the plugin has a link. It is the same control to the person
+ * using it and should look like one.
+ */
+.serve-exitform {
+	margin: 0;
+}
+
+.serve-sidebar .serve-exit {
+	padding: 0;
+	font: inherit;
+	font-size: .8125rem;
+	color: rgba(255, 255, 255, .7);
+	background: none;
+	border: 0;
+	text-align: left;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+	cursor: pointer;
+}
+
+.serve-sidebar .serve-exit:hover {
+	color: #fff;
+}
+
+/* ── Teams and gaps ─────────────────────────────────────────────────────── */
+
+/*
+ * A board of teams rather than a ten-column table.
+ *
+ * The plugin's version is a WordPress list table: ten columns, of which four
+ * are number boxes and two are checkboxes, with a save button on every row. It
+ * works, and it reads like database maintenance -- which is the wrong frame for
+ * the screen that decides what "short of people" means everywhere else in the
+ * product. Each team is one card here, the shortfall is drawn rather than
+ * spelled, and the whole board saves once.
+ */
+.serve-teams {
+	display: grid;
+	gap: var(--serve-space-4);
+	grid-template-columns: minmax(0, 1fr);
+	/*
+	 * Each card is as tall as its own contents. Stretched to the row, a team
+	 * with nothing to confirm grows a hand's width of empty card to match the
+	 * one beside it that has, which reads as something failing to render.
+	 */
+	align-items: start;
+}
+
+@media (min-width: 900px) {
+	.serve-teams {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (min-width: 1280px) {
+	.serve-teams {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+
+.serve-team {
+	display: flex;
+	flex-direction: column;
+	gap: var(--serve-space-3);
+}
+
+/* A retired team stays legible, but should not read as one of the live ones. */
+.serve-team.is-retired {
+	background: var(--serve-sand);
+}
+
+.serve-team__head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--serve-space-3);
+}
+
+.serve-team__name {
+	font-size: 1rem;
+	font-weight: 600;
+}
+
+.serve-team__gifts {
+	margin-top: 2px;
+	font-size: .75rem;
+	line-height: 1.5;
+	color: var(--serve-text-muted);
+}
+
+/*
+ * The shortfall, said in words as well as drawn.
+ *
+ * The bar alone would put the one number this screen exists to produce into a
+ * length, and a length cannot be read out, copied, or trusted to a pixel.
+ */
+.serve-team__state {
+	font-size: .8125rem;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.serve-team__state--short {
+	color: var(--serve-coral-dark);
+}
+
+.serve-team__state--ok {
+	color: var(--serve-success);
+}
+
+.serve-team__state--unset {
+	color: var(--serve-text-muted);
+	font-weight: 500;
+}
+
+/* The three numbers, side by side, each with its own visible label. */
+.serve-team__numbers {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: var(--serve-space-3);
+}
+
+.serve-field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--serve-space-1);
+	min-width: 0;
+}
+
+.serve-field > span {
+	font-size: .6875rem;
+	font-weight: 700;
+	letter-spacing: .04em;
+	text-transform: uppercase;
+	color: var(--serve-text-muted);
+}
+
+.serve-field input,
+.serve-field select,
+.serve-field textarea {
+	width: 100%;
+	min-height: 40px;
+	padding: var(--serve-space-2) var(--serve-space-3);
+	font: inherit;
+	font-size: .875rem;
+	color: var(--serve-text);
+	background: var(--serve-surface);
+	border: 1px solid var(--serve-border-strong);
+	border-radius: var(--serve-radius-sm);
+}
+
+.serve-field textarea {
+	min-height: 72px;
+	line-height: 1.5;
+	resize: vertical;
+}
+
+/* Two checkboxes and their words, which have to stay next to each other. */
+.serve-team__flags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--serve-space-2) var(--serve-space-4);
+}
+
+.serve-check {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--serve-space-2);
+	/* A 44px row, so the label is part of the target and not just next to it. */
+	min-height: 44px;
+	font-size: .8125rem;
+}
+
+.serve-check input {
+	width: 18px;
+	height: 18px;
+	accent-color: var(--serve-teal);
+}
+
+.serve-team__about > summary {
+	cursor: pointer;
+	font-size: .8125rem;
+	font-weight: 600;
+	color: var(--serve-text-muted);
+}
+
+.serve-team__about > summary:hover {
+	color: var(--serve-text);
+}
+
+.serve-team__about[open] > summary {
+	margin-bottom: var(--serve-space-2);
+}
+
+/*
+ * The confirmation, which is the only way to answer "1 placed since you last
+ * checked this" with "and the number is still right".
+ */
+.serve-team__confirm {
+	padding: var(--serve-space-3);
+	border-radius: var(--serve-radius-sm);
+	background: var(--serve-coral-soft);
+}
+
+.serve-team__confirm p {
+	font-size: .75rem;
+	line-height: 1.5;
+	color: var(--serve-coral-dark);
+}
+
+.serve-team__confirm .serve-check {
+	min-height: 36px;
+	font-weight: 600;
+	color: var(--serve-coral-dark);
+}
+
+/* ── The one save, kept in reach ────────────────────────────────────────── */
+
+/*
+ * A save button per team means sixteen of them, and a leader setting targets
+ * for the first time saves sixteen times. One button saves the board -- and
+ * sticks to the bottom of the viewport, because with sixteen cards the button
+ * is otherwise a screen and a half below whatever you just typed.
+ */
+/*
+ * Not sticky on a phone. The bar is a paragraph and a button, which is a fifth
+ * of a phone viewport spent permanently on a control that is only wanted once;
+ * at that width the board is a single column and the end of it is a scroll away
+ * regardless.
+ */
+@media (min-width: 768px) {
+	.serve-teams-actions {
+		position: sticky;
+		bottom: 0;
+		z-index: 5;
+	}
+}
+
+.serve-teams-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--serve-space-3);
+	margin-top: var(--serve-space-4);
+	padding: var(--serve-space-3) var(--serve-space-4);
+	background: var(--serve-surface);
+	border: 1px solid var(--serve-border);
+	border-radius: var(--serve-radius);
+	box-shadow: var(--serve-shadow);
+}
+
+/*
+ * Room under the board for the bar to sit over.
+ *
+ * A sticky footer covers whatever is beneath it, and what was beneath it was
+ * the last card of the board and the safeguarding note -- permanently, because
+ * there was nothing left to scroll.
+ */
+.serve-app[data-view="teams"] .serve-main {
+	padding-bottom: var(--serve-space-7);
+}
+
+.serve-teams-actions p {
+	font-size: .8125rem;
+	color: var(--serve-text-muted);
+	max-width: 68ch;
+}
+
+/* ── The summary strip above the board ──────────────────────────────────── */
+
+.serve-teams-summary {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--serve-space-3);
+	margin-bottom: var(--serve-space-5);
+}
+
+@media (min-width: 768px) {
+	.serve-teams-summary {
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+	}
+}
+
+/* Read-only, for somebody who may look at this screen but not change it. */
+.serve-readonly {
+	font-size: .875rem;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}

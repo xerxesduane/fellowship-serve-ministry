@@ -25,6 +25,7 @@ use Serve_Dashboard\Assessment;
 use Serve_Dashboard\Hardening;
 use Serve_Dashboard\Privacy_Page;
 use Serve_Dashboard\Roles;
+use Serve_Dashboard\Teams;
 
 serve_boot();
 
@@ -173,6 +174,88 @@ function serve_denied(): void {
 	exit;
 }
 
+/**
+ * Write the teams whose values the leader actually changed.
+ *
+ * Every team on the board is submitted, changed or not, because that is what a
+ * form does. Writing all of them would be wrong rather than merely wasteful:
+ * Teams::save() stamps headcount_checked_at on each write, so one corrected
+ * target would mark every headcount in the church as freshly confirmed and
+ * silence the drift warning everywhere at once.
+ *
+ * So each row is compared with what is stored and skipped when it matches.
+ * $confirmed carries the teams whose figure the leader has explicitly said is
+ * right as it stands; those are written even though nothing changed, because
+ * confirming is the whole point of the checkbox.
+ *
+ * @param array<int|string,mixed> $submitted Raw $_POST['teams'].
+ * @param int[]                   $confirmed Team ids ticked as already correct.
+ * @return bool Whether anything was written.
+ */
+function serve_save_teams( array $submitted, array $confirmed ): bool {
+	$wrote = false;
+
+	foreach ( $submitted as $id => $fields ) {
+		$id = (int) $id;
+
+		if ( $id <= 0 || ! is_array( $fields ) ) {
+			continue;
+		}
+
+		$team = Teams::get( $id );
+
+		if ( ! $team ) {
+			continue;
+		}
+
+		/*
+		 * An unchecked checkbox is not submitted at all, so its absence is the
+		 * value 0 rather than "leave this alone". Normalised here so the
+		 * comparison below sees the same shape on both sides.
+		 */
+		$wanted = array(
+			'current_headcount'     => max( 0, (int) ( $fields['current_headcount'] ?? 0 ) ),
+			'target_headcount'      => max( 0, (int) ( $fields['target_headcount'] ?? 0 ) ),
+			'min_headcount'         => max( 0, (int) ( $fields['min_headcount'] ?? 0 ) ),
+			'leader_user_id'        => max( 0, (int) ( $fields['leader_user_id'] ?? 0 ) ),
+			'requires_safeguarding' => empty( $fields['requires_safeguarding'] ) ? 0 : 1,
+			'is_active'             => empty( $fields['is_active'] ) ? 0 : 1,
+		);
+
+		$current = array(
+			'current_headcount'     => (int) $team->current_headcount,
+			'target_headcount'      => (int) $team->target_headcount,
+			'min_headcount'         => (int) $team->min_headcount,
+			'leader_user_id'        => (int) $team->leader_user_id,
+			'requires_safeguarding' => (int) $team->requires_safeguarding,
+			'is_active'             => (int) $team->is_active,
+		);
+
+		/*
+		 * Keywords are compared after parsing, not as raw text: re-saving every
+		 * team because somebody's browser normalised a trailing comma would
+		 * defeat the whole point of this comparison.
+		 */
+		$keywords_changed = false;
+
+		if ( array_key_exists( 'keywords', $fields ) ) {
+			$keywords_changed = Teams::parse_keywords( (string) $fields['keywords'] ) !== Teams::keyword_list( $team );
+		}
+
+		if ( $wanted === $current && ! $keywords_changed && ! in_array( $id, $confirmed, true ) ) {
+			continue;
+		}
+
+		if ( array_key_exists( 'keywords', $fields ) ) {
+			$wanted['keywords'] = (string) $fields['keywords'];
+		}
+
+		$wrote = Teams::save( $id, $wanted ) || $wrote;
+	}
+
+	return $wrote;
+}
+
 /** Send somebody to the login screen, remembering where they were going. */
 function serve_require_login( string $wanted ): void {
 	if ( App::auth()->current_id() > 0 ) {
@@ -238,11 +321,48 @@ switch ( $serve_path ) {
 	case 'teams':
 		serve_require_login( 'teams' );
 
-		if ( ! current_user_can( Roles::CAP_MANAGE_TEAMS ) ) {
+		/*
+		 * Seeing the board and changing it are different permissions.
+		 *
+		 * This used to require CAP_MANAGE_TEAMS to open the screen at all,
+		 * which meant a leader who could read every gap figure on the dashboard
+		 * could not see the numbers those figures were worked out from. The
+		 * view is gated on the dashboard capability and the form on the
+		 * managing one; the page renders read-only for everybody else, and
+		 * Teams::save() refuses regardless of what is posted.
+		 */
+		if ( ! current_user_can( Roles::CAP_VIEW_DASHBOARD ) ) {
 			serve_denied();
 		}
 
-		serve_view( 'teams', array(), __( 'Teams and gaps' ) );
+		$serve_notice = '';
+
+		if ( 'POST' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+			check_admin_referer( 'serve_save_teams' );
+
+			if ( ! current_user_can( Roles::CAP_MANAGE_TEAMS ) ) {
+				serve_denied();
+			}
+
+			$serve_notice = serve_save_teams(
+				(array) ( $_POST['teams'] ?? array() ),
+				array_map( 'intval', array_keys( (array) ( $_POST['confirm'] ?? array() ) ) )
+			) ? 'saved' : 'unchanged';
+
+			/*
+			 * Redirect after the write, so a reload does not offer to post the
+			 * whole board again -- and so the page that renders is reading the
+			 * teams table rather than what was submitted to it.
+			 */
+			wp_safe_redirect( App::url( 'teams' ) . '?notice=' . $serve_notice );
+			exit;
+		}
+
+		$serve_notice = in_array( (string) ( $_GET['notice'] ?? '' ), array( 'saved', 'unchanged' ), true )
+			? (string) $_GET['notice']
+			: '';
+
+		require SERVE_ROOT . '/views/teams.php';
 		exit;
 
 	case 'confirm':

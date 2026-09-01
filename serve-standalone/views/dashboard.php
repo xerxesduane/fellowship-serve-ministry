@@ -45,6 +45,18 @@ nocache_headers();
 
 	<link rel="stylesheet" href="<?php echo esc_url( Platform::asset( 'admin/css/app.css' ) ); ?>">
 	<link rel="stylesheet" href="<?php echo esc_url( Platform::asset( 'admin/css/admin.css' ) ); ?>">
+	<?php
+	/*
+	 * Last, and only in this build.
+	 *
+	 * app.css is shared byte-for-byte with the plugin, and it assumes a
+	 * WordPress admin bar above it -- an assumption that is wrong here and gave
+	 * the sidebar a scrollbar and a sign-out control below the fold. This sheet
+	 * corrects what only this build gets wrong; it must load after the sheet it
+	 * corrects.
+	 */
+	?>
+	<link rel="stylesheet" href="<?php echo esc_url( Platform::asset( 'admin/css/standalone.css' ) ); ?>">
 </head>
 <body class="serve-app-fullscreen">
 
