@@ -287,13 +287,26 @@ test(
 		$placements = Schema::table( 'placements' );
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name is not user input.
 		$wpdb->query( "RENAME TABLE {$placements} TO {$placements}_hidden" );
-		$wpdb->suppress_errors( true );
 
-		$result = Submissions::set_status( $id, Schema::STATUS_PLACED, (int) $welcome->id );
+		/*
+		 * The rename-back is in a finally, because it has to happen.
+		 *
+		 * Anything that threw between the two renames used to leave the table
+		 * hidden for the rest of the run -- and for every later run against the
+		 * same database. Eleven tests then failed with "no placement was
+		 * created", which points at placements and not at the test that moved
+		 * the table out from under them.
+		 */
+		try {
+			$wpdb->suppress_errors( true );
 
-		$wpdb->suppress_errors( false );
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name is not user input.
-		$wpdb->query( "RENAME TABLE {$placements}_hidden TO {$placements}" );
+			$result = Submissions::set_status( $id, Schema::STATUS_PLACED, (int) $welcome->id );
+
+			$wpdb->suppress_errors( false );
+		} finally {
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table name is not user input.
+			$wpdb->query( "RENAME TABLE {$placements}_hidden TO {$placements}" );
+		}
 
 		$a->ok( is_wp_error( $result ), 'the caller is told it failed' );
 

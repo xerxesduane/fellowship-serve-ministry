@@ -5,6 +5,19 @@
       "name": "serve",
       "url": "http://localhost",
       "port": 80
+    },
+    {
+      "name": "serve-standalone",
+      "runtimeExecutable": "C:/xampp/php/php.exe",
+      "runtimeArgs": [
+        "-S",
+        "localhost:8321",
+        "-t",
+        "C:/Users/xerxe/Projects/shape-assessment/serve-standalone/public",
+        "C:/Users/xerxe/Projects/shape-assessment/serve-standalone/public/index.php"
+      ],
+      "port": 8321,
+      "url": "http://localhost:8321"
     }
   ]
 }
