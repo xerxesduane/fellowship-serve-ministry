@@ -1419,9 +1419,46 @@ function loadDashboard() {
 		});
 }
 
+/*
+ * The views a URL is allowed to name.
+ *
+ * An allowlist rather than "whatever is after the #", because showView() is
+ * driven straight off it and a stray fragment should land on the dashboard
+ * rather than hide every region on the page.
+ */
+const LINKABLE_VIEWS = ['dashboard', 'people', 'matching', 'followup', 'support'];
+
+function viewFromHash() {
+	const name = (window.location.hash || '').replace(/^#/, '');
+
+	return LINKABLE_VIEWS.includes(name) ? name : '';
+}
+
 function boot() {
 	drawer.init();
 	bootPromise = loadDashboard();
+
+	/*
+	 * Deep links into a view.
+	 *
+	 * The dashboard is one page holding five views, and the screens that are
+	 * not part of it -- Teams and gaps, Settings -- are ordinary pages the
+	 * browser navigates to. Coming back from one of those used to mean landing
+	 * on the dashboard view whatever you had been looking at, because the
+	 * sidebar on those pages had nothing to point at but the page itself. A
+	 * fragment gives them something to point at, and costs the dashboard
+	 * nothing when there is no fragment.
+	 */
+	const wanted = viewFromHash();
+
+	if (wanted && wanted !== 'dashboard') {
+		showView(wanted);
+	}
+
+	// Back and forward should move between views, not silently do nothing.
+	window.addEventListener('hashchange', () => {
+		showView(viewFromHash() || 'dashboard');
+	});
 
 	// One delegated listener rather than rebinding after every re-render.
 	document.addEventListener('click', (event) => {
@@ -1433,7 +1470,19 @@ function boot() {
 
 		const nav = event.target.closest('[data-serve-view]');
 		if (nav) {
-			showView(nav.dataset.serveView);
+			const name = nav.dataset.serveView;
+
+			/*
+			 * replaceState, not a hash assignment: setting location.hash pushes
+			 * a history entry per click, so a leader who looked at four views
+			 * needs four Backs to leave the dashboard. It also fires
+			 * hashchange, which would run showView a second time.
+			 */
+			if (LINKABLE_VIEWS.includes(name) && window.history && window.history.replaceState) {
+				window.history.replaceState(null, '', name === 'dashboard' ? window.location.pathname + window.location.search : '#' + name);
+			}
+
+			showView(name);
 			return;
 		}
 

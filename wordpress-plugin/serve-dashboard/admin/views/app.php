@@ -146,9 +146,20 @@ $nav = array(
 					<p class="serve-pc__note"><?php echo esc_html( $pc['explanation'] ); ?></p>
 				</div>
 
-				<a class="serve-exit" href="<?php echo esc_url( admin_url() ); ?>">
-					<?php esc_html_e( 'Exit to WordPress', 'serve-dashboard' ); ?>
-				</a>
+				<?php
+				/*
+				 * The way out, which is not the same door in both builds.
+				 *
+				 * This screen is shipped twice: as a WordPress admin page, where
+				 * leaving means going back to the WordPress admin, and as a
+				 * standalone application, where there is no WordPress to go back
+				 * to and the honest control is a sign-out. The markup around it
+				 * is identical either way, so the two builds still render the
+				 * same shell; only this one control differs, and each build says
+				 * which it is rather than the shell guessing.
+				 */
+				self::exit_control();
+				?>
 			</div>
 		</nav>
 
@@ -278,7 +289,7 @@ $nav = array(
 							<p class="serve-card__hint">
 								<?php esc_html_e( 'Context for a conversation. A gap is not a reason to place someone.', 'serve-dashboard' ); ?>
 							</p>
-							<div data-serve="gaps"><?php self::skeleton_rows( 4 ); ?></div>
+							<div class="serve-bars" data-serve="gaps"><?php self::skeleton_rows( 4 ); ?></div>
 						</div>
 
 						<div class="serve-col">
@@ -338,7 +349,7 @@ $nav = array(
 						<p class="serve-card__hint">
 							<?php esc_html_e( 'Background context only, drawn from the profiles you can see.', 'serve-dashboard' ); ?>
 						</p>
-						<div data-serve="gifts"><?php self::skeleton_rows( 6 ); ?></div>
+						<div class="serve-bars serve-bars--split" data-serve="gifts"><?php self::skeleton_rows( 6 ); ?></div>
 					</div>
 				</section>
 

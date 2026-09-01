@@ -51,6 +51,23 @@
 	--serve-sidebar-w: 244px;
 	--serve-drawer-w: 380px;
 
+	/*
+	 * How wide the content is allowed to get.
+	 *
+	 * On a 1900px monitor every card ran the full width of the screen, which
+	 * put "Encouragement" and the number 5 about fifteen hundred pixels apart
+	 * with nothing between them -- a label and its value stop reading as a pair
+	 * long before that. The metric tiles had the same problem in miniature: a
+	 * single digit alone in a 400px card.
+	 *
+	 * A measure fixes both at once and costs narrow screens nothing, because it
+	 * only ever removes width that was never usable.
+	 */
+	--serve-measure: 1360px;
+
+	/* Cards get roomier once the page itself does. Stepped at 1024px. */
+	--serve-card-pad: var(--serve-space-4);
+
 	--serve-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
 	font-family: var(--serve-font);
@@ -220,6 +237,8 @@ body.serve-app-fullscreen {
 	font-size: .8125rem;
 	line-height: 1.45;
 	color: var(--serve-text-muted);
+	/* Sentences, not banners: a line of prose stays readable at one length. */
+	max-width: 78ch;
 }
 
 /* ── Layout ─────────────────────────────────────────────────────────────── */
@@ -231,6 +250,10 @@ body.serve-app-fullscreen {
 .serve-main {
 	padding: var(--serve-space-4);
 	min-width: 0;
+	/* No effect until the viewport is wider than the measure. */
+	max-width: calc(var(--serve-measure) + 2 * var(--serve-space-6));
+	margin-inline: auto;
+	width: 100%;
 }
 
 .serve-noscript {
@@ -546,7 +569,7 @@ body.serve-app-fullscreen {
 }
 
 .serve-card {
-	padding: var(--serve-space-4);
+	padding: var(--serve-card-pad);
 	background: var(--serve-surface);
 	border: 1px solid var(--serve-border);
 	border-radius: var(--serve-radius);
@@ -591,11 +614,16 @@ body.serve-app-fullscreen {
 	gap: var(--serve-space-3);
 }
 
+/*
+ * Mobile: the icon keeps its own line, because a two-up grid of tiles leaves
+ * the label about 100px to work with and "Ready for a conversation" needs all
+ * of it. The tile turns side-by-side at 768px, where there is room.
+ */
 .serve-metric {
 	display: flex;
 	flex-direction: column;
 	gap: var(--serve-space-1);
-	padding: var(--serve-space-4);
+	padding: var(--serve-card-pad);
 	text-align: left;
 }
 
@@ -883,6 +911,24 @@ button.serve-metric:hover {
 }
 
 /* ── Gaps & gifts bars ──────────────────────────────────────────────────── */
+
+/*
+ * The list a set of bars lives in.
+ *
+ * Eighteen gifts stacked one per row down a full-width card is a column of
+ * label-and-number pairs held apart by whatever the screen happens to be wide,
+ * and a very long scroll for something the card itself calls background. Two
+ * columns halve both, and only once there is room for two.
+ */
+.serve-bars--split {
+	display: grid;
+	gap: 0 var(--serve-space-6);
+}
+
+/* The rule under the last bar of a column would otherwise be missing. */
+.serve-bars--split > .serve-bar:last-child {
+	border-bottom: 1px solid var(--serve-border);
+}
 
 .serve-bar {
 	display: grid;
@@ -1322,6 +1368,15 @@ button.serve-metric:hover {
 	border-radius: var(--serve-radius-sm);
 	font-size: .8125rem;
 	line-height: 1.5;
+	max-width: 78ch;
+}
+
+/*
+ * A note inside a card is a remark about the list under it, and it was sitting
+ * flush against the column titles as though it were one of them.
+ */
+.serve-card > .serve-note {
+	margin-top: var(--serve-space-3);
 }
 
 .serve-note--info {
@@ -1498,6 +1553,34 @@ form.serve-fu--settling .serve-hc {
 		grid-template-columns: repeat(4, minmax(0, 1fr));
 	}
 
+	/*
+	 * Icon and label on one line, the number under them.
+	 *
+	 * The icon used to sit on a row of its own above the label at every width,
+	 * which on a desktop made a tile three rows tall to say one number and left
+	 * the whole right-hand half of it empty. Reading order is unchanged --
+	 * icon, label, value, note -- so nothing moves for a screen reader.
+	 */
+	.serve-metric {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		grid-template-areas:
+			"icon  label"
+			"value value"
+			"note  note";
+		align-items: center;
+		gap: var(--serve-space-1) var(--serve-space-3);
+	}
+
+	.serve-metric__icon {
+		grid-area: icon;
+		margin-bottom: 0;
+	}
+
+	.serve-metric__label { grid-area: label; }
+	.serve-metric__value { grid-area: value; }
+	.serve-metric__note { grid-area: note; }
+
 	.serve-topbar {
 		flex-direction: row;
 		align-items: flex-start;
@@ -1576,6 +1659,14 @@ form.serve-fu--settling .serve-hc {
 
 	.serve-metric__value {
 		font-size: 2.125rem;
+	}
+
+	.serve-app {
+		--serve-card-pad: var(--serve-space-5);
+	}
+
+	.serve-bars--split {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }
 
@@ -1945,8 +2036,9 @@ form.serve-fu--settling .serve-hc {
 
 .serve-band {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
-	gap: var(--serve-space-3);
+	gap: var(--serve-space-1) var(--serve-space-3);
 	margin: var(--serve-space-6) 0 var(--serve-space-3);
 }
 
@@ -1956,6 +2048,8 @@ form.serve-fu--settling .serve-hc {
 
 .serve-band__title {
 	margin: 0;
+	/* Two words on two lines read as two headings. It is one. */
+	white-space: nowrap;
 	font-size: .8125rem;
 	font-weight: 800;
 	letter-spacing: .06em;
