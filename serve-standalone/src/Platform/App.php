@@ -130,7 +130,34 @@ final class App {
 	 * pass it to.
 	 */
 	public static function asset( string $path ): string {
-		return self::url( $path ) . '?v=' . rawurlencode( defined( 'SERVE_VERSION' ) ? SERVE_VERSION : '0' );
+		$version = defined( 'SERVE_VERSION' ) ? SERVE_VERSION : '0';
+
+		/*
+		 * Keyed to the file's own timestamp, not only to the release.
+		 *
+		 * The release version alone is a poor key in both directions. It does not
+		 * change while developing, so an edited stylesheet keeps being served
+		 * from cache for the five minutes the asset route asks for -- which cost
+		 * real time three times over here, because a fix present in the file and
+		 * absent from the page reads exactly like a CSS bug and gets debugged as
+		 * one. And it changes on every release whether the assets did or not,
+		 * throwing away caches that were still good.
+		 *
+		 * mtime fixes both: the URL changes when, and only when, the file does.
+		 * Deliberately not conditional on debug -- correct caching is not a
+		 * development convenience, and tying it to the flag that also prints
+		 * stack traces would mean choosing between the two.
+		 *
+		 * Cost is one stat() per asset, four per page, against a local file the
+		 * OS has already cached.
+		 */
+		$file = SERVE_ROOT . '/public/' . ltrim( $path, '/' );
+
+		if ( is_file( $file ) ) {
+			$version .= '-' . filemtime( $file );
+		}
+
+		return self::url( $path ) . '?v=' . rawurlencode( $version );
 	}
 
 	public static function timezone(): string {

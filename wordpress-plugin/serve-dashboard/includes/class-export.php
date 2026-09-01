@@ -168,7 +168,19 @@ final class Export {
 		check_admin_referer( 'serve_export_csv' );
 
 		if ( ! current_user_can( Roles::CAP_EXPORT ) ) {
-			wp_die( esc_html__( 'You do not have permission to export.', 'serve-dashboard' ) );
+			/*
+			 * 403, not the 500 wp_die() defaults to.
+			 *
+			 * "You may not do this" is an answer, not a server fault. Left at
+			 * 500 it is indistinguishable in a log from the application breaking,
+			 * so a refused export looks like an outage and a real outage looks
+			 * routine.
+			 */
+			wp_die(
+				esc_html__( 'You do not have permission to export.', 'serve-dashboard' ),
+				esc_html__( 'Not allowed', 'serve-dashboard' ),
+				array( 'response' => 403 )
+			);
 		}
 
 		/*

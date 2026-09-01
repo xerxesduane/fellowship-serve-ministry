@@ -93,6 +93,51 @@ if ( str_starts_with( $serve_path, 'api/' ) ) {
 	exit;
 }
 
+/* ── admin-post.php ──────────────────────────────────────────────────────── */
+
+/*
+ * The one WordPress entry point worth keeping the name of.
+ *
+ * Ported code builds links to admin-post.php and registers handlers on
+ * `admin_post_<action>` -- Export::register() does exactly that, and
+ * Export::url() puts the resulting URL in the dashboard's config blob. Without
+ * this route the dashboard rendered an Export CSV link that answered 404.
+ *
+ * Firing the hook rather than mapping actions to callables here means anything
+ * else registered the same way works without a second edit, and the handler is
+ * reached by the identical path in both builds. Each handler does its own
+ * nonce and capability check -- Export::download() checks
+ * check_admin_referer() then CAP_EXPORT -- so this dispatcher deliberately
+ * checks neither: duplicating them here would be the version that drifts.
+ */
+if ( 'admin-post.php' === $serve_path ) {
+	$serve_action = sanitize_key( (string) ( $_REQUEST['action'] ?? '' ) );
+
+	if ( '' === $serve_action || ! \Serve\Platform\Hooks::has( 'admin_post_' . $serve_action ) ) {
+		http_response_code( 400 );
+		serve_view(
+			'message',
+			array(
+				'heading' => __( 'That action does not exist' ),
+				'detail'  => __( 'The link may be from an older version of this page. Reload and try again.' ),
+			),
+			__( 'Unknown action' )
+		);
+		exit;
+	}
+
+	serve_require_login( '' );
+
+	\Serve\Platform\Hooks::run( 'admin_post_' . $serve_action );
+
+	/*
+	 * A handler that returns rather than exiting has done nothing observable,
+	 * which is worth saying out loud instead of serving a blank 200.
+	 */
+	http_response_code( 500 );
+	exit;
+}
+
 /* ── Static assets ───────────────────────────────────────────────────────── */
 
 /*
@@ -377,7 +422,16 @@ switch ( $serve_path ) {
 		exit;
 
 	case 'privacy':
-		serve_view( 'privacy', array( 'notice' => Privacy_Page::render() ), __( 'Privacy notice' ) );
+		/*
+		 * Its own document, like the journey and the dashboard.
+		 *
+		 * views/layout.php draws a signed-in top bar and this page is public;
+		 * its classes were also never styled, so routing the notice through it
+		 * served the whole thing as browser default.
+		 */
+		$notice = Privacy_Page::render();
+
+		require SERVE_ROOT . '/views/privacy.php';
 		exit;
 
 	case 'login':

@@ -208,7 +208,7 @@ final class App {
 		printf(
 			'<form class="serve-exitform" method="post" action="%s">%s<button type="submit" class="serve-exit">%s</button></form>',
 			esc_url( \Serve\Platform\App::url( 'logout' ) ),
-			wp_nonce_field( 'serve_logout', '_serve_nonce', true, false ),
+			wp_nonce_field( 'serve_logout', '_wpnonce', true, false ),
 			esc_html__( 'Sign out', 'serve-dashboard' )
 		);
 	}

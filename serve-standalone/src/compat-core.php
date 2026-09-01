@@ -145,26 +145,42 @@ if ( ! function_exists( 'load_plugin_textdomain' ) ) {
 	}
 }
 
+/*
+ * Escaping, and one detail that is not a detail: entities are not re-encoded.
+ *
+ * WordPress's esc_html() calls _wp_specialchars() with $double_encode = false,
+ * so text that already contains an entity passes through unchanged. PHP's
+ * htmlspecialchars() defaults to the opposite.
+ *
+ * That difference is visible. The privacy notice publishes the church's contact
+ * address through antispambot(), which returns "&#118;" style entities; escaped
+ * with double encoding on, the "&" became "&amp;" and the page displayed
+ * "ser&#118;e&#64;..." as literal text where an email address belonged.
+ *
+ * Not double-encoding is not less safe: htmlspecialchars still escapes <, >, "
+ * and ' and any & that is not already part of an entity.
+ */
+
 /* ── Escaping ────────────────────────────────────────────────────────────── */
 
 if ( ! function_exists( 'esc_html' ) ) {
 	/** @param mixed $text */
 	function esc_html( $text ): string {
-		return htmlspecialchars( (string) $text, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8' );
+		return htmlspecialchars( (string) $text, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8', false );
 	}
 }
 
 if ( ! function_exists( 'esc_attr' ) ) {
 	/** @param mixed $text */
 	function esc_attr( $text ): string {
-		return htmlspecialchars( (string) $text, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8' );
+		return htmlspecialchars( (string) $text, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8', false );
 	}
 }
 
 if ( ! function_exists( 'esc_textarea' ) ) {
 	/** @param mixed $text */
 	function esc_textarea( $text ): string {
-		return htmlspecialchars( (string) $text, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8' );
+		return htmlspecialchars( (string) $text, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8', false );
 	}
 }
 

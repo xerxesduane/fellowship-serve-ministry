@@ -750,8 +750,18 @@ if ( ! function_exists( 'wp_verify_nonce' ) ) {
 	}
 }
 
+/*
+ * The field is called _wpnonce, as it is in WordPress.
+ *
+ * This layer briefly used _serve_nonce, which was self-consistent and broke
+ * ported code that names the parameter itself: Export::url() builds a download
+ * link carrying _wpnonce, so check_admin_referer() looked for a field that was
+ * never sent and the export 403'd. Matching the name WordPress uses is the
+ * whole point of a compatibility layer.
+ */
+
 if ( ! function_exists( 'wp_nonce_field' ) ) {
-	function wp_nonce_field( string $action = 'serve', string $name = '_serve_nonce', bool $referer = true, bool $echo = true ): string {
+	function wp_nonce_field( string $action = 'serve', string $name = '_wpnonce', bool $referer = true, bool $echo = true ): string {
 		$field = '<input type="hidden" name="' . esc_attr( $name ) . '" value="'
 			. esc_attr( wp_create_nonce( $action ) ) . '">';
 
@@ -764,7 +774,7 @@ if ( ! function_exists( 'wp_nonce_field' ) ) {
 }
 
 if ( ! function_exists( 'check_admin_referer' ) ) {
-	function check_admin_referer( string $action = 'serve', string $name = '_serve_nonce' ): bool {
+	function check_admin_referer( string $action = 'serve', string $name = '_wpnonce' ): bool {
 		$nonce = (string) ( $_POST[ $name ] ?? $_GET[ $name ] ?? '' );
 
 		if ( ! wp_verify_nonce( $nonce, $action ) ) {
