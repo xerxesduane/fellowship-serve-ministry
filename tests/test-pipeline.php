@@ -1177,9 +1177,29 @@ test(
 		 */
 		global $wpdb;
 
-		$team = Teams::get_by_slug( 'fellowship-kids' );
-		$was  = (int) $team->current_headcount;
-		$old  = $team->headcount_checked_at;
+		$team   = Teams::get_by_slug( 'fellowship-kids' );
+		$was    = (int) $team->current_headcount;
+		$old    = $team->headcount_checked_at;
+		$target = (int) $team->target_headcount;
+
+		/*
+		 * The gap is arranged here rather than borrowed from whatever the
+		 * database happens to hold.
+		 *
+		 * Asserting the returned list is merely non-empty passed on a developer
+		 * machine with demo data and failed in CI, where no team is short. A
+		 * test that depends on ambient rows is not testing the route. So this
+		 * team is given a target five above where the confirmation will leave
+		 * it, which means a gap of exactly five must come back for exactly this
+		 * team -- and that is what gets asserted.
+		 */
+		$wpdb->update(
+			Schema::table( 'teams' ),
+			array( 'target_headcount' => $was + 6 ),
+			array( 'id' => (int) $team->id ),
+			array( '%d' ),
+			array( '%d' )
+		);
 
 		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
 
@@ -1205,9 +1225,19 @@ test(
 		 * this -- and the whole point of confirming inline is that the caller is
 		 * handed the fresh panels rather than reloading.
 		 */
-		$a->ok( ! empty( $data['gaps'] ), 'with the gap rows' );
-		$a->ok( isset( $data['gaps'][0]['name'] ), 'as real rows rather than an empty list' );
+		$a->ok( array_key_exists( 'gaps', $data ), 'with the gap rows' );
 		$a->ok( array_key_exists( 'headcountChecks', $data ), 'and the remaining checks' );
+
+		$mine = array_values(
+			array_filter(
+				(array) $data['gaps'],
+				static fn( $row ) => (int) $row['id'] === (int) $team->id
+			)
+		);
+
+		$a->same( 1, count( $mine ), 'this team is in the gaps that came back' );
+		$a->same( 5, (int) $mine[0]['gap'], 'and its shortfall is measured from the number just confirmed' );
+		$a->ok( ! empty( $mine[0]['name'] ), 'as a real row rather than an id' );
 
 		$a->same( $was + 1, (int) Teams::get( (int) $team->id )->current_headcount, 'the number moved' );
 
@@ -1220,9 +1250,13 @@ test(
 
 		$wpdb->update(
 			Schema::table( 'teams' ),
-			array( 'current_headcount' => $was, 'headcount_checked_at' => $old ),
+			array(
+				'current_headcount'    => $was,
+				'headcount_checked_at' => $old,
+				'target_headcount'     => $target,
+			),
 			array( 'id' => (int) $team->id ),
-			array( '%d', '%s' ),
+			array( '%d', '%s', '%d' ),
 			array( '%d' )
 		);
 	}
