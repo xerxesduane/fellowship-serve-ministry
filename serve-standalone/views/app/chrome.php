@@ -118,6 +118,16 @@ function serve_chrome_open( string $current, string $title, string $lede = '' ):
 					</li>
 				<?php endif; ?>
 
+				<?php if ( current_user_can( Roles::CAP_MANAGE_USERS ) ) : ?>
+					<li>
+						<a class="serve-nav__item" href="<?php echo esc_url( Platform::url( 'users' ) ); ?>"
+							<?php echo 'users' === $current ? 'aria-current="page"' : ''; ?>>
+							<span class="serve-icon" aria-hidden="true"><?php App::icon( 'users' ); ?></span>
+							<span><?php esc_html_e( 'Accounts' ); ?></span>
+						</a>
+					</li>
+				<?php endif; ?>
+
 				<?php if ( current_user_can( Roles::CAP_MANAGE_SETTINGS ) ) : ?>
 					<li>
 						<a class="serve-nav__item" href="<?php echo esc_url( Platform::url( 'settings' ) ); ?>"

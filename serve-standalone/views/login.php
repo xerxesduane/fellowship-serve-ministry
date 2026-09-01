@@ -217,7 +217,7 @@ function serve_error_icon(): string {
 				&nbsp;·&nbsp;
 				<a href="<?php echo esc_url( App::url( 'privacy' ) ); ?>"><?php esc_html_e( 'How we look after your answers' ); ?></a>
 				<br>
-				<?php esc_html_e( 'Lost your password? Ask whoever set up your account to reset it.' ); ?>
+				<a href="<?php echo esc_url( App::url( 'reset' ) ); ?>"><?php esc_html_e( 'Forgotten your password?' ); ?></a>
 			</p>
 		</form>
 	</main>

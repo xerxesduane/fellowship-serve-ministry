@@ -656,16 +656,38 @@ if ( ! function_exists( 'admin_url' ) ) {
 
 if ( ! function_exists( 'add_query_arg' ) ) {
 	/**
+	 * Add or replace query parameters on a URL.
+	 *
+	 * WordPress accepts two call shapes and the ported code uses both:
+	 *
+	 *   add_query_arg( array( 'a' => 1 ), $url )
+	 *   add_query_arg( 'a', 1, $url )
+	 *
+	 * The first version of this only handled the array form. Given the
+	 * three-argument form it read the value as the URL and then threw the real
+	 * URL away, so it returned a bare query string.
+	 *
+	 * That was not cosmetic. Verification::issue() builds the email
+	 * confirmation link this way, and a submission stays invisible to every
+	 * leader until that link is opened -- so every confirmation email carried a
+	 * link that went nowhere, and no profile could ever have been confirmed on
+	 * a real install. Nothing failed loudly; the mail sent, and the link simply
+	 * did not work.
+	 *
 	 * @param array<string,mixed>|string $args
-	 * @return string
+	 * @param mixed                      $value_or_url
 	 */
-	function add_query_arg( $args, string $url = '' ): string {
-		if ( ! is_array( $args ) ) {
-			$args = array( (string) $args => $url );
-			$url  = '';
+	function add_query_arg( $args, $value_or_url = null, ?string $url = null ): string {
+		if ( is_array( $args ) ) {
+			// add_query_arg( array(...), $url )
+			$base = (string) ( $value_or_url ?? '' );
+		} else {
+			// add_query_arg( $key, $value, $url )
+			$base = (string) ( $url ?? '' );
+			$args = array( (string) $args => $value_or_url );
 		}
 
-		$parts = parse_url( $url );
+		$parts = parse_url( $base );
 		$query = array();
 
 		if ( isset( $parts['query'] ) ) {
@@ -673,9 +695,37 @@ if ( ! function_exists( 'add_query_arg' ) ) {
 		}
 
 		$query = array_merge( $query, $args );
-		$base  = strtok( $url, '?' );
 
-		return ( false === $base ? '' : $base ) . ( array() === $query ? '' : '?' . http_build_query( $query ) );
+		/*
+		 * Rebuilt from the parsed pieces rather than by cutting at the first
+		 * "?", so a fragment survives and lands after the query where it
+		 * belongs.
+		 */
+		$out = '';
+
+		if ( isset( $parts['scheme'] ) ) {
+			$out .= $parts['scheme'] . '://';
+		}
+
+		if ( isset( $parts['host'] ) ) {
+			$out .= $parts['host'];
+
+			if ( isset( $parts['port'] ) ) {
+				$out .= ':' . $parts['port'];
+			}
+		}
+
+		$out .= $parts['path'] ?? '';
+
+		if ( array() !== $query ) {
+			$out .= '?' . http_build_query( $query );
+		}
+
+		if ( isset( $parts['fragment'] ) ) {
+			$out .= '#' . $parts['fragment'];
+		}
+
+		return $out;
 	}
 }
 

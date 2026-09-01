@@ -22,6 +22,7 @@ use Serve\Platform\App;
 use Serve\Platform\Auth;
 use Serve\Platform\Router;
 use Serve_Dashboard\Assessment;
+use Serve_Dashboard\Audit;
 use Serve_Dashboard\Hardening;
 use Serve_Dashboard\Privacy_Page;
 use Serve_Dashboard\Roles;
@@ -185,6 +186,24 @@ if ( preg_match( '#^(?:public/)?(?:assessment|admin|css|js)/#', $serve_path ) ) 
 }
 
 /* ── Pages ───────────────────────────────────────────────────────────────── */
+
+/*
+ * Anything that has to settle before a page is drawn.
+ *
+ * Verification::maybe_verify() hangs off this hook, and it is the whole of the
+ * email-confirmation flow: it reads ?serve_verify=<token> from the link in the
+ * confirmation email, marks the address proven, and redirects. Nothing fired
+ * the hook here, so opening the link did nothing at all -- and a submission
+ * stays invisible to every leader until it is opened. Combined with
+ * add_query_arg() having dropped the base URL from that link, the confirmation
+ * flow was broken at both ends: the email carried a link that went nowhere, and
+ * the destination would not have acted on it.
+ *
+ * Fired rather than calling maybe_verify() directly, for the same reason
+ * rest_api_init is: it is a real extension point, and anything else attached to
+ * it runs here without a second edit.
+ */
+do_action( 'template_redirect' );
 
 Hardening::send_headers( ! in_array( $serve_path, array( '', 'assessment', 'privacy' ), true ) );
 
@@ -419,6 +438,158 @@ switch ( $serve_path ) {
 		 * and the form's own consent checkbox is the gate that matters.
 		 */
 		require SERVE_ROOT . '/views/share.php';
+		exit;
+
+	case 'users':
+		serve_require_login( 'users' );
+
+		if ( ! current_user_can( Roles::CAP_MANAGE_USERS ) ) {
+			serve_denied();
+		}
+
+		$serve_notice = '';
+		$serve_errors = array();
+
+		if ( 'POST' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+			$serve_what = sanitize_key( (string) ( $_POST['action'] ?? '' ) );
+			$serve_auth = App::auth();
+			$serve_me   = $serve_auth->current_id();
+
+			if ( 'add' === $serve_what ) {
+				check_admin_referer( 'serve_add_user' );
+
+				$serve_role = (string) ( $_POST['role'] ?? '' );
+
+				if ( ! in_array( $serve_role, $serve_auth->manageable_roles( $serve_me ), true ) ) {
+					$serve_errors['role'] = __( 'You cannot give an account that role.' );
+				}
+
+				if ( array() === $serve_errors ) {
+					/*
+					 * A long random password nobody will ever use.
+					 *
+					 * The account needs a hash in the column, and it must not be
+					 * a value anybody knows -- including whoever created it. The
+					 * emailed link is the only way in.
+					 */
+					$serve_made = $serve_auth->create_user(
+						(string) ( $_POST['email'] ?? '' ),
+						(string) ( $_POST['display_name'] ?? '' ),
+						$serve_role,
+						bin2hex( random_bytes( 24 ) )
+					);
+
+					if ( is_wp_error( $serve_made ) ) {
+						$serve_errors[ 'serve_email_taken' === $serve_made->get_error_code() ? 'email' : 'display_name' ] =
+							$serve_made->get_error_message();
+					} else {
+						$serve_auth->request_reset( (string) ( $_POST['email'] ?? '' ) );
+
+						Audit::log( 'user.created', 'user', (int) $serve_made, array( 'role' => $serve_role ) );
+
+						wp_safe_redirect( App::url( 'users' ) . '?notice=created' );
+						exit;
+					}
+				}
+
+				$serve_notice = 'invalid';
+			} elseif ( 'save' === $serve_what ) {
+				check_admin_referer( 'serve_save_user' );
+
+				$serve_target = (int) ( $_POST['user_id'] ?? 0 );
+
+				$serve_done = $serve_auth->update_user(
+					$serve_me,
+					$serve_target,
+					array(
+						'role' => (string) ( $_POST['role'] ?? '' ),
+						// An unchecked box posts nothing, which is the "off" case.
+						'is_active' => isset( $_POST['is_active'] ) ? 1 : 0,
+					)
+				);
+
+				if ( is_wp_error( $serve_done ) ) {
+					wp_safe_redirect( App::url( 'users' ) . '?notice=refused' );
+					exit;
+				}
+
+				Audit::log( 'user.changed', 'user', $serve_target, array( 'role' => (string) ( $_POST['role'] ?? '' ) ) );
+
+				wp_safe_redirect( App::url( 'users' ) . '?notice=saved' );
+				exit;
+			} elseif ( 'reset' === $serve_what ) {
+				check_admin_referer( 'serve_reset_user' );
+
+				$serve_target = (int) ( $_POST['user_id'] ?? 0 );
+
+				if ( ! $serve_auth->can_manage_user( $serve_me, $serve_target ) ) {
+					wp_safe_redirect( App::url( 'users' ) . '?notice=refused' );
+					exit;
+				}
+
+				$serve_who = $serve_auth->user( $serve_target );
+
+				$serve_auth->request_reset( (string) ( $serve_who->email ?? '' ) );
+
+				Audit::log( 'user.reset_sent', 'user', $serve_target, array() );
+
+				wp_safe_redirect( App::url( 'users' ) . '?notice=reset' );
+				exit;
+			}
+		}
+
+		if ( '' === $serve_notice ) {
+			$serve_notice = in_array(
+				(string) ( $_GET['notice'] ?? '' ),
+				array( 'created', 'saved', 'reset', 'refused' ),
+				true
+			) ? (string) $_GET['notice'] : '';
+		}
+
+		require SERVE_ROOT . '/views/users.php';
+		exit;
+
+	case 'reset':
+		/*
+		 * Public, and it has to be: somebody who cannot sign in is exactly who
+		 * needs this. The token is the authorisation.
+		 */
+		$serve_token = (string) ( $_GET['token'] ?? '' );
+		$serve_stage = '' === $serve_token ? 'request' : 'set';
+		$serve_error = '';
+
+		if ( 'POST' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+			if ( isset( $_POST['token'] ) ) {
+				check_admin_referer( 'serve_reset_password' );
+
+				$serve_token = (string) $_POST['token'];
+				$serve_stage = 'set';
+
+				$serve_done = App::auth()->complete_reset(
+					$serve_token,
+					(string) ( $_POST['password'] ?? '' )
+				);
+
+				if ( is_wp_error( $serve_done ) ) {
+					$serve_error = $serve_done->get_error_message();
+				} else {
+					$serve_stage = 'done';
+				}
+			} else {
+				check_admin_referer( 'serve_request_reset' );
+
+				App::auth()->request_reset( (string) ( $_POST['email'] ?? '' ) );
+
+				/*
+				 * Always "sent", whether or not the address exists. Saying
+				 * otherwise would turn this form into a way to discover who has
+				 * an account.
+				 */
+				$serve_stage = 'sent';
+			}
+		}
+
+		require SERVE_ROOT . '/views/reset.php';
 		exit;
 
 	case 'privacy':

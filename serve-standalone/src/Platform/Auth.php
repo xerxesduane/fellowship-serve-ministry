@@ -83,6 +83,23 @@ final class Auth {
 				self::CAP_MANAGE_SETTINGS,
 				self::CAP_EXPORT,
 				self::CAP_VERIFY_SAFEGUARD,
+				/*
+				 * Pastors manage accounts, which admins alone previously did.
+				 *
+				 * That was not a defensible line, it was an oversight with an
+				 * operational cost: an installation whose only account is a
+				 * pastor -- which is the normal case, since that is who gets set
+				 * up first -- had nobody who could add a ministry leader.
+				 * Onboarding required somebody with shell access, so a church
+				 * could not run this without a developer on call.
+				 *
+				 * The escalation risk this raises is handled where it belongs,
+				 * in manageable_roles(): a pastor may create and edit leaders
+				 * and other pastors, and cannot mint an administrator. Granting
+				 * a capability you do not hold is the thing to prevent, not
+				 * managing accounts at all.
+				 */
+				self::CAP_MANAGE_USERS,
 			)
 		);
 
@@ -124,6 +141,181 @@ final class Auth {
 		);
 
 		return $labels[ $role ] ?? $role;
+	}
+
+	/**
+	 * Roles this user may assign.
+	 *
+	 * Nobody may grant a capability they do not themselves hold. Without that
+	 * rule "manage accounts" silently means "become an administrator": create an
+	 * admin, sign in as it, and every other limit is decoration.
+	 *
+	 * Compared by capability rather than by a hardcoded ranking, so adding a
+	 * role to role_caps() cannot accidentally become assignable by everyone.
+	 *
+	 * @return array<int,string>
+	 */
+	public function manageable_roles( int $user_id ): array {
+		if ( ! $this->user_can( $user_id, self::CAP_MANAGE_USERS ) ) {
+			return array();
+		}
+
+		$user = $this->user( $user_id );
+		$mine = self::role_caps()[ (string) ( $user->role ?? '' ) ] ?? array();
+
+		$out = array();
+
+		foreach ( self::role_caps() as $role => $caps ) {
+			/*
+			 * The WordPress-compatible aliases are not offered.
+			 *
+			 * 'administrator' and 'subscriber' exist so ported code and the test
+			 * fixtures keep working; presenting them in a chooser beside
+			 * serve_admin and serve_ministry_leader would be two names for one
+			 * thing and an invitation to pick the wrong one.
+			 */
+			if ( in_array( $role, array( self::ROLE_ADMIN_WP, self::ROLE_NONE ), true ) ) {
+				continue;
+			}
+
+			/*
+			 * serve_admin is not assignable from a screen, and that is a
+			 * consequence worth spelling out.
+			 *
+			 * It existed so the person who installed this could never be locked
+			 * out of it. Now that pastors manage accounts, there is nothing an
+			 * administrator can do that a pastor cannot -- the two role
+			 * definitions are capability-identical, so the subset test below
+			 * would let a pastor mint one, and the distinction would be a label
+			 * rather than a boundary.
+			 *
+			 * Rather than invent a capability to justify the difference, it stays
+			 * as what it actually is: the account bin/serve creates at install
+			 * time. Existing admin accounts keep working and can be edited by
+			 * nobody through the UI, which is the same protection the
+			 * capability-subset rule gave when the roles differed.
+			 */
+			if ( self::ROLE_ADMIN === $role ) {
+				continue;
+			}
+
+			// Nothing this role grants may be outside what the actor holds.
+			if ( array() === array_diff( $caps, $mine ) ) {
+				$out[] = $role;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Whether this user may edit that account at all.
+	 *
+	 * Two refusals beyond the role check. Nobody edits their own account here --
+	 * changing your own role or switching yourself off is how somebody locks
+	 * themselves out of the only screen that could undo it, and the CLI is then
+	 * the only way back. And nobody edits an account whose role they could not
+	 * create, so a pastor cannot demote, disable or reset the password of an
+	 * administrator.
+	 */
+	public function can_manage_user( int $actor_id, int $target_id ): bool {
+		if ( $actor_id <= 0 || $target_id <= 0 || $actor_id === $target_id ) {
+			return false;
+		}
+
+		$target = $this->user( $target_id );
+
+		if ( null === $target ) {
+			return false;
+		}
+
+		return in_array( (string) $target->role, $this->manageable_roles( $actor_id ), true );
+	}
+
+	/**
+	 * Change an account.
+	 *
+	 * @param array<string,mixed> $fields name, role, is_active.
+	 * @return true|\WP_Error
+	 */
+	public function update_user( int $actor_id, int $target_id, array $fields ) {
+		if ( ! $this->can_manage_user( $actor_id, $target_id ) ) {
+			return new \WP_Error(
+				'serve_forbidden',
+				__( 'You cannot change that account.' ),
+				array( 'status' => 403 )
+			);
+		}
+
+		$allowed = $this->manageable_roles( $actor_id );
+		$write   = array();
+
+		if ( isset( $fields['display_name'] ) ) {
+			$write['display_name'] = sanitize_text_field( (string) $fields['display_name'] );
+		}
+
+		if ( isset( $fields['role'] ) ) {
+			$role = (string) $fields['role'];
+
+			if ( ! in_array( $role, $allowed, true ) ) {
+				return new \WP_Error(
+					'serve_bad_role',
+					__( 'You cannot give an account that role.' ),
+					array( 'status' => 403 )
+				);
+			}
+
+			$write['role'] = $role;
+		}
+
+		if ( isset( $fields['is_active'] ) ) {
+			$active = (int) (bool) $fields['is_active'];
+
+			/*
+			 * The last account that can manage accounts stays on.
+			 *
+			 * Switching it off leaves an installation nobody can administer
+			 * except from a shell, which is the state this screen exists to
+			 * avoid.
+			 */
+			if ( 0 === $active && ! $this->another_manager_remains( $target_id ) ) {
+				return new \WP_Error(
+					'serve_last_manager',
+					__( 'This is the last account that can manage accounts. Give somebody else that role first.' ),
+					array( 'status' => 409 )
+				);
+			}
+
+			$write['is_active'] = $active;
+
+			// A disabled account's sessions end now, not when they expire.
+			if ( 0 === $active ) {
+				$this->db->delete( $this->sessions_table(), array( 'user_id' => $target_id ) );
+			}
+		}
+
+		if ( array() === $write ) {
+			return true;
+		}
+
+		unset( $this->users[ $target_id ] );
+
+		$done = $this->db->update( $this->table(), $write, array( 'id' => $target_id ) );
+
+		return false === $done
+			? new \WP_Error( 'serve_save_failed', __( 'That change could not be saved.' ), array( 'status' => 500 ) )
+			: true;
+	}
+
+	/** Whether anybody else active can still manage accounts. */
+	private function another_manager_remains( int $excluding ): bool {
+		foreach ( $this->users_with_cap( self::CAP_MANAGE_USERS ) as $user ) {
+			if ( (int) $user->id !== $excluding ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public function user_can( int $user_id, string $cap ): bool {
@@ -378,6 +570,172 @@ final class Auth {
 		}
 
 		return (string) $hash;
+	}
+
+	/* ── Password resets ────────────────────────────────────────────────── */
+
+	/** How long a reset link is good for. */
+	private const RESET_SECONDS = 3600;
+
+	/**
+	 * Issue a reset link and email it.
+	 *
+	 * Returns true whether or not the address exists, and takes a comparable
+	 * amount of time either way. A form that says "no such account" is an
+	 * account-enumeration oracle, and on an application holding a
+	 * congregation's spiritual gifts the list of who has an account is itself
+	 * worth not leaking.
+	 *
+	 * @return bool Whether the caller should be told the mail is on its way.
+	 */
+	public function request_reset( string $email ): bool {
+		$user = $this->user_by_email( $email );
+
+		if ( null === $user || ! (int) $user->is_active ) {
+			/*
+			 * Same work, no mail. Without this the response time answers the
+			 * question the message refuses to.
+			 */
+			password_hash( 'no-such-account', PASSWORD_DEFAULT );
+
+			return true;
+		}
+
+		$token = bin2hex( random_bytes( 32 ) );
+
+		$this->db->insert(
+			$this->resets_table(),
+			array(
+				'user_id'      => (int) $user->id,
+				'token_hash'   => self::token_hash( $token ),
+				'requested_ip' => substr( self::client_ip(), 0, 45 ),
+				'created_at'   => current_time( 'mysql', true ),
+			)
+		);
+
+		$link = App::url( 'reset' ) . '?token=' . rawurlencode( $token );
+
+		wp_mail(
+			(string) $user->email,
+			__( 'Set a new SERVE password' ),
+			sprintf(
+				/* translators: 1: display name, 2: reset link. */
+				__(
+					"Hello %1\$s,
+
+"
+					. "Somebody asked to set a new password for your SERVE account. To do it, open this link:
+
+%2\$s
+
+"
+					. "The link works once and expires in an hour.
+
+"
+					. "If this was not you, you can ignore this email. Your current password still works and nothing has changed.
+
+"
+					. 'Fellowship Dubai SERVE team'
+				),
+				(string) $user->display_name,
+				$link
+			)
+		);
+
+		return true;
+	}
+
+	/**
+	 * Spend a reset token and set the new password.
+	 *
+	 * @return true|\WP_Error
+	 */
+	public function complete_reset( string $token, string $password ) {
+		$invalid = new \WP_Error(
+			'serve_bad_token',
+			__( 'That link is not valid any more. Ask for a new one.' ),
+			array( 'status' => 400 )
+		);
+
+		// Tokens are hex, so anything else is not worth a database round trip.
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $token ) ) {
+			return $invalid;
+		}
+
+		$problem = self::password_problem( $password );
+
+		if ( null !== $problem ) {
+			return new \WP_Error( 'serve_weak_password', $problem, array( 'status' => 422 ) );
+		}
+
+		$row = $this->db->get_row(
+			$this->db->prepare(
+				'SELECT id, user_id, created_at, used_at FROM ' . $this->resets_table()
+				. ' WHERE token_hash = %s',
+				self::token_hash( $token )
+			)
+		);
+
+		if ( null === $row || null !== $row->used_at ) {
+			return $invalid;
+		}
+
+		if ( time() - (int) strtotime( (string) $row->created_at . ' UTC' ) > self::RESET_SECONDS ) {
+			return $invalid;
+		}
+
+		/*
+		 * Marked used before the password is written, and only if this is the
+		 * request that marked it.
+		 *
+		 * Two submissions of the same link arriving together would otherwise
+		 * both pass the check above. The conditional update makes the second one
+		 * change no rows, so it is refused.
+		 */
+		$claimed = $this->db->query(
+			$this->db->prepare(
+				'UPDATE ' . $this->resets_table() . ' SET used_at = %s WHERE id = %d AND used_at IS NULL',
+				current_time( 'mysql', true ),
+				(int) $row->id
+			)
+		);
+
+		if ( ! $claimed ) {
+			return $invalid;
+		}
+
+		if ( ! $this->set_password( (int) $row->user_id, $password ) ) {
+			return new \WP_Error( 'serve_save_failed', __( 'The password could not be saved.' ), array( 'status' => 500 ) );
+		}
+
+		/*
+		 * Every existing session ends.
+		 *
+		 * Somebody resetting a password may be doing it because the account was
+		 * taken, and leaving the intruder's session alive would make the reset
+		 * pointless.
+		 */
+		$this->db->delete( $this->sessions_table(), array( 'user_id' => (int) $row->user_id ) );
+
+		return true;
+	}
+
+	/** Clears spent and expired reset rows. Called from the retention sweep. */
+	public function prune_resets(): int {
+		$done = $this->db->query(
+			$this->db->prepare(
+				'DELETE FROM ' . $this->resets_table()
+				. ' WHERE used_at IS NOT NULL'
+				. ' OR created_at < DATE_SUB( UTC_TIMESTAMP(), INTERVAL %d SECOND )',
+				self::RESET_SECONDS
+			)
+		);
+
+		return false === $done ? 0 : (int) $done;
+	}
+
+	private function resets_table(): string {
+		return $this->db->table( 'password_resets' );
 	}
 
 	/* ── Sessions ───────────────────────────────────────────────────────── */
