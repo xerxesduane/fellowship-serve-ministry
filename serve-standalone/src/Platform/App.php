@@ -116,6 +116,23 @@ final class App {
 		return $value;
 	}
 
+	/**
+	 * A URL for a static asset, with the version attached.
+	 *
+	 * The asset route sends `Cache-Control: max-age=300`, which is right for
+	 * production and actively unhelpful without this: an edited stylesheet keeps
+	 * serving the old bytes for five minutes, and after a deploy a returning
+	 * browser can hold the previous release's CSS against the new markup for as
+	 * long as its cache lasts.
+	 *
+	 * The plugin solved this by passing SERVE_DASHBOARD_VERSION to
+	 * wp_enqueue_style. Same idea, done by hand because there is no queue to
+	 * pass it to.
+	 */
+	public static function asset( string $path ): string {
+		return self::url( $path ) . '?v=' . rawurlencode( defined( 'SERVE_VERSION' ) ? SERVE_VERSION : '0' );
+	}
+
 	public static function timezone(): string {
 		return (string) self::config( 'timezone', 'Asia/Dubai' );
 	}

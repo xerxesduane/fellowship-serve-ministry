@@ -1,0 +1,383 @@
+/*
+ * Sign in.
+ *
+ * A separate stylesheet on purpose. app.css and admin.css are byte-for-byte the
+ * plugin's, and a CI check enforces that, because "the dashboard looks exactly
+ * the same" is only true for as long as nobody edits one copy. WordPress has no
+ * equivalent of this screen -- it had wp-login.php -- so its styles live here
+ * rather than in a shared file they would be the only consumer of.
+ *
+ * Every value below is a token from app.css. Nothing new is invented: the
+ * palette, the 4px spacing scale, the radii and the shadow all come from the
+ * dashboard, which is why this reads as the same product rather than as a login
+ * page bolted onto one.
+ *
+ * The markup is wrapped in .serve-app for a reason that is easy to miss: the
+ * tokens are declared on .serve-app, not on :root. Outside that wrapper every
+ * var() falls back to nothing, and the first version of this screen rendered
+ * with unstyled inputs and a colourless button because of it.
+ */
+
+/* The page itself, since this screen owns the whole document. */
+html,
+body.serve-signin-page {
+	margin: 0;
+	min-height: 100%;
+}
+
+body.serve-signin-page {
+	background: var(--serve-bg, #f7f6f2);
+}
+
+.serve-signin-page .serve-app {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 100vh;
+	/* Breathing room on a phone, where the card meets the screen edge. */
+	padding: var(--serve-space-4);
+}
+
+/*
+ * The card: brand panel and form, side by side.
+ *
+ * Two columns above 40rem and stacked below. A container query rather than a
+ * viewport query would be tidier, but this card is the only thing on the page,
+ * so the viewport *is* its container and a media query says so more plainly.
+ */
+.serve-signin {
+	display: grid;
+	grid-template-columns: 1fr;
+	width: 100%;
+	max-width: 46rem;
+	overflow: hidden;
+	background: var(--serve-surface);
+	border: 1px solid var(--serve-border);
+	border-radius: var(--serve-radius);
+	box-shadow: var(--serve-shadow);
+}
+
+@media (min-width: 40rem) {
+	.serve-signin {
+		grid-template-columns: 17rem 1fr;
+	}
+}
+
+/*
+ * The brand panel.
+ *
+ * Navy, because the brand block was designed for the dashboard's navy sidebar:
+ * its subtitle is #8fc7c9 and its ministry line is translucent white. Put that
+ * same block on a white card and both disappear. Reproducing its native context
+ * is what lets the markup be identical to the sidebar's.
+ */
+.serve-signin__brand {
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	gap: var(--serve-space-6);
+	padding: var(--serve-space-6);
+	background: var(--serve-navy);
+	color: #fff;
+}
+
+.serve-signin__brand .serve-brand__mark {
+	font-size: 1.5rem;
+}
+
+/* A quiet line about what this is for, in the panel's own register. */
+.serve-signin__purpose {
+	font-size: .8125rem;
+	line-height: 1.6;
+	/* 6.9:1 on navy: quiet, still readable. */
+	color: rgba(255, 255, 255, .74);
+}
+
+/* ── The form side ───────────────────────────────────────────────────────── */
+
+.serve-signin__form {
+	display: flex;
+	flex-direction: column;
+	gap: var(--serve-space-4);
+	padding: var(--serve-space-6);
+}
+
+.serve-signin__title {
+	margin: 0;
+	font-size: 1.375rem;
+	font-weight: 700;
+	line-height: 1.25;
+	color: var(--serve-navy);
+}
+
+.serve-signin__lede {
+	margin: 0;
+	font-size: .9375rem;
+	line-height: 1.5;
+	/* 5.4:1 on white. */
+	color: var(--serve-text-muted);
+}
+
+/* ── Fields ──────────────────────────────────────────────────────────────── */
+
+.serve-field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--serve-space-2);
+}
+
+/*
+ * A real label, always visible.
+ *
+ * Not a placeholder standing in for one: a placeholder disappears the moment
+ * somebody types, so anyone interrupted mid-form loses the only clue about what
+ * the field wanted, and screen readers treat it inconsistently.
+ */
+.serve-field__label {
+	font-size: .8125rem;
+	font-weight: 600;
+	letter-spacing: .01em;
+	color: var(--serve-text);
+}
+
+.serve-field__input {
+	width: 100%;
+	/* 44px, which is the minimum comfortable touch target. */
+	min-height: 44px;
+	padding: 0 var(--serve-space-3);
+	font-family: inherit;
+	font-size: 1rem;
+	color: var(--serve-text);
+	background: var(--serve-surface);
+	border: 1px solid var(--serve-border-strong);
+	border-radius: var(--serve-radius-sm);
+	/* 16px minimum, or iOS Safari zooms the page on focus. */
+}
+
+.serve-field__input::placeholder {
+	color: var(--serve-text-muted);
+}
+
+/*
+ * Focus, visibly.
+ *
+ * A 2px ring with a 2px offset, in teal against white -- which clears the 3:1
+ * the focus-appearance guidance asks for. Removing this to tidy the design is
+ * the single most common way a form becomes unusable by keyboard.
+ */
+.serve-field__input:focus-visible,
+.serve-signin .serve-btn:focus-visible,
+.serve-signin__reveal:focus-visible,
+.serve-signin__foot a:focus-visible {
+	outline: 2px solid var(--serve-teal);
+	outline-offset: 2px;
+}
+
+.serve-field__input:focus {
+	border-color: var(--serve-teal);
+}
+
+/* A field the server rejected, marked by more than colour. */
+.serve-field__input[aria-invalid="true"] {
+	border-color: var(--serve-coral-dark);
+	border-width: 2px;
+}
+
+/*
+ * The error, under the field it belongs to.
+ *
+ * coral-dark rather than coral: the brand coral is 3.0:1 on white and fails as
+ * text. Its dark step is 5.4:1. Same family, readable.
+ */
+.serve-field__error {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--serve-space-2);
+	font-size: .8125rem;
+	line-height: 1.45;
+	color: var(--serve-coral-dark);
+}
+
+.serve-field__error svg {
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+	margin-top: 1px;
+}
+
+/* ── Password, with a way to see it ──────────────────────────────────────── */
+
+.serve-signin__password {
+	position: relative;
+	display: flex;
+}
+
+.serve-signin__password .serve-field__input {
+	/* Room for the reveal button, so long text never runs under it. */
+	padding-right: 3.25rem;
+}
+
+.serve-signin__reveal {
+	position: absolute;
+	top: 0;
+	right: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	/* 44px square: a real target, not a 16px icon. */
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	color: var(--serve-text-muted);
+	background: none;
+	border: 0;
+	border-radius: var(--serve-radius-sm);
+	cursor: pointer;
+}
+
+.serve-signin__reveal:hover {
+	color: var(--serve-teal-dark);
+}
+
+.serve-signin__reveal svg {
+	width: 20px;
+	height: 20px;
+}
+
+/* ── Submitting ──────────────────────────────────────────────────────────── */
+
+.serve-signin .serve-btn--primary {
+	justify-content: center;
+	min-height: 44px;
+	margin-top: var(--serve-space-1);
+	font-size: .9375rem;
+}
+
+/*
+ * A button mid-submit says so and stops accepting clicks.
+ *
+ * Without it, a slow response reads as a dead button and people press it again;
+ * bcrypt is deliberately slow, so this is a real wait rather than a theoretical
+ * one.
+ */
+.serve-signin .serve-btn[aria-disabled="true"] {
+	opacity: .72;
+	cursor: progress;
+}
+
+.serve-signin__spinner {
+	width: 16px;
+	height: 16px;
+	margin-right: var(--serve-space-2);
+	border: 2px solid rgba(255, 255, 255, .45);
+	border-top-color: #fff;
+	border-radius: 50%;
+	animation: serve-signin-spin .7s linear infinite;
+}
+
+@keyframes serve-signin-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* ── The summary note and the footer ─────────────────────────────────────── */
+
+.serve-signin .serve-note {
+	margin: 0;
+}
+
+.serve-signin__foot {
+	margin: var(--serve-space-2) 0 0;
+	padding-top: var(--serve-space-4);
+	font-size: .8125rem;
+	line-height: 1.6;
+	color: var(--serve-text-muted);
+	border-top: 1px solid var(--serve-border);
+}
+
+.serve-signin__foot a {
+	color: var(--serve-teal-dark);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+/*
+ * Motion is a nicety, so it goes first when somebody has asked for less of it.
+ * The spinner keeps its meaning as a static ring; the button still says Signing
+ * in, which was always the part carrying the information.
+ */
+@media (prefers-reduced-motion: reduce) {
+	.serve-signin__spinner {
+		animation-duration: 0s;
+	}
+}
+
+/* Honour a forced-colours mode rather than fighting it. */
+@media (forced-colors: active) {
+	.serve-signin {
+		border: 1px solid CanvasText;
+	}
+
+	.serve-field__input[aria-invalid="true"] {
+		border-color: Mark;
+	}
+}
+
+/*
+ * On a phone the brand panel becomes a header, not a title page.
+ *
+ * Stacked at full height it took roughly 600px of an 812px screen, so the email
+ * field started below the fold and signing in began with a scroll. Measured, not
+ * guessed -- and on the one screen standing between a leader and their work,
+ * that is the wrong thing to make them do.
+ *
+ * The identity stays: the wordmark, and the church's name. What goes is the
+ * standing space and the explanatory line, which says volunteers do not need an
+ * account -- true, and not something a leader opening this page needs told. The
+ * journey link in the footer covers it for anyone who arrived here by mistake.
+ */
+@media (max-width: 39.999rem) {
+	.serve-signin__brand {
+		flex-direction: row;
+		align-items: center;
+		justify-content: flex-start;
+		gap: var(--serve-space-4);
+		padding: var(--serve-space-4) var(--serve-space-5);
+	}
+
+	.serve-signin__brand .serve-brand {
+		flex-direction: row;
+		align-items: baseline;
+		gap: var(--serve-space-3);
+	}
+
+	.serve-signin__brand .serve-brand__mark {
+		font-size: 1.25rem;
+	}
+
+	/* The rule is a vertical divider between wordmark and church name here. */
+	.serve-signin__brand .serve-brand__rule {
+		width: 1px;
+		height: 1.1rem;
+		margin: 0;
+		align-self: center;
+	}
+
+	.serve-signin__brand .serve-brand__sub {
+		display: none;
+	}
+
+	.serve-signin__brand .serve-brand__ministry {
+		font-size: .625rem;
+		line-height: 1.35;
+	}
+
+	.serve-signin__purpose {
+		display: none;
+	}
+
+	.serve-signin__form {
+		padding: var(--serve-space-5);
+	}
+}

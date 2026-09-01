@@ -224,7 +224,15 @@ switch ( $serve_path ) {
 			serve_denied();
 		}
 
-		serve_view( 'dashboard', array(), __( 'SERVE Dashboard' ) );
+		/*
+		 * Its own document, not wrapped in views/layout.php.
+		 *
+		 * The dashboard shell carries its own sidebar and mobile bar, copied
+		 * from the plugin. Putting the layout's top bar above it would give the
+		 * screen two competing navigations -- and the requirement is that this
+		 * looks exactly like the plugin's, which has one.
+		 */
+		require SERVE_ROOT . '/views/dashboard.php';
 		exit;
 
 	case 'teams':

@@ -170,3 +170,9 @@ jobs:
         run: |
           php bin/serve status
           php bin/serve cron:list
+
+      # The two dashboards are identical because they load the same stylesheet
+      # and render the same markup. That holds only while the files match, and
+      # nothing was checking, so a copy could drift one edit at a time.
+      - name: The two builds still share one front end
+        run: bash tools/check-shared-frontend.sh

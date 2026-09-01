@@ -67,7 +67,32 @@ final class Hardening {
 		$csp = array(
 			"default-src 'self'",
 			"script-src 'self'",
-			"style-src 'self'",
+
+			/*
+			 * Inline styles are allowed; inline script is not.
+			 *
+			 * This is a real concession and worth being explicit about. The
+			 * dashboard draws its gap bars and its gift distribution by setting
+			 * a width on each bar -- `style="width:62%"` -- which is the only
+			 * honest way to express a per-datum length in markup. Under
+			 * `style-src 'self'` the browser drops every one of those
+			 * declarations, so all the bars render at zero width and the
+			 * distribution panel looks empty. A nonce does not help: nonces and
+			 * hashes do not apply to style *attributes*.
+			 *
+			 * The alternatives were worse. Forking admin/js/app.js to avoid
+			 * inline widths would end the byte-for-byte match with the plugin,
+			 * which is the mechanism keeping the two dashboards identical.
+			 * Shipping a strict policy and a visibly broken chart would be
+			 * choosing the appearance of security over either.
+			 *
+			 * What matters is that script-src stays strict. Injected CSS can
+			 * restyle a page and, with effort, leak the shape of what is on it;
+			 * injected script can read the whole session and act as the user.
+			 * Those are not the same risk, and only one of them is being
+			 * accepted here.
+			 */
+			"style-src 'self' 'unsafe-inline'",
 			"img-src 'self' data:",
 			"font-src 'self'",
 			"connect-src 'self'",

@@ -197,6 +197,18 @@ final class App {
 			wp_die( esc_html__( 'You do not have access to the SERVE dashboard.', 'serve-dashboard' ) );
 		}
 
-		require SERVE_DASHBOARD_DIR . 'admin/views/app.php';
+		/*
+		 * The shell is required from inside this method, exactly as the plugin
+		 * required it, because the markup uses `self::icon()` and
+		 * `self::skeleton_rows()`. Rendering it from anywhere else means no class
+		 * scope and a fatal error -- which is what happened when the front
+		 * controller included it directly.
+		 *
+		 * Keeping the call site identical is also what keeps views/app/shell.php
+		 * byte-for-byte the plugin's file. That is the whole mechanism behind
+		 * "looks exactly the same": one set of markup, one stylesheet, no second
+		 * copy to drift.
+		 */
+		require SERVE_ROOT . '/views/app/shell.php';
 	}
 }

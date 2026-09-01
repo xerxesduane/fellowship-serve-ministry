@@ -21,8 +21,8 @@ $serve_user = wp_get_current_user();
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title><?php echo esc_html( $serve_title ?? 'SERVE' ); ?></title>
-	<link rel="stylesheet" href="<?php echo esc_url( App::url( 'admin/css/app.css' ) ); ?>">
-	<link rel="stylesheet" href="<?php echo esc_url( App::url( 'admin/css/admin.css' ) ); ?>">
+	<link rel="stylesheet" href="<?php echo esc_url( App::asset( 'admin/css/app.css' ) ); ?>">
+	<link rel="stylesheet" href="<?php echo esc_url( App::asset( 'admin/css/admin.css' ) ); ?>">
 </head>
 <body class="serve-standalone">
 
