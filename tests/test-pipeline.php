@@ -913,3 +913,420 @@ test(
 		}
 	}
 );
+
+/*
+ * Confirming a headcount without leaving the dashboard.
+ *
+ * The card that asks for this was a link to the Teams screen: a whole-page
+ * navigation, away from the queue somebody was working, to change one number and
+ * find their own way back. The warning was ignorable partly because acting on it
+ * cost more than ignoring it.
+ */
+
+test(
+	'confirming a headcount stamps the check and leaves the rest of the team alone',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * Its own method rather than a call to Teams::save(), which writes the
+		 * whole team - target, minimum, safeguarding flag, leader, vocabulary.
+		 * Handing that just a headcount would zero the rest, which is the defect
+		 * that once wiped two teams' vocabularies.
+		 */
+		global $wpdb;
+
+		$team = Teams::get_by_slug( 'prayer' );
+		$a->ok( null !== $team, 'the team is there' );
+
+		$before = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT * FROM ' . Schema::table( 'teams' ) . ' WHERE id = %d',
+				(int) $team->id
+			)
+		);
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		$result = Teams::confirm_headcount( (int) $team->id, 9 );
+		$a->not( is_wp_error( $result ), 'a pastor may confirm it' );
+
+		$after = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT * FROM ' . Schema::table( 'teams' ) . ' WHERE id = %d',
+				(int) $team->id
+			)
+		);
+
+		$a->same( 9, (int) $after->current_headcount, 'the headcount is corrected' );
+		$a->not( empty( $after->headcount_checked_at ), 'and the check is stamped' );
+
+		// Everything else is exactly as it was.
+		foreach ( array( 'target_headcount', 'min_headcount', 'requires_safeguarding', 'is_active', 'keywords', 'gifts', 'name', 'slug' ) as $untouched ) {
+			$a->same(
+				(string) $before->{$untouched},
+				(string) $after->{$untouched},
+				"{$untouched} is untouched"
+			);
+		}
+
+		$wpdb->update(
+			Schema::table( 'teams' ),
+			array(
+				'current_headcount'    => (int) $before->current_headcount,
+				'headcount_checked_at' => $before->headcount_checked_at,
+			),
+			array( 'id' => (int) $team->id ),
+			array( '%d', '%s' ),
+			array( '%d' )
+		);
+	}
+);
+
+test(
+	'confirming without a correction is still a confirmation',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The warning exists because nobody has looked, not because the number
+		 * is necessarily wrong. Somebody who checks and finds it correct has
+		 * done the thing being asked for.
+		 */
+		global $wpdb;
+
+		$team = Teams::get_by_slug( 'welcome' );
+		$was  = (int) $team->current_headcount;
+		$old  = $team->headcount_checked_at;
+
+		$wpdb->update(
+			Schema::table( 'teams' ),
+			array( 'headcount_checked_at' => '2020-01-01 00:00:00' ),
+			array( 'id' => (int) $team->id ),
+			array( '%s' ),
+			array( '%d' )
+		);
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		$a->not( is_wp_error( Teams::confirm_headcount( (int) $team->id ) ), 'confirming with no number is accepted' );
+
+		$after = Teams::get( (int) $team->id );
+
+		$a->same( $was, (int) $after->current_headcount, 'the number is unchanged' );
+		$a->not( '2020-01-01 00:00:00' === $after->headcount_checked_at, 'but the check has moved' );
+
+		$wpdb->update(
+			Schema::table( 'teams' ),
+			array( 'headcount_checked_at' => $old ),
+			array( 'id' => (int) $team->id ),
+			array( '%s' ),
+			array( '%d' )
+		);
+	}
+);
+
+test(
+	'a ministry leader can cause headcount drift but cannot confirm it away',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * A leader places people, and so creates the drift; capacity is a
+		 * different permission. The dashboard does not send them the card, and
+		 * the route refuses them even so, because the card is not the only way
+		 * to reach it.
+		 */
+		$team   = Teams::get_by_slug( 'prayer' );
+		$leader = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		$f->lead_team( $leader, 'prayer' );
+
+		wp_set_current_user( $leader );
+
+		$was = (int) Teams::get( (int) $team->id )->current_headcount;
+
+		$refused = Teams::confirm_headcount( (int) $team->id, 999 );
+
+		$a->ok( is_wp_error( $refused ), 'a ministry leader is refused' );
+		$a->same( 'serve_forbidden', $refused->get_error_code(), 'as a permissions matter' );
+		$a->same( $was, (int) Teams::get( (int) $team->id )->current_headcount, 'and nothing moved' );
+
+		// And the card is not built for them either.
+		$a->same( array(), \Serve_Dashboard\Rest_Dashboard::headcount_rows(), 'the card is not sent to them' );
+
+		wp_set_current_user( 0 );
+		$a->ok( is_wp_error( Teams::confirm_headcount( (int) $team->id, 5 ) ), 'nor may an anonymous caller' );
+	}
+);
+
+test(
+	'a mistyped headcount cannot become a gap of several thousand',
+	function ( Assert $a, Fixtures $f ) {
+		global $wpdb;
+
+		$team = Teams::get_by_slug( 'production' );
+		$was  = (int) $team->current_headcount;
+		$old  = $team->headcount_checked_at;
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		/*
+		 * The guarantee, not which layer provides it.
+		 *
+		 * current_headcount is `smallint(5) unsigned`, and outside strict mode
+		 * MySQL clamps an out-of-range write itself -- so on this server no test
+		 * can tell the guard in confirm_headcount() from its absence. A mutation
+		 * removing the guard passes, correctly. It is kept because a strict-mode
+		 * host turns that clamp into an error, and the leader would be told their
+		 * confirmation could not be saved.
+		 *
+		 * What is asserted is what must be true either way: nothing outside the
+		 * column's range is ever stored, and a nonsense figure never becomes a
+		 * gap of several thousand on the panel this exists to make trustworthy.
+		 */
+		Teams::confirm_headcount( (int) $team->id, -5 );
+		$a->same( 0, (int) Teams::get( (int) $team->id )->current_headcount, 'a negative count floors at zero' );
+
+		Teams::confirm_headcount( (int) $team->id, 99999999 );
+		$stored = (int) Teams::get( (int) $team->id )->current_headcount;
+		$a->ok( $stored <= 65535, 'and an absurd one cannot exceed what the column holds' );
+		$a->ok( $stored >= 0, 'nor go below zero' );
+
+		$wpdb->update(
+			Schema::table( 'teams' ),
+			array( 'current_headcount' => $was, 'headcount_checked_at' => $old ),
+			array( 'id' => (int) $team->id ),
+			array( '%d', '%s' ),
+			array( '%d' )
+		);
+	}
+);
+
+test(
+	'confirming records who said the figure was right, and whether it moved',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * "Who last said this was right, and when" is the question the whole
+		 * stale-headcount mechanism exists to answer, and a bare team.saved row
+		 * cannot answer it.
+		 */
+		global $wpdb;
+
+		$team = Teams::get_by_slug( 'worship' );
+		$was  = (int) $team->current_headcount;
+		$old  = $team->headcount_checked_at;
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		Teams::confirm_headcount( (int) $team->id, $was + 2 );
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+				'SELECT object_id, user_id, meta_json FROM ' . Schema::table( 'audit' )
+				. ' WHERE action = %s ORDER BY id DESC LIMIT 1',
+				\Serve_Dashboard\Audit::ACTION_HEADCOUNT_CONFIRMED
+			)
+		);
+
+		$a->ok( null !== $row, 'the confirmation is on the record' );
+		$a->same( (int) $team->id, (int) $row->object_id, 'against the team' );
+		$a->ok( (int) $row->user_id > 0, 'and names who did it' );
+
+		$meta = json_decode( (string) $row->meta_json, true );
+
+		$a->same( $was, (int) $meta['was'], 'with the number it was' );
+		$a->same( $was + 2, (int) $meta['now'], 'and the number it became' );
+		$a->same( true, (bool) $meta['adjusted'], 'flagged as a correction rather than a plain confirmation' );
+
+		/*
+		 * And the other way round. Somebody who looks at the number, finds it
+		 * right and confirms it has done the thing being asked for -- but the
+		 * trail must not claim they changed something. Without this the flag
+		 * could be hardcoded to true and nothing would notice.
+		 */
+		Teams::confirm_headcount( (int) $team->id, $was + 2 );
+
+		$plain = json_decode(
+			(string) $wpdb->get_var(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is not user input.
+					'SELECT meta_json FROM ' . Schema::table( 'audit' )
+					. ' WHERE action = %s ORDER BY id DESC LIMIT 1',
+					\Serve_Dashboard\Audit::ACTION_HEADCOUNT_CONFIRMED
+				)
+			),
+			true
+		);
+
+		$a->same( false, (bool) $plain['adjusted'], 'confirming the number it already held is not a correction' );
+
+		$wpdb->update(
+			Schema::table( 'teams' ),
+			array( 'current_headcount' => $was, 'headcount_checked_at' => $old ),
+			array( 'id' => (int) $team->id ),
+			array( '%d', '%s' ),
+			array( '%d' )
+		);
+	}
+);
+
+test(
+	'the route confirms a headcount and hands back the panels it changed',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * The point of doing this inline is not leaving the page, so the caller
+		 * is given the fresh gap rows rather than being told to reload the thing
+		 * it was trying not to reload.
+		 */
+		global $wpdb;
+
+		$team   = Teams::get_by_slug( 'fellowship-kids' );
+		$was    = (int) $team->current_headcount;
+		$old    = $team->headcount_checked_at;
+		$target = (int) $team->target_headcount;
+
+		/*
+		 * The gap is arranged here rather than borrowed from whatever the
+		 * database happens to hold.
+		 *
+		 * Asserting the returned list is merely non-empty passed on a developer
+		 * machine with demo data and failed in CI, where no team is short. A
+		 * test that depends on ambient rows is not testing the route. So this
+		 * team is given a target five above where the confirmation will leave
+		 * it, which means a gap of exactly five must come back for exactly this
+		 * team -- and that is what gets asserted.
+		 */
+		$wpdb->update(
+			Schema::table( 'teams' ),
+			array( 'target_headcount' => $was + 6 ),
+			array( 'id' => (int) $team->id ),
+			array( '%d' ),
+			array( '%d' )
+		);
+
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		/*
+		 * rest_do_request directly rather than call_route(), which returns only
+		 * a status and an error code. What matters here is the body: the whole
+		 * point of confirming inline is that the caller does not reload, so it
+		 * has to be handed the panels that changed.
+		 */
+		$request = new \WP_REST_Request( 'POST', '/serve/v1/teams/' . (int) $team->id . '/headcount' );
+		$request->set_header( 'content-type', 'application/json' );
+		$request->set_body( (string) wp_json_encode( array( 'current' => $was + 1 ) ) );
+
+		$response = rest_do_request( $request );
+		$status   = $response->get_status();
+		$data     = (array) $response->get_data();
+
+		$a->same( 200, $status, 'the route answers' );
+		$a->ok( ! empty( $data['ok'] ), 'and says so' );
+		/*
+		 * Non-empty, not merely present. `is_array( array() )` is true, so a
+		 * route that stopped sending the panels passed the first version of
+		 * this -- and the whole point of confirming inline is that the caller is
+		 * handed the fresh panels rather than reloading.
+		 */
+		$a->ok( array_key_exists( 'gaps', $data ), 'with the gap rows' );
+		$a->ok( array_key_exists( 'headcountChecks', $data ), 'and the remaining checks' );
+
+		$mine = array_values(
+			array_filter(
+				(array) $data['gaps'],
+				static fn( $row ) => (int) $row['id'] === (int) $team->id
+			)
+		);
+
+		$a->same( 1, count( $mine ), 'this team is in the gaps that came back' );
+		$a->same( 5, (int) $mine[0]['gap'], 'and its shortfall is measured from the number just confirmed' );
+		$a->ok( ! empty( $mine[0]['name'] ), 'as a real row rather than an id' );
+
+		$a->same( $was + 1, (int) Teams::get( (int) $team->id )->current_headcount, 'the number moved' );
+
+		// The team it just confirmed is no longer asking to be confirmed.
+		$still = array_filter(
+			(array) $data['headcountChecks'],
+			static fn( $row ) => (int) $row['id'] === (int) $team->id
+		);
+		$a->same( array(), $still, 'and has dropped off the list' );
+
+		$wpdb->update(
+			Schema::table( 'teams' ),
+			array(
+				'current_headcount'    => $was,
+				'headcount_checked_at' => $old,
+				'target_headcount'     => $target,
+			),
+			array( 'id' => (int) $team->id ),
+			array( '%d', '%s', '%d' ),
+			array( '%d' )
+		);
+	}
+);
+
+test(
+	'the route itself refuses a leader who cannot edit capacity',
+	function ( Assert $a, Fixtures $f ) {
+		/*
+		 * Asserted against the route, not against Teams::confirm_headcount().
+		 * The method has its own check and is tested above; this is the
+		 * permission_callback, and swapping it for the read-only one passed a
+		 * suite that only ever called the method directly.
+		 */
+		$team   = Teams::get_by_slug( 'welcome' );
+		$leader = $f->user( \Serve_Dashboard\Roles::ROLE_LEADER );
+		$f->lead_team( $leader, 'welcome' );
+
+		wp_set_current_user( $leader );
+
+		$was = (int) Teams::get( (int) $team->id )->current_headcount;
+
+		$request = new \WP_REST_Request( 'POST', '/serve/v1/teams/' . (int) $team->id . '/headcount' );
+		$request->set_header( 'content-type', 'application/json' );
+		$request->set_body( (string) wp_json_encode( array( 'current' => 999 ) ) );
+
+		$response = rest_do_request( $request );
+
+		$a->same( 403, $response->get_status(), 'the route refuses them' );
+
+		/*
+		 * Stopped at the door, and that is the part worth asserting.
+		 *
+		 * A 403 alone cannot tell the two layers apart: swap this route's
+		 * permission_callback for the read-only one and a ministry leader gets
+		 * through it, reaches Teams::confirm_headcount(), and is refused there
+		 * instead -- same status, same untouched number, test still green. That
+		 * mutation survived the first version of this test.
+		 *
+		 * The error code is what distinguishes them. WordPress answers a failed
+		 * permission_callback with rest_forbidden; the method answers with
+		 * serve_forbidden. Asserting the former is asserting that the route
+		 * carries its own guard rather than leaning on the one inside.
+		 */
+		$a->same(
+			'rest_forbidden',
+			(string) ( $response->get_data()['code'] ?? '' ),
+			'at the route rather than inside the method'
+		);
+
+		$a->same( $was, (int) Teams::get( (int) $team->id )->current_headcount, 'and the number is untouched' );
+
+		wp_set_current_user( 0 );
+		$anon = new \WP_REST_Request( 'POST', '/serve/v1/teams/' . (int) $team->id . '/headcount' );
+		$anon->set_header( 'content-type', 'application/json' );
+		$anon->set_body( (string) wp_json_encode( array( 'current' => 999 ) ) );
+
+		$a->same( 401, rest_do_request( $anon )->get_status(), 'and an anonymous caller too' );
+		$a->same( $was, (int) Teams::get( (int) $team->id )->current_headcount, 'still untouched' );
+	}
+);
+
+test(
+	'confirming a team that does not exist is refused as missing',
+	function ( Assert $a, Fixtures $f ) {
+		wp_set_current_user( $f->user( \Serve_Dashboard\Roles::ROLE_PASTOR ) );
+
+		$result = Teams::confirm_headcount( 999999, 4 );
+
+		$a->ok( is_wp_error( $result ), 'refused' );
+		$a->same( 'serve_not_found', $result->get_error_code(), 'as missing rather than forbidden' );
+	}
+);

@@ -1339,6 +1339,76 @@ button.serve-metric:hover {
 	color: var(--serve-text-muted);
 }
 
+/* Something the leader just did, and it worked. */
+.serve-note--ok {
+	background: var(--serve-success-soft);
+	color: var(--serve-success);
+}
+
+/* ── Headcount confirmed in place ───────────────────────────────────────── */
+
+/*
+ * The number and its button, on one line under the team name.
+ *
+ * Correcting a headcount used to be a link to the Teams screen: a whole-page
+ * navigation, away from the queue somebody was working, to change one figure and
+ * then find their own way back. The warning was ignorable partly because acting
+ * on it cost more than ignoring it.
+ */
+.serve-hc {
+	display: flex;
+	align-items: center;
+	gap: var(--serve-space-2);
+	flex: 0 0 auto;
+}
+
+.serve-hc__input {
+	/* Wide enough for a four-figure team and no wider: this is a count of
+	   people in one ministry, not a budget line. */
+	width: 5.5em;
+	min-height: 36px;
+	padding: 0 var(--serve-space-2);
+	border: 1px solid var(--serve-border-strong);
+	border-radius: var(--serve-radius-sm);
+	background: var(--serve-surface);
+	color: var(--serve-text);
+	font-size: .875rem;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+
+.serve-hc__input:disabled {
+	background: var(--serve-sand);
+	color: var(--serve-text-muted);
+}
+
+/* Full width beneath the row, so a message never squeezes the controls. */
+.serve-hc__error {
+	flex-basis: 100%;
+	margin-top: var(--serve-space-2);
+}
+
+/*
+ * Stacked, not competing.
+ *
+ * Name and status on their own full-width lines, then the number and its button
+ * beneath them. Side by side at the width this card actually gets, the status
+ * line was squeezed to 97px and wrapped to three lines beside the input --
+ * measured, not guessed -- and letting the two halves fight for one row is the
+ * same mistake that rendered a team name one letter per line down the card.
+ */
+form.serve-fu--settling {
+	flex-direction: column;
+	align-items: stretch;
+	gap: var(--serve-space-2);
+	padding: var(--serve-space-3) 0;
+}
+
+/* The controls sit to the right of the text they act on, not under its start. */
+form.serve-fu--settling .serve-hc {
+	justify-content: flex-end;
+}
+
 /* ── Empty / error states ───────────────────────────────────────────────── */
 
 .serve-empty {
