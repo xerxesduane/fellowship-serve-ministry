@@ -588,3 +588,7 @@
 		border: 1px solid CanvasText;
 	}
 }
+
+.serve-checks__action {
+	min-width: 16rem;
+}

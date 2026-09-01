@@ -41,10 +41,12 @@ CREATE TABLE IF NOT EXISTS `{prefix}sessions` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
 
 -- Settings. Replaces the WordPress options API.
+-- Column names match WordPress's, because ported domain code writes raw SQL
+-- against option_name. See 002 for what went wrong when they did not.
 CREATE TABLE IF NOT EXISTS `{prefix}options` (
-	name varchar(190) NOT NULL,
-	value longtext NOT NULL,
-	PRIMARY KEY (name)
+	option_name varchar(190) NOT NULL,
+	option_value longtext NOT NULL,
+	PRIMARY KEY (option_name)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
 
 -- Submissions. profile_json holds the full SHAPE payload; the broken out

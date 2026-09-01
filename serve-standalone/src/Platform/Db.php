@@ -33,6 +33,17 @@ final class Db {
 	/** Rows affected by the last write. */
 	public int $rows_affected = 0;
 
+	/**
+	 * The options table's name, as WordPress exposed it.
+	 *
+	 * Ported code interpolates `{$wpdb->options}` into raw SQL. Undefined, it
+	 * interpolated as an empty string and produced `DELETE FROM  WHERE ...` --
+	 * a syntax error that Db::query() reports by returning false, which nobody
+	 * was checking. Metrics::flush() therefore never cleared the
+	 * gift-distribution cache.
+	 */
+	public string $options;
+
 	private bool $suppressing = false;
 
 	private \PDO $pdo;
@@ -49,6 +60,8 @@ final class Db {
 
 		$this->pdo->setAttribute( \PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION );
 		$this->pdo->setAttribute( \PDO::ATTR_DEFAULT_FETCH_MODE, \PDO::FETCH_OBJ );
+		$this->options = $this->table( 'options' );
+
 		$this->pdo->setAttribute( \PDO::ATTR_EMULATE_PREPARES, false );
 
 		/*
@@ -119,6 +132,21 @@ final class Db {
 		$this->suppressing = $suppress;
 
 		return $was;
+	}
+
+	/**
+	 * Escape the wildcards in a LIKE search term.
+	 *
+	 * `%` and `_` are wildcards to LIKE, so a search for "50%" without this
+	 * matches everything beginning "50" and a search for "a_b" matches "axb".
+	 * Its absence was not a subtle bug: Submissions::query() calls it for the
+	 * dashboard's search box, so every search returned a 500.
+	 *
+	 * Separate from prepare(), and both are needed -- this escapes the pattern,
+	 * prepare() quotes the value.
+	 */
+	public function esc_like( string $text ): string {
+		return addcslashes( $text, "_%" . chr( 92 ) );
 	}
 
 	public function get_charset_collate(): string {

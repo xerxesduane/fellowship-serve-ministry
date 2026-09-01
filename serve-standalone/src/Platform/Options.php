@@ -45,8 +45,8 @@ final class Options {
 
 		$this->loaded = true;
 
-		foreach ( $this->db->get_results( 'SELECT name, value FROM ' . $this->table() ) as $row ) {
-			$this->cache[ (string) $row->name ] = $this->decode( (string) $row->value );
+		foreach ( $this->db->get_results( 'SELECT option_name, option_value FROM ' . $this->table() ) as $row ) {
+			$this->cache[ (string) $row->option_name ] = $this->decode( (string) $row->option_value );
 		}
 	}
 
@@ -113,8 +113,8 @@ final class Options {
 		$encoded = $this->encode( $value );
 
 		$sql = $this->db->prepare(
-			'INSERT INTO ' . $this->table() . ' (name, value) VALUES (%s, %s)'
-			. ' ON DUPLICATE KEY UPDATE value = VALUES(value)',
+			'INSERT INTO ' . $this->table() . ' (option_name, option_value) VALUES (%s, %s)'
+			. ' ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)',
 			$name,
 			$encoded
 		);
@@ -144,7 +144,7 @@ final class Options {
 	public function delete( string $name ): bool {
 		$this->load();
 
-		$done = $this->db->delete( $this->table(), array( 'name' => $name ) );
+		$done = $this->db->delete( $this->table(), array( 'option_name' => $name ) );
 
 		unset( $this->cache[ $name ] );
 

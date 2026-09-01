@@ -305,7 +305,7 @@ serve_chrome_open(
 	<?php
 	$serve_failing = array_filter(
 		$serve_checks,
-		static fn( $check ): bool => 'fail' === ( ( (array) $check )['state'] ?? '' )
+		static fn( $check ): bool => 'fail' === ( ( (array) $check )['status'] ?? '' )
 	);
 	?>
 
@@ -336,13 +336,14 @@ serve_chrome_open(
 					<th scope="col"><?php esc_html_e( 'State' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Check' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Detail' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'What to do' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php foreach ( $serve_checks as $serve_check ) : ?>
 					<?php
 					$serve_check = (array) $serve_check;
-					$serve_state = (string) ( $serve_check['state'] ?? 'warn' );
+					$serve_state = (string) ( $serve_check['status'] ?? 'warn' );
 					$serve_words = array(
 						'pass' => __( 'Pass' ),
 						'fail' => __( 'Fail' ),
@@ -356,6 +357,17 @@ serve_chrome_open(
 						</td>
 						<th scope="row"><?php echo esc_html( (string) ( $serve_check['label'] ?? '' ) ); ?></th>
 						<td class="serve-checks__detail"><?php echo esc_html( (string) ( $serve_check['detail'] ?? '' ) ); ?></td>
+						<td class="serve-checks__action">
+							<?php
+							/*
+							 * The remedy, which the checks already carry and an
+							 * earlier version of this table silently dropped. A
+							 * checklist that says something is wrong without
+							 * saying what to do about it is a worry generator.
+							 */
+							echo esc_html( (string) ( $serve_check['action'] ?? '' ) );
+							?>
+						</td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
