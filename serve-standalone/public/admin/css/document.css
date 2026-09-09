@@ -1,0 +1,273 @@
+/*
+ * Public documents: the privacy notice.
+ *
+ * This is the one screen with no equivalent to copy. The plugin rendered the
+ * notice into a WordPress page and let the active theme handle prose, so its own
+ * stylesheet has nothing general to borrow -- only rules scoped to the consent
+ * page. Standing alone, the notice was arriving as unstyled browser default:
+ * Times New Roman, full-width lines, purple links. For the page that carries
+ * this application's legal promises about somebody's personal data, that reads
+ * as though nobody meant it.
+ *
+ * Every value is a token from app.css. The one thing this file chooses for
+ * itself is the measure -- see below.
+ */
+
+/* The document owns the page, so it sets the page. */
+html,
+body.serve-document {
+	margin: 0;
+}
+
+body.serve-document {
+	background: var(--serve-bg, #f7f6f2);
+}
+
+/*
+ * The tokens live on .serve-app, not :root, so the wrapper is load-bearing
+ * rather than decorative. Without it every var() below resolves to nothing.
+ */
+.serve-document .serve-app {
+	min-height: 100vh;
+	padding: var(--serve-space-5) var(--serve-space-4) var(--serve-space-7);
+}
+
+/* ── A masthead, so the page is identifiably ours ────────────────────────── */
+
+.serve-doc__head {
+	max-width: 46rem;
+	margin: 0 auto var(--serve-space-5);
+	padding: var(--serve-space-5);
+	background: var(--serve-navy);
+	border-radius: var(--serve-radius);
+	/*
+	 * Without this the wordmark is navy on navy.
+	 *
+	 * .serve-brand__mark sets no colour of its own -- in the sidebar it inherits
+	 * white from .serve-sidebar. Borrowing the block without borrowing that
+	 * inheritance left "SHAPE" invisible.
+	 */
+	color: #fff;
+}
+
+/*
+ * The brand block in the navy context it was designed for.
+ *
+ * Its subtitle is #8fc7c9 and its ministry line is translucent white; on a
+ * white card both vanish. Same reasoning as the sign-in screen.
+ */
+.serve-doc__head .serve-brand__mark {
+	font-size: 1.375rem;
+}
+
+.serve-doc__back {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--serve-space-2);
+	/* 44px tall, because this is the only way off the page on a phone. */
+	min-height: 44px;
+	margin-top: var(--serve-space-3);
+	font-size: .875rem;
+	/* 8.6:1 on navy. */
+	color: #cfe6e6;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.serve-doc__back:hover {
+	color: #fff;
+}
+
+/* ── The prose ───────────────────────────────────────────────────────────── */
+
+.serve-prose-wrap {
+	max-width: 46rem;
+	margin: 0 auto;
+	padding: var(--serve-space-6);
+	background: var(--serve-surface);
+	border: 1px solid var(--serve-border);
+	border-radius: var(--serve-radius);
+	box-shadow: var(--serve-shadow);
+}
+
+.serve-prose {
+	/*
+	 * A measure, not a width.
+	 *
+	 * 68 characters. Long lines are the specific reason dense legal text goes
+	 * unread: the eye loses its place on the return sweep, so somebody skims a
+	 * document they are meant to understand. This is the one value in the file
+	 * chosen for the content rather than taken from the design system, because
+	 * the design system has no reading-measure token -- nothing else here is
+	 * a page of prose.
+	 */
+	max-width: 68ch;
+	font-size: 1rem;
+	/* Unitless, so it scales with the font rather than clipping at large sizes. */
+	line-height: 1.65;
+	color: var(--serve-text);
+}
+
+.serve-prose > * + * {
+	margin-top: var(--serve-space-4);
+}
+
+/*
+ * The opening paragraph, which is the summary somebody will actually read.
+ *
+ * Larger and darker than the rest on purpose: if a person reads one paragraph
+ * of this page, it should be the one saying their answers stay in their own
+ * browser until they choose to share them.
+ */
+.serve-prose__lede {
+	font-size: 1.0625rem;
+	line-height: 1.6;
+	color: var(--serve-navy);
+}
+
+/*
+ * Headings closer to the text they introduce than to the text above.
+ *
+ * Thirteen sections in one document, so the eye needs the grouping: an h2
+ * equidistant from both reads as a divider rather than as a title.
+ */
+.serve-prose h2 {
+	margin-top: var(--serve-space-6);
+	font-size: 1.0625rem;
+	font-weight: 700;
+	line-height: 1.35;
+	color: var(--serve-navy);
+}
+
+.serve-prose h2 + * {
+	margin-top: var(--serve-space-2);
+}
+
+.serve-prose ul {
+	margin-top: var(--serve-space-3);
+	padding-left: 0;
+	list-style: none;
+}
+
+.serve-prose li {
+	position: relative;
+	padding-left: var(--serve-space-5);
+}
+
+.serve-prose li + li {
+	margin-top: var(--serve-space-2);
+}
+
+/*
+ * A teal marker rather than a browser bullet.
+ *
+ * aria-hidden is not needed: a ::before is not in the accessibility tree, so
+ * the list is still announced as a list with its real item count.
+ */
+.serve-prose li::before {
+	content: "";
+	position: absolute;
+	top: .62em;
+	left: var(--serve-space-2);
+	width: 6px;
+	height: 6px;
+	background: var(--serve-teal);
+	border-radius: 50%;
+}
+
+/*
+ * Links that are visibly links.
+ *
+ * Underlined rather than colour-only: the notice's links are how somebody asks
+ * for their data to be deleted, and colour alone is not a distinguishable
+ * affordance for a colourblind reader.
+ */
+.serve-prose a {
+	/* 5.9:1 on white. */
+	color: var(--serve-teal-dark);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.serve-prose a:hover {
+	color: var(--serve-navy);
+}
+
+.serve-document :is(a, summary):focus-visible {
+	outline: 2px solid var(--serve-teal);
+	outline-offset: 2px;
+	border-radius: 2px;
+}
+
+/* ── Print, because this is the page people keep a copy of ───────────────── */
+
+@media print {
+	body.serve-document {
+		background: #fff;
+	}
+
+	.serve-doc__head,
+	.serve-doc__back {
+		display: none;
+	}
+
+	.serve-prose-wrap {
+		max-width: none;
+		padding: 0;
+		border: 0;
+		box-shadow: none;
+	}
+
+	/* A heading should not be the last thing on a page. */
+	.serve-prose h2 {
+		break-after: avoid;
+	}
+
+	.serve-prose p,
+	.serve-prose li {
+		break-inside: avoid;
+	}
+}
+
+@media (forced-colors: active) {
+	.serve-prose-wrap {
+		border: 1px solid CanvasText;
+	}
+
+	.serve-prose li::before {
+		background: CanvasText;
+	}
+}
+
+/* ── Outcome pages: not allowed, not found ───────────────────────────────── */
+
+.serve-message {
+	max-width: 34rem;
+}
+
+.serve-message__title {
+	margin: 0;
+	font-size: 1.375rem;
+	font-weight: 700;
+	line-height: 1.3;
+	color: var(--serve-navy);
+}
+
+.serve-message__detail {
+	margin: var(--serve-space-3) 0 0;
+	line-height: 1.6;
+	color: var(--serve-text-muted);
+}
+
+.serve-message__links {
+	margin: var(--serve-space-5) 0 0;
+	padding-top: var(--serve-space-4);
+	font-size: .875rem;
+	border-top: 1px solid var(--serve-border);
+}
+
+.serve-message__links a {
+	color: var(--serve-teal-dark);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}

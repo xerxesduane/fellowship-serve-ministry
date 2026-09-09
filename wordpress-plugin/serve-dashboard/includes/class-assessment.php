@@ -244,6 +244,15 @@ final class Assessment {
 	public static function config(): array {
 		return array(
 			'logoUrl'      => SERVE_DASHBOARD_URL . 'public/assessment/fellowship-logo.jpeg',
+			/*
+			 * Where a participant sends a question.
+			 *
+			 * Passed in rather than written into the journey's JavaScript, so a
+			 * church that changes the address in Settings changes it everywhere --
+			 * the results page, the share step and the privacy notice all read the
+			 * same value.
+			 */
+			'contactEmail' => Privacy::contact_email(),
 			'shareUrl'     => self::consent_url(),
 			'draftUrl'     => esc_url_raw( rest_url( Rest::NAMESPACE . '/draft' ) ),
 			'draftConsent' => Draft::purpose_text(),

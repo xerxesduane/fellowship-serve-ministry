@@ -1,0 +1,345 @@
+#!/usr/bin/env php
+<?php
+/**
+ * The command line.
+ *
+ * Replaces WP-CLI and, more importantly, WP-Cron: the scheduled jobs run from
+ * here via the system scheduler, rather than firing only when somebody happens
+ * to visit the site.
+ *
+ * @package Serve
+ */
+
+declare(strict_types=1);
+
+if ( 'cli' !== PHP_SAPI ) {
+	http_response_code( 404 );
+	exit;
+}
+
+require dirname( __DIR__ ) . '/src/bootstrap.php';
+
+use Serve\Platform\App;
+use Serve\Platform\Auth;
+use Serve\Platform\Hooks;
+use Serve\Platform\Migrator;
+use Serve_Dashboard\Bootstrap;
+use Serve_Dashboard\Schema;
+
+$argv    = $_SERVER['argv'] ?? array();
+$command = $argv[1] ?? 'help';
+$args    = array_slice( $argv, 2 );
+
+/** Read a --flag=value argument. */
+$flag = static function ( string $name, string $default = '' ) use ( $args ): string {
+	foreach ( $args as $arg ) {
+		if ( str_starts_with( $arg, "--{$name}=" ) ) {
+			return substr( $arg, strlen( $name ) + 3 );
+		}
+	}
+
+	return $default;
+};
+
+/** Ask for something without echoing it. */
+$prompt_hidden = static function ( string $label ): string {
+	fwrite( STDOUT, $label );
+
+	// Windows has no shell_exec stty, so this falls back to a visible prompt
+	// rather than pretending the input was hidden.
+	if ( DIRECTORY_SEPARATOR === '\\' ) {
+		fwrite( STDOUT, "\n  (input is visible in this terminal)\n  " );
+		$value = trim( (string) fgets( STDIN ) );
+	} else {
+		shell_exec( 'stty -echo' );
+		$value = trim( (string) fgets( STDIN ) );
+		shell_exec( 'stty echo' );
+		fwrite( STDOUT, "\n" );
+	}
+
+	return $value;
+};
+
+switch ( $command ) {
+
+	case 'secret':
+		/*
+		 * Printed rather than written into the config, because writing to a file
+		 * the operator has not created yet is worse than telling them the value.
+		 */
+		echo bin2hex( random_bytes( 32 ) ), "\n";
+		exit( 0 );
+
+	case 'migrate':
+		serve_boot( $flag( 'config' ) );
+
+		$migrator = new Migrator( App::db() );
+		$pending  = $migrator->pending();
+
+		if ( array() === $pending ) {
+			echo "Schema is up to date.\n";
+		} else {
+			echo 'Applying: ', implode( ', ', $pending ), "\n";
+
+			$result = $migrator->migrate();
+
+			if ( '' !== $result['error'] ) {
+				fwrite( STDERR, "Failed: {$result['error']}\n" );
+				exit( 1 );
+			}
+
+			echo 'Applied ', count( $result['applied'] ), " schema migration(s).\n";
+		}
+
+		/*
+		 * The data migrations run either way.
+		 *
+		 * They are a separate series from the schema files -- seeding the
+		 * catch-all team, backfilling a column that was added empty -- and an
+		 * earlier version of this command returned before reaching them whenever
+		 * the schema happened to be current. That is exactly the case where they
+		 * still need to run: schema applied, data half-converted.
+		 */
+		$before = (string) get_option( Schema::OPTION_DB_VERSION, 'none' );
+
+		Schema::maybe_upgrade();
+
+		$after = (string) get_option( Schema::OPTION_DB_VERSION, 'none' );
+
+		echo $before === $after
+			? "Data version {$after}, unchanged.\n"
+			: "Data version {$before} -> {$after}.\n";
+
+		exit( 0 );
+
+	case 'status':
+		serve_boot( $flag( 'config' ) );
+
+		$migrator = new Migrator( App::db() );
+
+		echo 'Version:    ', SERVE_VERSION, "\n";
+		echo 'Data schema:', ' ', (string) get_option( Schema::OPTION_DB_VERSION, 'not installed' ), "\n";
+		echo 'Applied:    ', count( $migrator->applied() ), " migration(s)\n";
+		echo 'Pending:    ', array() === $migrator->pending() ? 'none' : implode( ', ', $migrator->pending() ), "\n";
+		echo 'Mail:       ', (string) App::config( 'mail.transport', 'log' ), "\n";
+		exit( 0 );
+
+	case 'user:add':
+		serve_boot( $flag( 'config' ) );
+
+		$email = $flag( 'email' );
+		$name  = $flag( 'name', $email );
+		$role  = $flag( 'role', Auth::ROLE_LEADER );
+
+		if ( '' === $email ) {
+			fwrite( STDERR, "Usage: serve user:add --email=you@church.org --name=\"Your Name\" --role=serve_pastor\n" );
+			fwrite( STDERR, 'Roles: ' . implode( ', ', Auth::roles() ) . "\n" );
+			exit( 1 );
+		}
+
+		$password = $prompt_hidden( 'Password (at least 12 characters): ' );
+
+		$result = App::auth()->create_user( $email, $name, $role, $password );
+
+		if ( is_wp_error( $result ) ) {
+			fwrite( STDERR, 'Failed: ' . $result->get_error_message() . "\n" );
+			exit( 1 );
+		}
+
+		echo "Created user {$result} ({$email}) as {$role}.\n";
+		exit( 0 );
+
+	case 'user:password':
+		serve_boot( $flag( 'config' ) );
+
+		$email = $flag( 'email' );
+		$user  = App::auth()->user_by_email( $email );
+
+		if ( null === $user ) {
+			fwrite( STDERR, "No account for {$email}.\n" );
+			exit( 1 );
+		}
+
+		$password = $prompt_hidden( 'New password (at least 12 characters): ' );
+		$problem  = Auth::password_problem( $password );
+
+		if ( null !== $problem ) {
+			fwrite( STDERR, "Failed: {$problem}\n" );
+			exit( 1 );
+		}
+
+		App::auth()->set_password( (int) $user->id, $password );
+
+		echo "Password changed for {$email}.\n";
+		exit( 0 );
+
+	case 'user:list':
+		serve_boot( $flag( 'config' ) );
+
+		$rows = App::db()->get_results(
+			'SELECT id, email, display_name, role, is_active, last_login_at FROM '
+			. App::db()->table( 'users' ) . ' ORDER BY id'
+		);
+
+		if ( array() === $rows ) {
+			echo "No accounts yet. Create one with: serve user:add\n";
+			exit( 0 );
+		}
+
+		foreach ( $rows as $row ) {
+			printf(
+				"%3d  %-34s %-26s %-12s %s\n",
+				(int) $row->id,
+				(string) $row->email,
+				(string) $row->display_name,
+				str_replace( 'serve_', '', (string) $row->role ),
+				(int) $row->is_active ? 'active' : 'disabled'
+			);
+		}
+
+		exit( 0 );
+
+	case 'seed:demo':
+		serve_boot( $flag( 'config' ) );
+
+		/*
+		 * Runs the plugin's seeder, not a copy of it.
+		 *
+		 * dev/seed-demo.php is 546 lines of carefully chosen demo people -- gift
+		 * answers that genuinely point at the teams they are placed on, one
+		 * person deliberately unmatched, one paused mid-journey. Duplicating that
+		 * here would give two sets of demo data that drift apart, and the one
+		 * that drifts is the one nobody is looking at.
+		 *
+		 * Its only tie to WP-CLI is three logging calls and a guard, so those are
+		 * provided and the file is included as it stands.
+		 */
+		if ( ! class_exists( 'WP_CLI' ) ) {
+			// phpcs:disable
+			class WP_CLI {
+				public static function log( string $message ): void {
+					echo '  ', $message, "\n";
+				}
+
+				public static function warning( string $message ): void {
+					fwrite( STDERR, '  ! ' . $message . "\n" );
+				}
+
+				public static function success( string $message ): void {
+					echo "\n", $message, "\n";
+				}
+
+				public static function error( string $message ): void {
+					fwrite( STDERR, $message . "\n" );
+					exit( 1 );
+				}
+			}
+			// phpcs:enable
+		}
+
+		if ( ! defined( 'WP_CLI' ) ) {
+			define( 'WP_CLI', true );
+		}
+
+		$seeder = SERVE_ROOT . '/../wordpress-plugin/serve-dashboard/dev/seed-demo.php';
+
+		if ( ! is_file( $seeder ) ) {
+			fwrite( STDERR, "Cannot find the seeder at {$seeder}\n" );
+			exit( 1 );
+		}
+
+		/*
+		 * The demo people are placed on real teams, so the teams have to exist.
+		 * seed_defaults() is a no-op once they do.
+		 */
+		\Serve_Dashboard\Teams::seed_defaults();
+
+		require $seeder;
+		exit( 0 );
+
+	case 'cron':
+		serve_boot( $flag( 'config' ) );
+
+		/*
+		 * Run whatever is due, then record the next time.
+		 *
+		 * Intended to be called every fifteen minutes by the system scheduler.
+		 * Each job decides for itself whether it has work; running one early is
+		 * harmless, and none of them assume they run exactly once a day.
+		 */
+		$jobs = get_option( 'serve_cron', array() );
+		$jobs = is_array( $jobs ) ? $jobs : array();
+		$now  = time();
+		$ran  = array();
+
+		// A first run has nothing scheduled, so schedule the standard pair.
+		if ( array() === $jobs ) {
+			$jobs = array(
+				Bootstrap::CRON_RETENTION => array( 'next' => $now, 'recurrence' => 'daily' ),
+				Bootstrap::CRON_DIGEST    => array( 'next' => $now, 'recurrence' => 'daily' ),
+			);
+		}
+
+		foreach ( $jobs as $hook => $job ) {
+			if ( (int) ( $job['next'] ?? 0 ) > $now ) {
+				continue;
+			}
+
+			if ( ! Hooks::has( (string) $hook ) ) {
+				continue;
+			}
+
+			Hooks::run( (string) $hook );
+
+			$ran[] = (string) $hook;
+
+			$every = 'hourly' === ( $job['recurrence'] ?? 'daily' ) ? 3600 : 86400;
+
+			$jobs[ $hook ]['next'] = $now + $every;
+		}
+
+		update_option( 'serve_cron', $jobs );
+
+		echo array() === $ran ? "Nothing due.\n" : 'Ran: ' . implode( ', ', $ran ) . "\n";
+		exit( 0 );
+
+	case 'cron:list':
+		serve_boot( $flag( 'config' ) );
+
+		$jobs = get_option( 'serve_cron', array() );
+
+		if ( ! is_array( $jobs ) || array() === $jobs ) {
+			echo "Nothing scheduled. The first 'serve cron' run schedules the defaults.\n";
+			exit( 0 );
+		}
+
+		foreach ( $jobs as $hook => $job ) {
+			printf(
+				"%-28s next %s (%s)\n",
+				(string) $hook,
+				gmdate( 'Y-m-d H:i', (int) ( $job['next'] ?? 0 ) ) . ' UTC',
+				(string) ( $job['recurrence'] ?? 'daily' )
+			);
+		}
+
+		exit( 0 );
+
+	default:
+		echo <<<TEXT
+SERVE — PHP and MySQL, no WordPress.
+
+  serve secret                  Print a value for the config's secret
+  serve migrate                 Create or update the tables
+  serve status                  Version, migrations, mail transport
+  serve user:add --email=… --name=… --role=…
+  serve user:password --email=…
+  serve user:list
+  serve cron                    Run scheduled work that is due
+  serve cron:list               Show what is scheduled
+
+Roles: serve_admin, serve_pastor, serve_ministry_leader
+Every command takes --config=/path/to/config.php
+
+TEXT;
+		exit( 'help' === $command ? 0 : 1 );
+}

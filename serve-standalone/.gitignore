@@ -1,0 +1,6 @@
+# Credentials and the secret that signs sessions and confirmation tokens.
+/config/config.php
+
+# The mail log the default transport writes to, which contains real addresses
+# and live confirmation links.
+/var/

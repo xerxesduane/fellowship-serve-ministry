@@ -413,7 +413,16 @@ final class Fixtures {
 			Privacy::erase_submission( $id );
 		}
 
-		require_once ABSPATH . 'wp-admin/includes/user.php';
+		/*
+		 * WordPress does not load wp_delete_user() outside the admin, so it is
+		 * pulled in here -- but only when it is actually missing. The standalone
+		 * build provides it already, and requiring a WordPress file there would
+		 * fail on a constant that has no meaning.
+		 */
+		if ( ! function_exists( 'wp_delete_user' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/user.php';
+		}
+
 		foreach ( $this->users as $id ) {
 			wp_delete_user( $id );
 		}

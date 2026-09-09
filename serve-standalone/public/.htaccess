@@ -1,0 +1,31 @@
+# Everything that is not a real file goes to the front controller.
+#
+# Only this directory should be the document root. src/, config/, migrations/
+# and bin/ live above it and are unreachable over HTTP no matter what this file
+# says -- which is the point of putting them there.
+
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+
+	# Serve real files and directories as themselves.
+	RewriteCond %{REQUEST_FILENAME} -f [OR]
+	RewriteCond %{REQUEST_FILENAME} -d
+	RewriteRule ^ - [L]
+
+	RewriteRule ^ index.php [L]
+</IfModule>
+
+# No directory listings, ever.
+<IfModule mod_autoindex.c>
+	Options -Indexes
+</IfModule>
+
+# PHP is only ever executed through index.php. A file uploaded into an asset
+# directory by some future mistake must not be runnable.
+<FilesMatch "\.(php|phtml|phar)$">
+	Require all denied
+</FilesMatch>
+
+<Files "index.php">
+	Require all granted
+</Files>

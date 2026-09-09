@@ -225,6 +225,22 @@ final class App {
 		echo '</details>';
 	}
 
+	/**
+	 * The way out of the dashboard.
+	 *
+	 * A link back to the WordPress admin, because that is where this build
+	 * lives and where a leader with other WordPress work to do is going. The
+	 * standalone build overrides this with a sign-out, which is the only exit
+	 * that exists when there is no admin behind the app.
+	 */
+	public static function exit_control(): void {
+		printf(
+			'<a class="serve-exit" href="%s">%s</a>',
+			esc_url( admin_url() ),
+			esc_html__( 'Exit to WordPress', 'serve-dashboard' )
+		);
+	}
+
 	public static function render(): void {
 		if ( ! current_user_can( Roles::CAP_VIEW_DASHBOARD ) ) {
 			wp_die( esc_html__( 'You do not have access to the SERVE dashboard.', 'serve-dashboard' ) );

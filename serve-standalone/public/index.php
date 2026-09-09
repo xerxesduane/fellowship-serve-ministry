@@ -1,0 +1,748 @@
+<?php
+/**
+ * The front controller.
+ *
+ * Every request enters here. This is the whole of what WordPress's index.php,
+ * admin.php, wp-login.php and the REST bootstrap did between them, for this one
+ * application.
+ *
+ * Only this directory needs to be web-accessible. src/, config/, migrations/
+ * and bin/ sit above it and are unreachable over HTTP no matter how the server
+ * is configured, which is a real improvement on a plugin living inside a
+ * document root.
+ *
+ * @package Serve
+ */
+
+declare(strict_types=1);
+
+require dirname( __DIR__ ) . '/src/bootstrap.php';
+
+use Serve\Platform\App;
+use Serve\Platform\Auth;
+use Serve\Platform\Router;
+use Serve_Dashboard\Assessment;
+use Serve_Dashboard\Audit;
+use Serve_Dashboard\Hardening;
+use Serve_Dashboard\Privacy_Page;
+use Serve_Dashboard\Roles;
+use Serve_Dashboard\Teams;
+
+serve_boot();
+
+/*
+ * Resolve the path this application was asked for.
+ *
+ * Taken from the request rather than from PATH_INFO so it works with a plain
+ * "everything to index.php" rewrite and with the PHP development server.
+ */
+$serve_uri  = (string) parse_url( (string) ( $_SERVER['REQUEST_URI'] ?? '/' ), PHP_URL_PATH );
+$serve_base = rtrim( (string) parse_url( App::url(), PHP_URL_PATH ), '/' );
+
+if ( '' !== $serve_base && str_starts_with( $serve_uri, $serve_base ) ) {
+	$serve_uri = substr( $serve_uri, strlen( $serve_base ) );
+}
+
+$serve_path = trim( rawurldecode( $serve_uri ), '/' );
+
+// Whoever is asking, if anyone.
+App::auth()->resume_session();
+
+/* ── The API ─────────────────────────────────────────────────────────────── */
+
+if ( str_starts_with( $serve_path, 'api/' ) ) {
+	nocache_headers();
+
+	$route = substr( $serve_path, strlen( 'api' ) );
+
+	/*
+	 * Cross-site request forgery, for the writes only.
+	 *
+	 * The intake endpoint is deliberately open -- a participant filling in the
+	 * journey has no session and no token -- and it defends itself by rate
+	 * limiting and by refusing to trust anything the browser claims. Everything
+	 * that acts on somebody's behalf needs the header.
+	 */
+	$serve_method = strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) );
+	$serve_public = '/serve/v1/submissions' === $route || str_starts_with( $route, '/serve/v1/drafts' );
+
+	if ( 'GET' !== $serve_method && ! $serve_public ) {
+		$serve_token = (string) ( $_SERVER['HTTP_X_WP_NONCE'] ?? '' );
+
+		/*
+		 * 'wp_rest' is the action name App::config() mints the token under.
+		 *
+		 * The two have to agree and an earlier version of this had them minted
+		 * as 'wp_rest' and verified as 'serve_rest', which fails every write
+		 * with a 403 that reads like a permissions problem.
+		 */
+		if ( ! App::auth()->csrf_ok( $serve_token, 'wp_rest' ) ) {
+			Router::send(
+				Router::error_response(
+					new WP_Error(
+						'serve_bad_nonce',
+						__( 'That page has been open a while. Reload it and try again.' ),
+						array( 'status' => 403 )
+					)
+				)
+			);
+			exit;
+		}
+	}
+
+	Router::send( Router::dispatch( Router::from_globals( $route ) ) );
+	exit;
+}
+
+/* ── admin-post.php ──────────────────────────────────────────────────────── */
+
+/*
+ * The one WordPress entry point worth keeping the name of.
+ *
+ * Ported code builds links to admin-post.php and registers handlers on
+ * `admin_post_<action>` -- Export::register() does exactly that, and
+ * Export::url() puts the resulting URL in the dashboard's config blob. Without
+ * this route the dashboard rendered an Export CSV link that answered 404.
+ *
+ * Firing the hook rather than mapping actions to callables here means anything
+ * else registered the same way works without a second edit, and the handler is
+ * reached by the identical path in both builds. Each handler does its own
+ * nonce and capability check -- Export::download() checks
+ * check_admin_referer() then CAP_EXPORT -- so this dispatcher deliberately
+ * checks neither: duplicating them here would be the version that drifts.
+ */
+if ( 'admin-post.php' === $serve_path ) {
+	$serve_action = sanitize_key( (string) ( $_REQUEST['action'] ?? '' ) );
+
+	if ( '' === $serve_action || ! \Serve\Platform\Hooks::has( 'admin_post_' . $serve_action ) ) {
+		serve_message(
+			__( 'That action does not exist' ),
+			__( 'The link may be from an older version of this page. Reload and try again.' ),
+			400
+		);
+	}
+
+	serve_require_login( '' );
+
+	\Serve\Platform\Hooks::run( 'admin_post_' . $serve_action );
+
+	/*
+	 * A handler that returns rather than exiting has done nothing observable,
+	 * which is worth saying out loud instead of serving a blank 200.
+	 */
+	http_response_code( 500 );
+	exit;
+}
+
+/* ── Static assets ───────────────────────────────────────────────────────── */
+
+/*
+ * Served by PHP only as a fallback.
+ *
+ * A real deployment lets the web server handle these; this exists so the app
+ * works under `php -S` and behind a rewrite that sends everything here. The
+ * allowlist of extensions and the realpath check together mean a crafted path
+ * cannot read config.php.
+ */
+/*
+ * A leading "public/" is accepted as an alias.
+ *
+ * The ported code builds asset URLs as SERVE_DASHBOARD_URL . 'public/...',
+ * because in the plugin the assets sat in a public/ subdirectory of the plugin
+ * folder. Here public/ *is* the document root, so those URLs arrive as
+ * /public/assessment/styles.css.
+ *
+ * Accepting the prefix costs one alternation and leaves the ported asset paths
+ * untouched. Rewriting them instead would mean editing several files to change
+ * a string that is correct in the build they came from.
+ */
+if ( preg_match( '#^(?:public/)?(?:assessment|admin|css|js)/#', $serve_path ) ) {
+	$serve_relative = preg_replace( '#^public/#', '', $serve_path );
+	$serve_file     = realpath( __DIR__ . '/' . $serve_relative );
+	$serve_ok   = false !== $serve_file && str_starts_with( $serve_file, realpath( __DIR__ ) . DIRECTORY_SEPARATOR );
+
+	$serve_types = array(
+		'js'   => 'text/javascript; charset=utf-8',
+		'mjs'  => 'text/javascript; charset=utf-8',
+		'css'  => 'text/css; charset=utf-8',
+		'jpeg' => 'image/jpeg',
+		'jpg'  => 'image/jpeg',
+		'png'  => 'image/png',
+		'svg'  => 'image/svg+xml',
+	);
+
+	$serve_ext = strtolower( pathinfo( (string) $serve_relative, PATHINFO_EXTENSION ) );
+
+	if ( $serve_ok && is_file( $serve_file ) && isset( $serve_types[ $serve_ext ] ) ) {
+		header( 'Content-Type: ' . $serve_types[ $serve_ext ] );
+		header( 'X-Content-Type-Options: nosniff' );
+		header( 'Cache-Control: public, max-age=300' );
+		readfile( $serve_file );
+		exit;
+	}
+
+	http_response_code( 404 );
+	exit;
+}
+
+/* ── Pages ───────────────────────────────────────────────────────────────── */
+
+/*
+ * Anything that has to settle before a page is drawn.
+ *
+ * Verification::maybe_verify() hangs off this hook, and it is the whole of the
+ * email-confirmation flow: it reads ?serve_verify=<token> from the link in the
+ * confirmation email, marks the address proven, and redirects. Nothing fired
+ * the hook here, so opening the link did nothing at all -- and a submission
+ * stays invisible to every leader until it is opened. Combined with
+ * add_query_arg() having dropped the base URL from that link, the confirmation
+ * flow was broken at both ends: the email carried a link that went nowhere, and
+ * the destination would not have acted on it.
+ *
+ * Fired rather than calling maybe_verify() directly, for the same reason
+ * rest_api_init is: it is a real extension point, and anything else attached to
+ * it runs here without a second edit.
+ */
+do_action( 'template_redirect' );
+
+Hardening::send_headers( ! in_array( $serve_path, array( '', 'assessment', 'privacy' ), true ) );
+
+/**
+ * Render the outcome page: not allowed, or not found.
+ *
+ * Replaces the old serve_view()/views/layout.php pair. The layout's top-bar
+ * classes were never styled, so every error page was served as browser default.
+ */
+function serve_message( string $heading, string $detail, int $status ): void {
+	http_response_code( $status );
+
+	require SERVE_ROOT . '/views/message.php';
+
+	exit;
+}
+
+/** Refuse a signed-in caller who may not use this screen. */
+function serve_denied(): void {
+	serve_message(
+		__( 'You do not have access to this screen' ),
+		__( 'If you think you should, ask whoever set up your account to check your role.' ),
+		403
+	);
+}
+
+/**
+ * Write the teams whose values the leader actually changed.
+ *
+ * Every team on the board is submitted, changed or not, because that is what a
+ * form does. Writing all of them would be wrong rather than merely wasteful:
+ * Teams::save() stamps headcount_checked_at on each write, so one corrected
+ * target would mark every headcount in the church as freshly confirmed and
+ * silence the drift warning everywhere at once.
+ *
+ * So each row is compared with what is stored and skipped when it matches.
+ * $confirmed carries the teams whose figure the leader has explicitly said is
+ * right as it stands; those are written even though nothing changed, because
+ * confirming is the whole point of the checkbox.
+ *
+ * @param array<int|string,mixed> $submitted Raw $_POST['teams'].
+ * @param int[]                   $confirmed Team ids ticked as already correct.
+ * @return bool Whether anything was written.
+ */
+/**
+ * Write the settings, validating each one before it lands.
+ *
+ * Every value here is refused rather than coerced when it is wrong, because all
+ * four of them are load-bearing in a way a silently-corrected value would hide:
+ * the retention period is a promise published in the privacy notice, the contact
+ * address is where deletion requests go, the intake team decides who can read a
+ * new profile, and the form URL is a link put in front of volunteers.
+ *
+ * @param array<string,mixed> $posted
+ * @return array{saved:bool,errors:array<string,string>}
+ */
+function serve_save_settings( array $posted ): array {
+	$errors = array();
+	$wrote  = false;
+
+	/*
+	 * Retention, bounded at both ends.
+	 *
+	 * Zero would mean "delete immediately" and an unbounded figure would mean
+	 * "keep forever" -- and both are things somebody might type by accident into
+	 * a field whose consequence is deleting a congregation's answers.
+	 */
+	$months = (int) ( $posted['retention_months'] ?? 0 );
+
+	if ( $months < 1 || $months > 120 ) {
+		$errors['retention_months'] = __( 'Enter a number of months between 1 and 120.' );
+	} elseif ( update_option( \Serve_Dashboard\Privacy::OPTION_RETENTION_MONTHS, $months ) ) {
+		$wrote = true;
+	}
+
+	// The address people are told to write to has to be a real one.
+	$email = sanitize_email( (string) ( $posted['contact_email'] ?? '' ) );
+
+	if ( '' === $email ) {
+		$errors['contact_email'] = __( 'Enter an email address somebody actually reads.' );
+	} elseif ( update_option( \Serve_Dashboard\Privacy::OPTION_CONTACT_EMAIL, $email ) ) {
+		$wrote = true;
+	}
+
+	/*
+	 * The intake team, checked against the teams that exist.
+	 *
+	 * An unknown slug here is not cosmetic: Placements::catchall_team() would
+	 * find nothing, and every new profile would arrive with no owner at all --
+	 * the exact failure the catch-all exists to prevent. An empty value is a
+	 * legitimate choice and means pastors pick these up.
+	 */
+	$catchall = sanitize_key( (string) ( $posted['catchall_team'] ?? '' ) );
+
+	if ( '' !== $catchall && null === \Serve_Dashboard\Teams::get_by_slug( $catchall ) ) {
+		$errors['catchall_team'] = __( 'That team does not exist.' );
+	} elseif ( update_option( \Serve_Dashboard\Placements::OPTION_CATCHALL_TEAM, $catchall ) ) {
+		$wrote = true;
+	}
+
+	// https only, and empty means the step is not offered.
+	$form = trim( (string) ( $posted['serving_form_url'] ?? '' ) );
+
+	if ( '' !== $form && ! preg_match( '#^https://#i', $form ) ) {
+		$errors['serving_form_url'] = __( 'Use a full https:// address, or leave it empty.' );
+	} else {
+		$clean = '' === $form ? '' : esc_url_raw( $form );
+
+		if ( '' !== $form && '' === $clean ) {
+			$errors['serving_form_url'] = __( 'That does not look like a web address.' );
+		} elseif ( update_option( \Serve_Dashboard\Assessment::OPTION_SERVING_FORM, $clean ) ) {
+			$wrote = true;
+		}
+	}
+
+	/*
+	 * A subdomain, not a URL.
+	 *
+	 * The field asks for the part before .churchcenter.com, and people paste the
+	 * whole address anyway. Taking the host's first label is friendlier than
+	 * refusing, and produces the same link either way.
+	 */
+	$pco = strtolower( trim( (string) ( $posted['pco_subdomain'] ?? '' ) ) );
+
+	if ( str_contains( $pco, '.' ) || str_contains( $pco, '/' ) ) {
+		$host = (string) ( parse_url( str_contains( $pco, '//' ) ? $pco : 'https://' . $pco, PHP_URL_HOST ) ?? '' );
+		$pco  = '' === $host ? $pco : explode( '.', $host )[0];
+	}
+
+	$pco = (string) preg_replace( '/[^a-z0-9-]/', '', $pco );
+
+	if ( update_option( \Serve_Dashboard\Planning_Center::OPTION_SUBDOMAIN, $pco ) ) {
+		$wrote = true;
+	}
+
+	return array(
+		'saved'  => $wrote && array() === $errors,
+		'errors' => $errors,
+	);
+}
+
+function serve_save_teams( array $submitted, array $confirmed ): bool {
+	$wrote = false;
+
+	foreach ( $submitted as $id => $fields ) {
+		$id = (int) $id;
+
+		if ( $id <= 0 || ! is_array( $fields ) ) {
+			continue;
+		}
+
+		$team = Teams::get( $id );
+
+		if ( ! $team ) {
+			continue;
+		}
+
+		/*
+		 * An unchecked checkbox is not submitted at all, so its absence is the
+		 * value 0 rather than "leave this alone". Normalised here so the
+		 * comparison below sees the same shape on both sides.
+		 */
+		$wanted = array(
+			'current_headcount'     => max( 0, (int) ( $fields['current_headcount'] ?? 0 ) ),
+			'target_headcount'      => max( 0, (int) ( $fields['target_headcount'] ?? 0 ) ),
+			'min_headcount'         => max( 0, (int) ( $fields['min_headcount'] ?? 0 ) ),
+			'leader_user_id'        => max( 0, (int) ( $fields['leader_user_id'] ?? 0 ) ),
+			'requires_safeguarding' => empty( $fields['requires_safeguarding'] ) ? 0 : 1,
+			'is_active'             => empty( $fields['is_active'] ) ? 0 : 1,
+		);
+
+		$current = array(
+			'current_headcount'     => (int) $team->current_headcount,
+			'target_headcount'      => (int) $team->target_headcount,
+			'min_headcount'         => (int) $team->min_headcount,
+			'leader_user_id'        => (int) $team->leader_user_id,
+			'requires_safeguarding' => (int) $team->requires_safeguarding,
+			'is_active'             => (int) $team->is_active,
+		);
+
+		/*
+		 * Keywords are compared after parsing, not as raw text: re-saving every
+		 * team because somebody's browser normalised a trailing comma would
+		 * defeat the whole point of this comparison.
+		 */
+		$keywords_changed = false;
+
+		if ( array_key_exists( 'keywords', $fields ) ) {
+			$keywords_changed = Teams::parse_keywords( (string) $fields['keywords'] ) !== Teams::keyword_list( $team );
+		}
+
+		if ( $wanted === $current && ! $keywords_changed && ! in_array( $id, $confirmed, true ) ) {
+			continue;
+		}
+
+		if ( array_key_exists( 'keywords', $fields ) ) {
+			$wanted['keywords'] = (string) $fields['keywords'];
+		}
+
+		$wrote = Teams::save( $id, $wanted ) || $wrote;
+	}
+
+	return $wrote;
+}
+
+/** Send somebody to the login screen, remembering where they were going. */
+function serve_require_login( string $wanted ): void {
+	if ( App::auth()->current_id() > 0 ) {
+		return;
+	}
+
+	wp_safe_redirect( App::url( 'login' ) . ( '' === $wanted ? '' : '?next=' . rawurlencode( $wanted ) ) );
+	exit;
+}
+
+switch ( $serve_path ) {
+
+	case '':
+	case 'assessment':
+		/*
+		 * The journey.
+		 *
+		 * Assessment::render() is the plugin's shortcode handler, unchanged --
+		 * it was never WordPress-specific, it just needed something to call it.
+		 */
+		require SERVE_ROOT . '/views/canvas.php';
+		exit;
+
+	case 'share':
+		/*
+		 * The share step. Public: whoever finished the journey has no account,
+		 * and the form's own consent checkbox is the gate that matters.
+		 */
+		require SERVE_ROOT . '/views/share.php';
+		exit;
+
+	case 'users':
+		serve_require_login( 'users' );
+
+		if ( ! current_user_can( Roles::CAP_MANAGE_USERS ) ) {
+			serve_denied();
+		}
+
+		$serve_notice = '';
+		$serve_errors = array();
+
+		if ( 'POST' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+			$serve_what = sanitize_key( (string) ( $_POST['action'] ?? '' ) );
+			$serve_auth = App::auth();
+			$serve_me   = $serve_auth->current_id();
+
+			if ( 'add' === $serve_what ) {
+				check_admin_referer( 'serve_add_user' );
+
+				$serve_role = (string) ( $_POST['role'] ?? '' );
+
+				if ( ! in_array( $serve_role, $serve_auth->manageable_roles( $serve_me ), true ) ) {
+					$serve_errors['role'] = __( 'You cannot give an account that role.' );
+				}
+
+				if ( array() === $serve_errors ) {
+					/*
+					 * A long random password nobody will ever use.
+					 *
+					 * The account needs a hash in the column, and it must not be
+					 * a value anybody knows -- including whoever created it. The
+					 * emailed link is the only way in.
+					 */
+					$serve_made = $serve_auth->create_user(
+						(string) ( $_POST['email'] ?? '' ),
+						(string) ( $_POST['display_name'] ?? '' ),
+						$serve_role,
+						bin2hex( random_bytes( 24 ) )
+					);
+
+					if ( is_wp_error( $serve_made ) ) {
+						$serve_errors[ 'serve_email_taken' === $serve_made->get_error_code() ? 'email' : 'display_name' ] =
+							$serve_made->get_error_message();
+					} else {
+						$serve_auth->request_reset( (string) ( $_POST['email'] ?? '' ) );
+
+						Audit::log( 'user.created', 'user', (int) $serve_made, array( 'role' => $serve_role ) );
+
+						wp_safe_redirect( App::url( 'users' ) . '?notice=created' );
+						exit;
+					}
+				}
+
+				$serve_notice = 'invalid';
+			} elseif ( 'save' === $serve_what ) {
+				check_admin_referer( 'serve_save_user' );
+
+				$serve_target = (int) ( $_POST['user_id'] ?? 0 );
+
+				$serve_done = $serve_auth->update_user(
+					$serve_me,
+					$serve_target,
+					array(
+						'role' => (string) ( $_POST['role'] ?? '' ),
+						// An unchecked box posts nothing, which is the "off" case.
+						'is_active' => isset( $_POST['is_active'] ) ? 1 : 0,
+					)
+				);
+
+				if ( is_wp_error( $serve_done ) ) {
+					wp_safe_redirect( App::url( 'users' ) . '?notice=refused' );
+					exit;
+				}
+
+				Audit::log( 'user.changed', 'user', $serve_target, array( 'role' => (string) ( $_POST['role'] ?? '' ) ) );
+
+				wp_safe_redirect( App::url( 'users' ) . '?notice=saved' );
+				exit;
+			} elseif ( 'reset' === $serve_what ) {
+				check_admin_referer( 'serve_reset_user' );
+
+				$serve_target = (int) ( $_POST['user_id'] ?? 0 );
+
+				if ( ! $serve_auth->can_manage_user( $serve_me, $serve_target ) ) {
+					wp_safe_redirect( App::url( 'users' ) . '?notice=refused' );
+					exit;
+				}
+
+				$serve_who = $serve_auth->user( $serve_target );
+
+				$serve_auth->request_reset( (string) ( $serve_who->email ?? '' ) );
+
+				Audit::log( 'user.reset_sent', 'user', $serve_target, array() );
+
+				wp_safe_redirect( App::url( 'users' ) . '?notice=reset' );
+				exit;
+			}
+		}
+
+		if ( '' === $serve_notice ) {
+			$serve_notice = in_array(
+				(string) ( $_GET['notice'] ?? '' ),
+				array( 'created', 'saved', 'reset', 'refused' ),
+				true
+			) ? (string) $_GET['notice'] : '';
+		}
+
+		require SERVE_ROOT . '/views/users.php';
+		exit;
+
+	case 'reset':
+		/*
+		 * Public, and it has to be: somebody who cannot sign in is exactly who
+		 * needs this. The token is the authorisation.
+		 */
+		$serve_token = (string) ( $_GET['token'] ?? '' );
+		$serve_stage = '' === $serve_token ? 'request' : 'set';
+		$serve_error = '';
+
+		if ( 'POST' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+			if ( isset( $_POST['token'] ) ) {
+				check_admin_referer( 'serve_reset_password' );
+
+				$serve_token = (string) $_POST['token'];
+				$serve_stage = 'set';
+
+				$serve_done = App::auth()->complete_reset(
+					$serve_token,
+					(string) ( $_POST['password'] ?? '' )
+				);
+
+				if ( is_wp_error( $serve_done ) ) {
+					$serve_error = $serve_done->get_error_message();
+				} else {
+					$serve_stage = 'done';
+				}
+			} else {
+				check_admin_referer( 'serve_request_reset' );
+
+				App::auth()->request_reset( (string) ( $_POST['email'] ?? '' ) );
+
+				/*
+				 * Always "sent", whether or not the address exists. Saying
+				 * otherwise would turn this form into a way to discover who has
+				 * an account.
+				 */
+				$serve_stage = 'sent';
+			}
+		}
+
+		require SERVE_ROOT . '/views/reset.php';
+		exit;
+
+	case 'privacy':
+		/*
+		 * Its own document, like the journey and the dashboard.
+		 *
+		 * views/layout.php draws a signed-in top bar and this page is public;
+		 * its classes were also never styled, so routing the notice through it
+		 * served the whole thing as browser default.
+		 */
+		$notice = Privacy_Page::render();
+
+		require SERVE_ROOT . '/views/privacy.php';
+		exit;
+
+	case 'login':
+		require SERVE_ROOT . '/views/login.php';
+		exit;
+
+	case 'logout':
+		/*
+		 * A POST, because a GET logout is a one-pixel-image attack: anybody can
+		 * put <img src=".../logout"> on a page and sign your leaders out.
+		 */
+		if ( 'POST' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+			check_admin_referer( 'serve_logout' );
+			App::auth()->logout();
+		}
+
+		wp_safe_redirect( App::url( 'login' ) );
+		exit;
+
+	case 'dashboard':
+		serve_require_login( 'dashboard' );
+
+		if ( ! current_user_can( Roles::CAP_VIEW_DASHBOARD ) ) {
+			serve_denied();
+		}
+
+		/*
+		 * Its own document, not wrapped in views/layout.php.
+		 *
+		 * The dashboard shell carries its own sidebar and mobile bar, copied
+		 * from the plugin. Putting the layout's top bar above it would give the
+		 * screen two competing navigations -- and the requirement is that this
+		 * looks exactly like the plugin's, which has one.
+		 */
+		require SERVE_ROOT . '/views/dashboard.php';
+		exit;
+
+	case 'teams':
+		serve_require_login( 'teams' );
+
+		/*
+		 * Seeing the board and changing it are different permissions.
+		 *
+		 * This used to require CAP_MANAGE_TEAMS to open the screen at all,
+		 * which meant a leader who could read every gap figure on the dashboard
+		 * could not see the numbers those figures were worked out from. The
+		 * view is gated on the dashboard capability and the form on the
+		 * managing one; the page renders read-only for everybody else, and
+		 * Teams::save() refuses regardless of what is posted.
+		 */
+		if ( ! current_user_can( Roles::CAP_VIEW_DASHBOARD ) ) {
+			serve_denied();
+		}
+
+		$serve_notice = '';
+
+		if ( 'POST' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+			check_admin_referer( 'serve_save_teams' );
+
+			if ( ! current_user_can( Roles::CAP_MANAGE_TEAMS ) ) {
+				serve_denied();
+			}
+
+			$serve_notice = serve_save_teams(
+				(array) ( $_POST['teams'] ?? array() ),
+				array_map( 'intval', array_keys( (array) ( $_POST['confirm'] ?? array() ) ) )
+			) ? 'saved' : 'unchanged';
+
+			/*
+			 * Redirect after the write, so a reload does not offer to post the
+			 * whole board again -- and so the page that renders is reading the
+			 * teams table rather than what was submitted to it.
+			 */
+			wp_safe_redirect( App::url( 'teams' ) . '?notice=' . $serve_notice );
+			exit;
+		}
+
+		$serve_notice = in_array( (string) ( $_GET['notice'] ?? '' ), array( 'saved', 'unchanged' ), true )
+			? (string) $_GET['notice']
+			: '';
+
+		require SERVE_ROOT . '/views/teams.php';
+		exit;
+
+	case 'settings':
+		serve_require_login( 'settings' );
+
+		/*
+		 * One capability, unlike Teams.
+		 *
+		 * There is no useful read-only version of this screen: it is four
+		 * settings, a checklist of how the installation is configured, and the
+		 * audit trail. Two of those describe the security posture and the third
+		 * records who read whose spiritual gifts, so a leader who cannot change
+		 * any of it has no reason to be shown all of it either.
+		 */
+		if ( ! current_user_can( Roles::CAP_MANAGE_SETTINGS ) ) {
+			serve_denied();
+		}
+
+		$serve_notice = '';
+		$serve_errors = array();
+
+		if ( 'POST' === strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) ) {
+			check_admin_referer( 'serve_save_settings' );
+
+			$serve_result = serve_save_settings( $_POST );
+
+			if ( array() !== $serve_result['errors'] ) {
+				/*
+				 * Errors are rendered rather than redirected.
+				 *
+				 * Redirecting would drop what was typed and leave somebody
+				 * re-entering four fields to find out which one was wrong.
+				 */
+				$serve_errors = $serve_result['errors'];
+				$serve_notice = 'invalid';
+			} else {
+				// Redirect after a clean write, so a reload does not re-post.
+				wp_safe_redirect(
+					App::url( 'settings' ) . '?notice=' . ( $serve_result['saved'] ? 'saved' : 'unchanged' )
+				);
+				exit;
+			}
+		}
+
+		if ( '' === $serve_notice ) {
+			$serve_notice = in_array( (string) ( $_GET['notice'] ?? '' ), array( 'saved', 'unchanged' ), true )
+				? (string) $_GET['notice']
+				: '';
+		}
+
+		require SERVE_ROOT . '/views/settings.php';
+		exit;
+
+	case 'confirm':
+		// The email confirmation link. Handled by the domain class that issued it.
+		require SERVE_ROOT . '/views/confirm.php';
+		exit;
+
+	default:
+		serve_message( __( 'That page does not exist' ), '', 404 );
+}

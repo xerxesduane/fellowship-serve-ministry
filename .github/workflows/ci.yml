@@ -114,3 +114,65 @@ jobs:
 
       - name: Build the release zip
         run: tools/build-release.sh
+
+  standalone:
+    name: Standalone tests
+    runs-on: ubuntu-latest
+
+    # The parity claim is only worth something if something checks it. This runs
+    # the same test files as the plugin job, against the PHP/MySQL build, with no
+    # WordPress installed at all -- which is also the point: if anything in
+    # serve-standalone/ reaches for a WordPress function that the compatibility
+    # layer does not provide, this is where it is found.
+    services:
+      mysql:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: serve_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: pdo_mysql, mbstring
+          coverage: none
+
+      - name: Configure
+        working-directory: serve-standalone
+        run: |
+          cp config/config.example.php config/config.php
+          SECRET=$(php bin/serve secret)
+          sed -i "s|'change-me'|'${SECRET}'|" config/config.php
+          sed -i "s|'name'    => 'serve'|'name'    => 'serve_test'|" config/config.php
+          sed -i "s|'user'    => 'serve'|'user'    => 'root'|" config/config.php
+          sed -i "s|'pass'    => ''|'pass'    => 'root'|" config/config.php
+          sed -i "s|'host'    => '127.0.0.1'|'host'    => '127.0.0.1'|" config/config.php
+
+      - name: Migrate
+        working-directory: serve-standalone
+        run: php bin/serve migrate
+
+      - name: Run the shared suite against the standalone build
+        working-directory: serve-standalone
+        env:
+          SERVE_TEST_OK: '1'
+        run: php tools/run-tests.php
+
+      - name: The command line answers
+        working-directory: serve-standalone
+        run: |
+          php bin/serve status
+          php bin/serve cron:list
+
+      # The two dashboards are identical because they load the same stylesheet
+      # and render the same markup. That holds only while the files match, and
+      # nothing was checking, so a copy could drift one edit at a time.
+      - name: The two builds still share one front end
+        run: bash tools/check-shared-frontend.sh
