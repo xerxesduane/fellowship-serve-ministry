@@ -642,3 +642,24 @@ body.serve-canvas--consent .skip-to-content:focus {
 	outline: 2px solid var(--serve-teal, #167d83);
 	outline-offset: 2px;
 }
+
+/*
+ * The "ask us" line, set apart from the retention small print above it.
+ *
+ * Same address, different errand: the sentence above is about deleting a
+ * profile, this one is about talking to a person, and running them together as
+ * one grey block loses the second entirely.
+ */
+.serve-consent__foot-ask {
+	margin-top: var(--serve-space-4, 16px);
+	padding-top: var(--serve-space-3, 12px);
+	font-size: .875rem;
+	line-height: 1.6;
+	color: var(--serve-ink, #17314a);
+	border-top: 1px solid var(--serve-line, #ddd9cf);
+}
+
+.serve-consent__foot-ask a {
+	font-weight: 600;
+	color: var(--serve-teal, #167d83);
+}

@@ -19,6 +19,7 @@
 declare(strict_types=1);
 
 use Serve\Platform\App;
+use Serve_Dashboard\Privacy;
 use Serve_Dashboard\Verification;
 
 nocache_headers();
@@ -46,6 +47,30 @@ if ( 'ok' !== $serve_message['tone'] ) {
 <main class="serve-confirm serve-confirm--<?php echo esc_attr( (string) $serve_message['tone'] ); ?>">
 	<h1><?php echo esc_html( (string) $serve_message['title'] ); ?></h1>
 	<p><?php echo esc_html( (string) $serve_message['body'] ); ?></p>
+
+	<?php
+	/*
+	 * The likeliest moment for a question.
+	 *
+	 * Somebody has just confirmed that a small number of ministry leaders may
+	 * read their spiritual gifts and their pastoral history, and the next thing
+	 * that happens is silence until a leader gets in touch. Saying here that a
+	 * person exists, and how to reach them, costs one line.
+	 *
+	 * The address comes from Privacy::contact_email(), so Settings governs it,
+	 * and through antispambot() for the same reason the privacy notice does.
+	 */
+	$serve_contact = antispambot( Privacy::contact_email() );
+	?>
+	<p class="serve-confirm__ask">
+		<?php
+		printf(
+			/* translators: %s: mailto link to the SERVE team. */
+			esc_html__( 'Any questions about this, or about your results? Write to %s and a person will reply.' ),
+			'<a href="mailto:' . esc_attr( $serve_contact ) . '">' . esc_html( $serve_contact ) . '</a>'
+		);
+		?>
+	</p>
 
 	<p>
 		<a href="<?php echo esc_url( App::url( 'privacy' ) ); ?>">

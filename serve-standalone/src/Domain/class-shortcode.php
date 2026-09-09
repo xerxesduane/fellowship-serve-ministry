@@ -408,6 +408,27 @@ final class Shortcode {
 				?>
 			</p>
 
+			<?php
+			/*
+			 * A question is not the same errand as a deletion.
+			 *
+			 * The address above appears only in the sentence about removing a
+			 * profile, so somebody who simply wants to ask what happens next, or
+			 * what a result means, had nothing on this page telling them a person
+			 * exists at the other end. Same address, said for the other reason,
+			 * because the two are not interchangeable to the person reading.
+			 */
+			?>
+			<p class="serve-consent__foot-ask">
+				<?php
+				printf(
+					/* translators: %s: mailto link to the SERVE team. */
+					esc_html__( 'Questions about this tool, about your results, or would you rather speak to someone? Write to %s and a person will reply.', 'serve-dashboard' ),
+					'<a href="mailto:' . esc_attr( $email ) . '">' . esc_html( $email ) . '</a>'
+				);
+				?>
+			</p>
+
 			<nav class="serve-consent__foot-links" aria-label="<?php esc_attr_e( 'Page links', 'serve-dashboard' ); ?>">
 				<?php if ( Assessment::assessment_url() ) : ?>
 					<a href="<?php echo esc_url( Assessment::assessment_url() ); ?>">

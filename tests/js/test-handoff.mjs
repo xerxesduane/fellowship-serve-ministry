@@ -14,7 +14,7 @@
  */
 
 import { test } from "./bootstrap.mjs";
-import { resultsHandoff, servingFormStep, shareStep } from "../../wordpress-plugin/serve-dashboard/public/assessment/handoff.js";
+import { resultsHandoff, servingFormStep, shareStep, contactStep } from "../../wordpress-plugin/serve-dashboard/public/assessment/handoff.js";
 
 const SHARE = "https://serve.example.test/share-my-profile";
 const FORM = "https://example.churchcenter.com/people/forms/12345";
@@ -117,4 +117,63 @@ test("the whole handoff is hidden from a printed profile", (a) => {
   // These are buttons and links. On paper they are noise on a document
   // somebody is keeping.
   a.contains('class="results-handoff no-print"', resultsHandoff({ shareUrl: SHARE }), "marked no-print");
+});
+
+/*
+ * Questions.
+ *
+ * Somebody finishes nineteen steps holding a page about their spiritual gifts,
+ * their personality and, if they answered, their painful experiences -- and
+ * until this the page offered three ways to hand it onward and no way to ask
+ * anything.
+ */
+
+test("the results page offers a way to ask a question", (a) => {
+  const html = contactStep("serve@fellowshipdubai.com");
+
+  a.contains("serve@fellowshipdubai.com", html, "the address is shown");
+  a.contains('href="mailto:serve@fellowshipdubai.com"', html, "and is a mailto link");
+  a.contains("talk to someone", html, "and says a person will reply");
+});
+
+test("no address configured means no panel, rather than an empty one", (a) => {
+  a.same("", contactStep(""), "nothing is rendered without an address");
+  a.same("", contactStep(), "including when it is not passed at all");
+});
+
+test("the address is escaped, because it comes from a setting", (a) => {
+  const html = contactStep('a"><script>x</script>@b.test');
+
+  a.lacks("<script>", html, "no markup survives from the setting");
+  a.contains("&lt;script&gt;", html, "it is escaped instead");
+});
+
+test("the contact panel survives a print, and the action panels do not", (a) => {
+  const html = resultsHandoff({
+    shareUrl: "https://example.test/share",
+    contactEmail: "serve@fellowshipdubai.com",
+  });
+
+  /*
+   * The three action panels are inside a no-print wrapper; the contact panel
+   * is deliberately outside it. Somebody who saves their profile to read later
+   * is exactly the person who will have a question later, and an address they
+   * can only see on screen is no use to them then.
+   */
+  const wrapper = html.slice(html.indexOf('class="results-handoff'), html.indexOf("</article>"));
+
+  a.contains("no-print", wrapper, "the actions are marked no-print");
+  a.lacks("contact-panel", wrapper, "and the contact panel is not among them");
+  a.contains("contact-panel", html, "but it is on the page");
+});
+
+test("a journey with no share step still offers a way to ask", (a) => {
+  /*
+   * The share step disappears when no consent page is configured. The question
+   * a participant has does not, so the two are independent.
+   */
+  const html = resultsHandoff({ shareUrl: "", contactEmail: "serve@fellowshipdubai.com" });
+
+  a.contains("contact-panel", html, "the contact panel is still there");
+  a.contains("serve@fellowshipdubai.com", html, "with the address");
 });

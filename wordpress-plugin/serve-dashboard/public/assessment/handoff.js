@@ -63,11 +63,43 @@ export function servingFormStep(servingFormUrl, open = false) {
 }
 
 /**
- * The three panels at the end of the journey, in the order they are offered.
+ * Where to send a question, and how to reach a person.
+ *
+ * A participant reaches the end of nineteen steps holding a page about their
+ * spiritual gifts, their personality and, if they answered those questions,
+ * their painful experiences. Some of them will want to ask what any of it
+ * means, or what happens next, or whether a suggested team is really the right
+ * one -- and until now the page offered three ways to hand the profile onward
+ * and no way at all to ask a question.
+ *
+ * Deliberately not inside the no-print wrapper. Somebody who prints or saves
+ * their profile to read later is exactly the person who will have a question
+ * later, and an address they can only see on screen is no use to them then.
+ *
+ * The address is passed in rather than written here, so the church can change
+ * it in Settings without an edit to the journey.
+ */
+export function contactStep(email = "") {
+  if (!email) {
+    return "";
+  }
+
+  const safe = escapeHtml(email);
+
+  return `<section class="contact-panel"><header><p class="eyebrow">Questions</p><h2>Would you like to talk to someone?</h2></header><p>If anything here needs explaining &mdash; what a result means, what happens next, or whether serving somewhere is right for this season &mdash; write to the SERVE team and a person will reply.</p><p class="contact-panel__address"><a href="mailto:${safe}">${icon("mail", 17)}${safe}</a></p><p class="contact-panel__note">Ask about the tool, about your results, or about anything you would rather discuss with a person than read on a screen.</p></section>`;
+}
+
+/**
+ * The panels at the end of the journey, in the order they are offered.
  *
  * Sharing first, saving second, the external form last. The order is the fix,
  * so it is asserted rather than left to whoever edits this next.
  */
-export function resultsHandoff({ shareUrl = "", servingFormUrl = "", servingFormOpen = false, mailto = "" } = {}) {
-  return `<article class="results-handoff no-print">${shareStep(shareUrl)}<section class="save-reminder"><div><p class="eyebrow">Before you continue</p><h2>Save your results</h2><p>Save a PDF or email a copy to yourself before you leave, so your profile is easy to return to.</p></div><div><button type="button" data-action="print">${icon("printer", 17)}Save / Download PDF</button><a href="${escapeHtml(mailto)}">${icon("mail", 17)}Email My Results</a></div></section>${servingFormStep(servingFormUrl, servingFormOpen)}</article>`;
+export function resultsHandoff({ shareUrl = "", servingFormUrl = "", servingFormOpen = false, mailto = "", contactEmail = "" } = {}) {
+  /*
+   * The contact panel sits outside the no-print article on purpose: see
+   * contactStep(). Everything else here is an action, and an action is no use
+   * on paper.
+   */
+  return `<article class="results-handoff no-print">${shareStep(shareUrl)}<section class="save-reminder"><div><p class="eyebrow">Before you continue</p><h2>Save your results</h2><p>Save a PDF or email a copy to yourself before you leave, so your profile is easy to return to.</p></div><div><button type="button" data-action="print">${icon("printer", 17)}Save / Download PDF</button><a href="${escapeHtml(mailto)}">${icon("mail", 17)}Email My Results</a></div></section>${servingFormStep(servingFormUrl, servingFormOpen)}</article>${contactStep(contactEmail)}`;
 }

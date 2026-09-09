@@ -629,7 +629,7 @@ function profilePage() {
     ${profileSection("P", "Personality", profileList("My personality pattern", profile.personality))}
     ${profileSection("E", "Experiences", `<div class="profile-experience-grid">${Object.entries(profile.experiences).map(([label, values]) => profileList(label, values)).join("")}</div>`)}
     ${profileSection("+", "Availability", `<dl class="availability-summary"><div><dt>Are you making service a priority?</dt><dd>${escapeHtml(profile.availability.priority)}</dd></div><div><dt>Time per week</dt><dd>${escapeHtml(profile.availability.hours)}</dd></div><div><dt>Best times</dt><dd>${escapeHtml(profile.availability.timing.join(", ") || "Not specified")}</dd></div></dl>`)}
-    ${ministryRecommendations(profile)}${ministryTable()}${resultsHandoff({ shareUrl: SERVE_CONFIG.shareUrl, servingFormUrl: SERVING_FORM, servingFormOpen, mailto })}<div class="profile-footer no-print">${restartControl({ confirming: confirmingRestart, hasUndo: Boolean(discarded), steps: journeySteps.length, label: "Start a new profile", buttonClass: "back-button", iconSize: 17 })}</div></section>`;
+    ${ministryRecommendations(profile)}${ministryTable()}${resultsHandoff({ shareUrl: SERVE_CONFIG.shareUrl, servingFormUrl: SERVING_FORM, servingFormOpen, mailto, contactEmail: SERVE_CONFIG.contactEmail })}<div class="profile-footer no-print">${restartControl({ confirming: confirmingRestart, hasUndo: Boolean(discarded), steps: journeySteps.length, label: "Start a new profile", buttonClass: "back-button", iconSize: 17 })}</div></section>`;
 }
 
 function stage() {
