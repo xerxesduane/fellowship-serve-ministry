@@ -41,7 +41,7 @@ const { run } = await import(pathToFileURL(join(testDir, "bootstrap.mjs")).href)
  * failure that will not show up as a failing assertion.
  */
 const contentUrl = pathToFileURL(
-  join(here, "..", "wordpress-plugin", "serve-dashboard", "public", "assessment", "shapeContent.js")
+  join(here, "..", "serve-standalone", "public", "assessment", "shapeContent.js")
 ).href;
 const content = await import(contentUrl);
 const before = JSON.stringify(content);

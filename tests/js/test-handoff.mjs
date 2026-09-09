@@ -14,7 +14,7 @@
  */
 
 import { test } from "./bootstrap.mjs";
-import { resultsHandoff, servingFormStep, shareStep, contactStep } from "../../wordpress-plugin/serve-dashboard/public/assessment/handoff.js";
+import { resultsHandoff, servingFormStep, shareStep, contactStep } from "../../serve-standalone/public/assessment/handoff.js";
 
 const SHARE = "https://serve.example.test/share-my-profile";
 const FORM = "https://example.churchcenter.com/people/forms/12345";

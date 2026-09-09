@@ -662,34 +662,6 @@ test(
 );
 
 /*
- * A structural check rather than a behavioural one. Deleting the plugin is
- * meant to leave nothing behind, and the way that promise breaks is somebody
- * adding an option and not thinking about uninstall.php — which no amount of
- * manual testing catches, because nobody deletes the plugin.
- */
-test(
-	'uninstall.php names every option the plugin defines',
-	function ( Assert $a, Fixtures $f ) {
-		$plugin_dir = dirname( __DIR__ ) . '/wordpress-plugin/serve-dashboard';
-
-		$uninstall = (string) file_get_contents( $plugin_dir . '/uninstall.php' );
-
-		$defined = array();
-		foreach ( (array) glob( $plugin_dir . '/includes/*.php' ) as $file ) {
-			if ( preg_match_all( "/const OPTION[A-Z_]* *= *'([a-z_]+)'/", (string) file_get_contents( $file ), $m ) ) {
-				$defined = array_merge( $defined, $m[1] );
-			}
-		}
-
-		$a->ok( count( $defined ) >= 5, 'found the option constants to check against' );
-
-		foreach ( array_unique( $defined ) as $option ) {
-			$a->contains( "'$option'", $uninstall, "uninstall.php deletes $option" );
-		}
-	}
-);
-
-/*
  * The stage vocabulary has three lists over it now — the ordered path, the two
  * outcomes beside it, and the deck's three phases — and every one of them is a
  * separate place a new status can be forgotten. Forgetting is silent: a stage

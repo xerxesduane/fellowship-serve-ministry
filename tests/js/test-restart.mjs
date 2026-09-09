@@ -7,7 +7,7 @@
  */
 
 import { test } from "./bootstrap.mjs";
-import { keysClearedOnRestart, restartControl } from "../../wordpress-plugin/serve-dashboard/public/assessment/restart.js";
+import { keysClearedOnRestart, restartControl } from "../../serve-standalone/public/assessment/restart.js";
 
 const KEY = "fellowship-dubai-shape-v2";
 

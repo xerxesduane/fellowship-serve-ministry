@@ -16,7 +16,7 @@ jobs:
 
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.1'   # the plugin's declared minimum, not the newest
+          php-version: '8.1'   # the declared minimum, not the newest
           coverage: none
 
       - name: Lint every PHP file
@@ -24,20 +24,11 @@ jobs:
           status=0
           while IFS= read -r file; do
             php -l "$file" > /dev/null || { echo "::error file=$file::syntax error"; status=1; }
-          done < <(find wordpress-plugin tools tests -name '*.php')
+          done < <(find serve-standalone tools tests -name '*.php')
           exit $status
 
-      - name: Plugin header and version constant agree
-        run: |
-          header=$(grep -m1 -oP '^\s*\*\s*Version:\s*\K[0-9.]+' wordpress-plugin/serve-dashboard/serve-dashboard.php)
-          const=$(grep -m1 -oP "SERVE_DASHBOARD_VERSION',\s*'\K[0-9.]+" wordpress-plugin/serve-dashboard/serve-dashboard.php)
-          echo "header=$header constant=$const"
-          # Bumping one and not the other ships a plugin whose upgrade routine
-          # never runs, which is invisible until a migration is skipped.
-          [ "$header" = "$const" ]
-
-  # No database and no WordPress: the assessment's modules are pure functions
-  # over their arguments, so this runs in seconds and gates every PR cheaply.
+  # No database: the assessment's modules are pure functions over their
+  # arguments, so this runs in seconds and gates every PR cheaply.
   assessment:
     name: Assessment JavaScript
     runs-on: ubuntu-latest
@@ -54,8 +45,8 @@ jobs:
           # app.js is never imported by the tests — it needs a DOM — so without
           # this a syntax error in the file the visitor actually loads would
           # ship with a green build.
-          for file in wordpress-plugin/serve-dashboard/public/assessment/*.js \
-                      wordpress-plugin/serve-dashboard/admin/js/*.js; do
+          for file in serve-standalone/public/assessment/*.js \
+                      serve-standalone/public/admin/js/*.js; do
             node --check "$file" || { echo "::error file=$file::syntax error"; status=1; }
           done
           exit $status
@@ -63,67 +54,31 @@ jobs:
       - name: Run the assessment tests
         run: node tools/run-js-tests.mjs
 
-  tests:
-    name: Plugin tests
+  # The arithmetic half of matching — taxonomy, crosswalk, tier contract —
+  # needs no database, so it is worth running separately from the suite that
+  # does: it fails in seconds rather than after MySQL has come up.
+  unit:
+    name: Matching unit tests
     runs-on: ubuntu-latest
-
-    services:
-      mysql:
-        image: mariadb:10.6
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: wordpress_test
-        ports: ['3306:3306']
-        options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
-          --health-interval=10s --health-timeout=5s --health-retries=10
-
     steps:
       - uses: actions/checkout@v4
 
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.1'
-          extensions: mysqli
           coverage: none
 
-      - name: Install WP-CLI
-        run: |
-          curl -sSLO https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
-          chmod +x wp-cli.phar && sudo mv wp-cli.phar /usr/local/bin/wp
+      - name: Run the unit tests
+        run: php tools/run-unit-tests.php
 
-      - name: Install WordPress
-        run: |
-          wp core download --path=/tmp/wp --version=latest
-          wp config create --path=/tmp/wp \
-            --dbname=wordpress_test --dbuser=root --dbpass=root --dbhost=127.0.0.1
-          wp config set WP_ENVIRONMENT_TYPE local --path=/tmp/wp
-          wp core install --path=/tmp/wp \
-            --url=http://localhost --title="SERVE CI" \
-            --admin_user=admin --admin_email=ci@example.com --admin_password=ci-password
-
-      - name: Activate the plugin
-        run: |
-          cp -r wordpress-plugin/serve-dashboard /tmp/wp/wp-content/plugins/
-          wp plugin activate serve-dashboard --path=/tmp/wp
-
-      - name: Run the tests
-        env:
-          SERVE_TEST_OK: '1'
-        run: php tools/run-tests.php --wp=/tmp/wp
-
-      - name: Build the release zip
-        run: tools/build-release.sh
-
-  standalone:
-    name: Standalone tests
+  tests:
+    name: Tests
     runs-on: ubuntu-latest
 
-    # The parity claim is only worth something if something checks it. This runs
-    # the same test files as the plugin job, against the PHP/MySQL build, with no
-    # WordPress installed at all -- which is also the point: if anything in
-    # serve-standalone/ reaches for a WordPress function that the compatibility
-    # layer does not provide, this is where it is found.
+    # The suite in tests/ is the one the application was built against. It runs
+    # with no WordPress installed at all, which is also the point: if anything
+    # in serve-standalone/ reaches for a WordPress function that the
+    # compatibility layer does not provide, this is where it is found.
     services:
       mysql:
         image: mariadb:10.6
@@ -159,7 +114,7 @@ jobs:
         working-directory: serve-standalone
         run: php bin/serve migrate
 
-      - name: Run the shared suite against the standalone build
+      - name: Run the suite
         working-directory: serve-standalone
         env:
           SERVE_TEST_OK: '1'
@@ -170,9 +125,3 @@ jobs:
         run: |
           php bin/serve status
           php bin/serve cron:list
-
-      # The two dashboards are identical because they load the same stylesheet
-      # and render the same markup. That holds only while the files match, and
-      # nothing was checking, so a copy could drift one edit at a time.
-      - name: The two builds still share one front end
-        run: bash tools/check-shared-frontend.sh

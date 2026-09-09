@@ -1,6 +1,7 @@
 # Fellowship Dubai — S.H.A.P.E. Discovery & SERVE Dashboard
 
-A WordPress plugin containing both halves of the serving journey:
+A standalone PHP and MySQL application containing both halves of the serving
+journey:
 
 - the public **S.H.A.P.E. Discovery** assessment, a complete interactive
   adaptation of the 24-page workbook, and
@@ -11,75 +12,102 @@ A WordPress plugin containing both halves of the serving journey:
 has shaped them. The dashboard keeps what happens next visible, so a real
 conversation actually takes place.
 
-Built for a dedicated WordPress install at `serve.fellowshipdubai.com`.
+Built for a dedicated install at `serve.fellowshipdubai.com`.
 
 ## Repository layout
 
 ```
-wordpress-plugin/serve-dashboard/   the entire product, one deployable plugin
-tools/build-release.sh              produces the installable zip
-tools/run-tests.php                 the plugin test runner
-tools/run-unit-tests.php            the matching arithmetic, without WordPress
-tools/deploy-local.ps1              install into a local WordPress, backup first
-tools/run-js-tests.mjs              the assessment test runner
-tests/                              what must never quietly regress
-tests/js/                           the same, for the assessment JavaScript
-docs/leader-guide.md                for the ministry leaders who use it
-docs/deployment-runbook.md          taking it live, in order
-docs/planning-center-prepare.md     field ownership, before any integration
-docs/privacy-notice.md              what the software actually does with people's data
-docs/content-audit.md               page-by-page workbook fidelity audit
-docs/ministry-gift-crosswalk.md     which ministry words mean which assessed gift, and which do not
+serve-standalone/                      the entire product
+serve-standalone/bin/serve             the command line: migrate, users, seed, cron
+serve-standalone/src/Domain/           the application itself
+serve-standalone/src/Platform/         database, auth, sessions, mail, routing
+serve-standalone/src/compat-*.php      the WordPress-shaped functions the domain expects
+serve-standalone/migrations/           schema, applied in order
+serve-standalone/tools/run-tests.php   the suite runner
+tools/run-unit-tests.php               the matching arithmetic, without a database
+tools/run-js-tests.mjs                 the assessment test runner
+tests/                                 what must never quietly regress
+tests/js/                              the same, for the assessment JavaScript
+docs/leader-guide.md                   for the ministry leaders who use it
+docs/deployment-runbook.md             taking it live, in order
+docs/planning-center-prepare.md        field ownership, before any integration
+docs/privacy-notice.md                 what the software actually does with people's data
+docs/content-audit.md                  page-by-page workbook fidelity audit
+docs/ministry-gift-crosswalk.md        which ministry words mean which assessed gift, and which do not
 ```
 
-Everything ships as one plugin: PHP, vanilla JavaScript, and CSS. No build step,
-no framework, no npm dependencies.
+PHP, vanilla JavaScript, and CSS. No build step, no framework, no npm
+dependencies, and no Composer.
 
 ## History
 
-This repository previously held three implementations of the same
-questionnaire — a Next.js/TypeScript app in `src/`, a framework-free PHP port in
-`php-version/`, and whatever `vercel.json` happened to be publishing (it pointed
-at the PHP directory, so the Next.js app was never the deployed site).
+This repository has held three generations of the same questionnaire. First a
+Next.js/TypeScript app alongside a framework-free PHP port; then a WordPress
+plugin, which is what the assessment and dashboard were originally built as; and
+now a standalone PHP/MySQL application with no WordPress at all.
 
-Three copies of the same workbook content is three chances for it to drift. The
-target is now WordPress on the church's own hosting, so the Next.js, TypeScript
-and Vercel files have been removed and the PHP/JavaScript assessment is the one
-surviving implementation, housed inside the plugin. Content parity was verified
-before deleting anything: both implementations carried the same 73 option ids,
-19 journey steps, 18 spiritual gifts and 4 personality pairings.
+Every move was made with content parity verified before anything was deleted —
+the same 73 option ids, 19 journey steps, 18 spiritual gifts and 4 personality
+pairings survive from the first implementation to this one.
+
+The WordPress plugin was retired once it was clear nothing would be deployed to
+it, which made keeping two builds in step pure cost. That port is why the
+compatibility layer exists: `src/compat-core.php` and `src/compat-app.php`
+provide the WordPress functions the domain classes were written against, so the
+domain code did not have to be rewritten — and therefore did not have to be
+re-verified — in order to drop the platform beneath it.
 
 ## Requirements
 
-- WordPress 6.4+
-- PHP 8.1+
+- PHP 8.1+ with `pdo_mysql` and `mbstring`
 - MySQL 5.7+ / MariaDB 10.3+
+
+## Setup
+
+```bash
+cd serve-standalone
+cp config/config.example.php config/config.php
+php bin/serve secret          # paste the output into config.php
+$EDITOR config/config.php     # database credentials and the site URL
+php bin/serve migrate
+php bin/serve user:add        # the first account
+```
+
+Then set real target and current headcounts under **Teams and gaps**. Until you
+do, the team-gap panel stays empty by design rather than inventing numbers.
 
 ## Tests
 
 ```bash
-SERVE_TEST_OK=1 php tools/run-tests.php --wp=/path/to/wordpress
+cd serve-standalone
+SERVE_TEST_OK=1 php tools/run-tests.php
 ```
 
-**Point this at a scratch install, never at one holding real profiles.** It
-creates submissions, users and placements and deletes them again. Three guards
-stand in the way: it refuses an install declaring itself production, refuses to
-run without `SERVE_TEST_OK=1`, and refuses a database that already holds
-submissions it did not create.
+**Point this at a scratch database, never at one holding real profiles.** It
+creates submissions, users and placements and deletes them again. Two guards
+stand in the way: it refuses to run without `SERVE_TEST_OK=1`, and it refuses a
+database that already holds submissions it did not create.
 
-The third exists because the first two ask whether somebody *declared* the
-install safe, and a local WordPress holding a congregation's real answers
-declares nothing at all — so both waved it through. A development database is
-normally empty of people between runs, because the suite cleans up after
-itself, so the check costs a correctly used install nothing.
+The second exists because the first only asks whether somebody *declared* the
+database safe, and a local install holding a congregation's real answers
+declares nothing at all — so it waved it through. A development database is
+normally empty of people between runs, because the suite cleans up after itself,
+so the check costs a correctly used install nothing.
 
-One hundred and forty-three tests covering the guarantees whose failure would be
-silent: the safeguarding gate, unverified profiles staying invisible, Experiences
-redaction, what a CSV may contain, the confirmation-email path in both
-directions, what the public intake endpoint accepts, who may move somebody along
-the pipeline or erase them, what activation is supposed to have left behind, and
-whether the pilot report counts the same population in both halves of a
-proportion.
+One hundred and seventy-four tests covering the guarantees whose failure would
+be silent: the safeguarding gate, unverified profiles staying invisible,
+Experiences redaction, what a CSV may contain, the confirmation-email path in
+both directions, what the public intake endpoint accepts, who may move somebody
+along the pipeline or erase them, who may manage an account and what they may
+grant themselves, and whether the pilot report counts the same population in
+both halves of a proportion.
+
+These test files were written against the WordPress build and were carried
+across unchanged. That is deliberate, and it is the whole argument for trusting
+them: a port "verified" by tests rewritten alongside it proves nothing. Four
+tests report as *not applicable* rather than having been deleted — each asserts
+something about a WordPress `wp_post`, which is machinery for getting content
+into WordPress rather than a promise made to anyone.
 
 `tests/test-routing.php` is the group that matters most and reads least like
 matching: that a recommendation creates no placement row and grants no ministry
@@ -97,10 +125,10 @@ php tools/run-unit-tests.php
 ```
 
 Thirty-seven tests over the canonical taxonomy, the approved ministry-gift
-crosswalk and the tier contract. No WordPress, no database, no confirmation
-flag — these are pure functions over arrays, and the team rows come from the
-plugin's own seed, parsed out of `Teams::seed()` so the fixture cannot drift
-into agreeing with itself.
+crosswalk and the tier contract. No database and no confirmation flag — these
+are pure functions over arrays, and the team rows come from the application's
+own seed, parsed out of `Teams::seed()` so the fixture cannot drift into
+agreeing with itself.
 
 They have their own runner because they are the part most likely to be wrong in
 a way nobody notices, and they were previously reachable only through a runner
@@ -110,22 +138,18 @@ which no test caught, because the fixtures used a gift name the assessment
 cannot emit. `Fixtures::gift_profile()` builds profiles through the real
 taxonomy so that particular blindness cannot recur.
 
-That last group exists because activation runs once, on a database nobody has
-looked at yet, and then never again — so it is the least-exercised code here and
-the only defect this suite has found in anger was hiding in it.
-
 ### The assessment JavaScript
 
 ```bash
 node tools/run-js-tests.mjs
 ```
 
-Forty-five tests over the journey's pure modules — `profile.js`, which builds
+Fifty-nine tests over the journey's pure modules — `profile.js`, which builds
 the object that becomes somebody's stored profile and the text they download;
 `handoff.js`, which decides what the results page offers once they have
 finished; `suggestions.js`, which holds the results page's request state; and
-`render.js`. No WordPress, no database and no network, so the
-runner touches nothing and needs no confirmation flag.
+`render.js`. No database and no network, so the runner touches nothing and needs
+no confirmation flag.
 
 It exists because the PHP suite stops at the REST endpoint. Everything on the
 visitor's side of that boundary could be broken freely and no test noticed —
@@ -134,9 +158,9 @@ to the wrong question, and the takeaway document quietly omitting a section.
 Both are now covered, and both were confirmed by breaking them on purpose.
 
 `app.js` is still not covered. It reads `document` at import time and renders on
-load, so importing it outside a browser needs a DOM shim larger than the tests it
-would enable. CI parses it, which catches the mistake that actually happens; the
-rest is checked by eye.
+load, so importing it outside a browser needs a DOM shim larger than the tests
+it would enable. CI parses it, which catches the mistake that actually happens;
+the rest is checked by eye.
 
 `suggestions.js` was extracted for the same reason `handoff.js` was. Three
 defects lived in two module-level variables in `app.js` and all looked identical
@@ -148,33 +172,33 @@ new request was ever made. None of it was reachable by a test until the state
 became a value in its own module.
 
 The useful move has been taking things *out* of it. `handoff.js` was extracted
-precisely because the code deciding whether a person becomes visible to the SERVE
-team was trapped in the one file no test could reach — and a source-scanning test
-written in its place passed against a version that behaved wrongly. Pure
-functions in their own module are testable; that is most of what these
-extractions buy.
+precisely because the code deciding whether a person becomes visible to the
+SERVE team was trapped in the one file no test could reach — and a
+source-scanning test written in its place passed against a version that behaved
+wrongly. Pure functions in their own module are testable; that is most of what
+these extractions buy.
 
-The plugin tests boot a real WordPress and run against a real database, because every one of
-those guarantees is a SQL predicate or a capability check and none of them would
+### Why the suite is shaped this way
+
+The main suite runs against a real database, because every one of those
+guarantees is a SQL predicate or a capability check and none of them would
 survive being mocked. That means **the runner writes to the database it is
 pointed at** — it creates submissions, users and placements, and deletes them
-again, then reports if a count moved. It refuses to run against an install
-declaring itself production, and otherwise requires `SERVE_TEST_OK=1` so that
-pointing it somewhere real has to be deliberate.
+again, then reports if a count moved.
 
-Adding Composer and the WordPress PHPUnit scaffold to run eighty-two tests
-would have been a bigger change to this repository than anything they check, so
-the runner is about a hundred lines and has no dependencies.
+The runner is about a hundred lines and has no dependencies, which was a
+deliberate trade: adding Composer and a full test framework to run these would
+have been a bigger change to this repository than anything they check.
 
 The suite was checked by breaking things on purpose. Removing the safeguarding
 gate, dropping the unverified filter, writing `verify_sent_at` before the mail,
-disabling redaction, emptying the metrics scope clause, deleting an option from
-`uninstall.php`, reopening the `team_id` safeguarding bypass, and letting a
-ministry leader clear a background check or erase a profile each turn the
-relevant tests red; restoring each turns them green. A suite that has only ever
-passed has not been shown to test anything.
+disabling redaction, emptying the metrics scope clause, reopening the `team_id`
+safeguarding bypass, and letting a ministry leader clear a background check,
+erase a profile or grant themselves a role each turn the relevant tests red;
+restoring each turns them green. A suite that has only ever passed has not been
+shown to test anything.
 
-Two things that exercise found, which is the argument for doing it rather than
+Three things that exercise found, which is the argument for doing it rather than
 assuming:
 
 - A test can pass by asserting nothing. The metrics test iterated the wrong
@@ -192,69 +216,40 @@ assuming:
   because CI gets a fresh database every time. Running it three times in a row
   is now part of checking it.
 
-## Build
+## The routes
 
-```bash
-tools/build-release.sh
-```
-
-Reads the version from the plugin header, checks it against
-`SERVE_DASHBOARD_VERSION` (a bump that touches only one of the two ships a
-plugin whose upgrade routine never runs), lints every PHP file, and writes
-`dist/serve-dashboard-<version>.zip` with `dev/` removed. It verifies that
-exclusion against the finished archive and fails rather than shipping the demo
-seeder to a live church site.
-
-Needs PHP on `PATH`, and either `zip` or PowerShell.
-
-## Install
-
-1. Install `dist/serve-dashboard-<version>.zip` through **Plugins → Add New →
-   Upload Plugin**, or copy `wordpress-plugin/serve-dashboard/` into
-   `wp-content/plugins/` for local development.
-2. Activate it. Activation creates the database tables, adds the two roles, seeds
-   the 16 ministry teams, schedules the retention sweep, and creates the two
-   public pages.
-3. Go to **SERVE → Settings and audit** and tick *"Make this the site's front
-   page"* so visitors land on the assessment. Activation deliberately does not
-   change the front page on its own.
-4. On the same screen, set real target and current headcounts under **SERVE →
-   Teams and gaps**. Until you do, the team-gap panel stays empty by design
-   rather than inventing numbers.
-
-## The two public pages
-
-| Page | Shortcode | Purpose |
-|---|---|---|
-| Discover your S.H.A.P.E. | `[serve_shape_assessment]` | The 19-step journey. Uses the *SERVE — Full canvas* page template, which bypasses the theme. |
-| Share your profile | `[serve_shape_consent]` | The consent step. Reads the completed profile from the browser and, only with consent, sends it to the SERVE team. |
-
-The assessment links to the consent page once someone reaches their completed
-profile. If no consent page exists, no share action is offered at all.
+| Route | Purpose |
+|---|---|
+| `/` | The 19-step S.H.A.P.E. journey. |
+| `/share` | The consent step. Reads the completed profile from the browser and, only with consent, sends it to the SERVE team. |
+| `/confirm` | The link in the confirmation email. A profile is invisible to every leader until the address is proven. |
+| `/privacy` | What the software does with people's answers, generated from the live retention setting. |
+| `/login`, `/reset` | For ministry leaders and pastors. Volunteers never need an account. |
+| `/dashboard`, `/teams`, `/settings`, `/users` | The SERVE Dashboard. |
 
 ## Local development
 
-The plugin needs a WordPress install with MySQL — XAMPP, Laragon, or any LAMP
-stack. There is nothing to compile:
+Anything that can run PHP 8.1 and reach MySQL will do — XAMPP, Laragon, or any
+LAMP stack. There is nothing to compile. For a quick look:
 
 ```bash
-wp plugin activate serve-dashboard
+cd serve-standalone
+php -S localhost:8321 -t public
 ```
 
 To review the dashboard with content in it:
 
 ```bash
-wp eval-file wp-content/plugins/serve-dashboard/dev/seed-demo.php
+php bin/serve seed:demo
 ```
 
-That seeds five invented profiles and capacity for five teams. Development only —
-every name in it is fictional.
+That seeds invented profiles and capacity for five teams. Development only —
+every name in it is fictional, and they should be removed before real use.
 
 ## Further reading
 
-- [`wordpress-plugin/serve-dashboard/README.md`](wordpress-plugin/serve-dashboard/README.md)
-  — architecture, the data model, accessibility and responsive behaviour, and the
-  three places the build deliberately departs from the concept mockups.
+- [`serve-standalone/README.md`](serve-standalone/README.md) — architecture, the
+  data model, the compatibility layer, and the setup steps in detail.
 - [`docs/deployment-runbook.md`](docs/deployment-runbook.md) — going live on
   `serve.fellowshipdubai.com`: mail first, the setup steps that look like bugs
   when skipped, the go-live gate, and rollback.

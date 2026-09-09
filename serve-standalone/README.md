@@ -1,13 +1,15 @@
-# SERVE — PHP and MySQL, no WordPress
+# SERVE — PHP and MySQL
 
-The same application as the WordPress plugin in `../wordpress-plugin`, running on
-PHP 8.1 and MySQL with nothing else. No framework, no Composer, no build step.
+The application, running on PHP 8.1 and MySQL with nothing else. No framework,
+no Composer, no build step.
 
-The proof that it is the same application is that **it runs the plugin's test
-suite, unchanged**: 167 passed, 0 failed, 4 not applicable, 726 assertions. The
-test files are shared, not copied — `tools/run-tests.php` points at
-`../tests` — because two copies drift and the one that drifts is always the one
-nobody is watching.
+It began as a port of a WordPress plugin, and the evidence that the port did not
+change any behaviour is that **it runs that build's test suite, unchanged**: 174
+passed, 0 failed, 4 not applicable, 749 assertions. The WordPress build has
+since been retired, so those are simply the tests now — but they were written
+before the port, which is why they are worth trusting. `tools/run-tests.php`
+points at `../tests` rather than keeping a copy here, because two copies drift
+and the one that drifts is always the one nobody is watching.
 
 ## What this is
 

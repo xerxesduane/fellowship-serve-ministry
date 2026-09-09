@@ -7,7 +7,7 @@
  */
 
 import { test } from "./bootstrap.mjs";
-import { buildProfile, emptyAnswers, profileToText } from "../../wordpress-plugin/serve-dashboard/public/assessment/profile.js";
+import { buildProfile, emptyAnswers, profileToText } from "../../serve-standalone/public/assessment/profile.js";
 
 function answered() {
   const a = emptyAnswers();

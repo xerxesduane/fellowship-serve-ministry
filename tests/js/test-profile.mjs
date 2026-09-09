@@ -7,8 +7,8 @@
  */
 
 import { test } from "./bootstrap.mjs";
-import { buildProfile, emptyAnswers, optionLabels } from "../../wordpress-plugin/serve-dashboard/public/assessment/profile.js";
-import { experienceQuestions, personalityPairs } from "../../wordpress-plugin/serve-dashboard/public/assessment/shapeContent.js";
+import { buildProfile, emptyAnswers, optionLabels } from "../../serve-standalone/public/assessment/profile.js";
+import { experienceQuestions, personalityPairs } from "../../serve-standalone/public/assessment/shapeContent.js";
 
 /** A person who answered something in every section. */
 function answered() {

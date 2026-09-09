@@ -2,10 +2,12 @@
 /**
  * Run the suite against the standalone stack.
  *
- * The test files themselves are the plugin's, unchanged. That is the whole
- * point: 168 tests written against the WordPress build are the only honest way
- * to show that dropping WordPress did not change the behaviour underneath. A
- * port "verified" by tests rewritten alongside it proves nothing.
+ * The test files in ../tests were written against the WordPress build and were
+ * carried across unchanged. That was the whole point of the port: tests written
+ * before the move are the only honest way to show that dropping WordPress did
+ * not change the behaviour underneath, and a port "verified" by tests rewritten
+ * alongside it proves nothing. The WordPress build has since been retired, so
+ * this is now simply the suite -- but its provenance is why it is trusted.
  *
  * Usage:
  *   php tools/run-tests.php [--config=…] [--tests=…] [--filter=substring]
@@ -88,11 +90,12 @@ if ( $submissions > 0 && '1' !== (string) getenv( 'SERVE_TEST_ALLOW_EXISTING' ) 
 }
 
 /*
- * The tests are shared with the plugin build.
+ * The suite lives at the repository root, not inside this directory.
  *
- * Pointed at the plugin's tests/ directory by default so there is exactly one
- * copy of them. Two copies would drift, and the version that drifts is always
- * the one nobody is watching.
+ * It is left there deliberately: it is the application's test suite rather than
+ * the standalone build's, and moving it in would invite a second copy. Two
+ * copies would drift, and the version that drifts is always the one nobody is
+ * watching.
  */
 $tests_dir = serve_flag( 'tests', dirname( SERVE_ROOT ) . '/tests' );
 
@@ -140,9 +143,8 @@ $not_applicable = array(
 );
 
 /*
- * Fixture leaks are checked the way the plugin's runner checks them: count the
- * rows before and after, and report a difference rather than letting the next
- * run inherit it.
+ * Fixture leaks are checked by counting the rows before and after, and
+ * reporting a difference rather than letting the next run inherit it.
  */
 /*
  * Only two tables decide pass or fail, matching the shared harness:

@@ -1,11 +1,11 @@
 <?php
 /**
- * Runner for the parts of matching that need no WordPress and no database.
+ * Runner for the parts of matching that need no database.
  *
- * The main suite boots a real WordPress against a real MySQL, because every
+ * The main suite boots the application against a real MySQL, because every
  * guarantee it checks is a SQL predicate or a capability check and none of them
- * would survive being mocked. That is still true, and `tools/run-tests.php` is
- * still where those live.
+ * would survive being mocked. That is still true, and
+ * `serve-standalone/tools/run-tests.php` is still where those live.
  *
  * But the taxonomy, the crosswalk and the tier contract are arithmetic over
  * arrays. They are the part most likely to be wrong in a way nobody notices —
@@ -36,7 +36,7 @@ if ( 'cli' !== PHP_SAPI ) {
 
 define( 'ABSPATH', __DIR__ . '/' );
 
-$plugin = dirname( __DIR__ ) . '/wordpress-plugin/serve-dashboard';
+$src = dirname( __DIR__ ) . '/serve-standalone/src';
 
 /*
  * The handful of WordPress functions the matching stack touches. Each is the
@@ -45,11 +45,11 @@ $plugin = dirname( __DIR__ ) . '/wordpress-plugin/serve-dashboard';
  */
 require __DIR__ . '/../tests/unit/wp-stubs.php';
 
-require "$plugin/includes/class-gift-taxonomy.php";
-require "$plugin/includes/class-gift-crosswalk.php";
-require "$plugin/includes/class-matching-contract.php";
-require "$plugin/includes/class-corroboration.php";
-require "$plugin/includes/class-gift-ratings.php";
+require "$src/Domain/class-gift-taxonomy.php";
+require "$src/Domain/class-gift-crosswalk.php";
+require "$src/Domain/class-matching-contract.php";
+require "$src/Domain/class-corroboration.php";
+require "$src/Domain/class-gift-ratings.php";
 
 /*
  * Teams and Matching are loaded through a shim that supplies the four static
@@ -59,7 +59,7 @@ require "$plugin/includes/class-gift-ratings.php";
  * required, so the real Teams (which needs $wpdb) is never loaded.
  */
 require __DIR__ . '/../tests/unit/teams-shim.php';
-require "$plugin/includes/class-matching.php";
+require "$src/Domain/class-matching.php";
 
 require __DIR__ . '/../tests/unit/harness.php';
 
