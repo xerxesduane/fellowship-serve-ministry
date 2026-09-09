@@ -7,11 +7,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { test } from "./bootstrap.mjs";
-import { ICON_PATHS, escapeHtml, icon, iconNames } from "../../wordpress-plugin/serve-dashboard/public/assessment/render.js";
+import { ICON_PATHS, escapeHtml, icon, iconNames } from "../../serve-standalone/public/assessment/render.js";
 
 const ASSESSMENT = join(
   dirname(fileURLToPath(import.meta.url)),
-  "..", "..", "wordpress-plugin", "serve-dashboard", "public", "assessment"
+  "..", "..", "serve-standalone", "public", "assessment"
 );
 
 test("every character that could break out of markup is escaped", (a) => {

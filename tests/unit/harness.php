@@ -189,7 +189,7 @@ final class Fixtures {
 	 * @return array<int,array{0:string,1:string[],2:bool,3:string[]}>
 	 */
 	private static function seed_source(): array {
-		$path   = dirname( __DIR__, 2 ) . '/wordpress-plugin/serve-dashboard/includes/class-teams.php';
+		$path   = dirname( __DIR__, 2 ) . '/serve-standalone/src/Domain/class-teams.php';
 		$source = (string) file_get_contents( $path );
 
 		$start = strpos( $source, 'private static function seed(): array {' );

@@ -241,7 +241,7 @@ switch ( $command ) {
 			define( 'WP_CLI', true );
 		}
 
-		$seeder = SERVE_ROOT . '/../wordpress-plugin/serve-dashboard/dev/seed-demo.php';
+		$seeder = SERVE_ROOT . '/dev/seed-demo.php';
 
 		if ( ! is_file( $seeder ) ) {
 			fwrite( STDERR, "Cannot find the seeder at {$seeder}\n" );

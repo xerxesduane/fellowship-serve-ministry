@@ -24,7 +24,7 @@ import {
   received,
   requested,
   shouldRequest,
-} from "../../wordpress-plugin/serve-dashboard/public/assessment/suggestions.js";
+} from "../../serve-standalone/public/assessment/suggestions.js";
 
 const giftProfile = (likely) => ({
   spiritualGifts: { likely, possible: [], unlikely: [] },
